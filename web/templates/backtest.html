@@ -94,9 +94,14 @@
     background: var(--surface); color: var(--text);
     transition: border-color .15s;
     font-family: inherit;
+    min-width: 0;
   }
   .form-group input:focus { outline: none; border-color: var(--blue); }
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .form-row > * { min-width: 0; }
+
+  /* ── DATE RANGE ── */
+  .date-range { display: flex; flex-direction: column; gap: 10px; }
 
   /* ── DCA LEVELS TABLE ── */
   .levels-header {
@@ -125,6 +130,7 @@
     border-radius: 7px; font-size: 13px; font-family: inherit;
     background: var(--surface); color: var(--text);
     width: 100%; transition: border-color .15s;
+    min-width: 0;
   }
   .level-input:focus { outline: none; border-color: var(--blue); }
   .remove-level {
@@ -453,7 +459,7 @@
           <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
 
           <div class="section-title">Date Range (optional)</div>
-          <div class="form-row">
+          <div class="date-range">
             <div class="form-group" style="margin-bottom:0">
               <label>Start</label>
               <input type="date" id="cfg-start" value="2023-01-01">
@@ -639,7 +645,7 @@ function setMode(mode) {
 
   // Run button label
   document.getElementById('run-btn-text').textContent =
-    isShort ? '▶ Run Short Backtest' : '▶ Run Backtest';
+    isShort ? '▶ Run Short Backtest' : '▶ Run Backtest';
 
   // Refilter presets for this mode
   renderPresetCards(mode);
@@ -819,7 +825,7 @@ async function runBacktest() {
     showError('Network error: ' + e.message);
   } finally {
     btn.disabled = false;
-    btnText.textContent = '▶ Run Backtest';
+    btnText.textContent = '▶ Run Backtest';
     spinner.style.display = 'none';
   }
 }
