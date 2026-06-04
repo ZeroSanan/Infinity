@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+
+# Environment & secrets
+.env
+*.env
+
+# Data files (large CSVs — upload separately to VPS)
+algo-trading/data/
+
+# Reports & outputs
+algo-trading/reports/
+algo-trading/backtest/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/

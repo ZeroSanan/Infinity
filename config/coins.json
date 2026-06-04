@@ -1,0 +1,90 @@
+{
+  "coins": [
+    {
+      "id": "btc-main",
+      "name": "BTC Main",
+      "coin": "BTC",
+      "symbol": "BTCUSDT",
+      "enabled": true,
+      "step_count": 8,
+      "dump_levels": [
+        -10.0,
+        -15.0,
+        -20.0,
+        -25.0,
+        -30.0,
+        -35.0,
+        -40.0,
+        -45.0
+      ],
+      "order_sizes": [
+        1500.0,
+        2000.0,
+        2750.0,
+        5500.0,
+        5000.0,
+        5000.0,
+        1000.0,
+        1000.0
+      ],
+      "take_profit_percent": 10.0,
+      "reference_price": null
+    },
+    {
+      "id": "eth-main",
+      "name": "ETH Main",
+      "coin": "ETH",
+      "symbol": "ETHUSDT",
+      "enabled": true,
+      "step_count": 6,
+      "dump_levels": [
+        -10.0,
+        -15.0,
+        -20.0,
+        -25.0,
+        -30.0,
+        -35.0
+      ],
+      "order_sizes": [
+        1500.0,
+        2000.0,
+        2750.0,
+        5500.0,
+        5000.0,
+        5000.0
+      ],
+      "take_profit_percent": 5.0,
+      "reference_price": null
+    },
+    {
+      "id": "516a84c0",
+      "name": "BTC Agressive",
+      "coin": "BTC",
+      "symbol": "BTCUSDT",
+      "enabled": true,
+      "step_count": 8,
+      "dump_levels": [
+        -10.0,
+        -15.0,
+        -20.0,
+        -25.0,
+        -30.0,
+        -35.0,
+        -40.0,
+        -45.0
+      ],
+      "order_sizes": [
+        1500.0,
+        2000.0,
+        2750.0,
+        5500.0,
+        5000.0,
+        5000.0,
+        1000.0,
+        1000.0
+      ],
+      "take_profit_percent": 10.0,
+      "reference_price": null
+    }
+  ]
+}

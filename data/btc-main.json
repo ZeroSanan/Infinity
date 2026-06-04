@@ -1,0 +1,12 @@
+{
+  "strategy_id": "btc-main",
+  "coin": "BTC",
+  "symbol": "BTCUSDT",
+  "status": "WAITING",
+  "executed_steps": [],
+  "total_invested": 0.0,
+  "total_quantity": 0.0,
+  "average_entry": 0.0,
+  "reference_price": 77264.01,
+  "last_updated": "2026-05-26 14:02:05 UTC"
+}

@@ -1,0 +1,10 @@
+{
+  "csv_file": "data/btc_15m_data_2018_to_2025.csv",
+  "start_date": "2023-01-01",
+  "end_date": "2024-10-01",
+  "initial_budget": 1000,
+  "stop_loss_percent": 0.0,
+  "dca_levels": [ -10, -15, -20, -25, -30, -35, -45],
+  "dca_allocations": [ 50, 70, 100, 130, 180, 220, 250],
+  "take_profit_percent": 7.0
+}
