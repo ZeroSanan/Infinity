@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -830,6 +831,29 @@ def api_backtest_run():
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+# ── Route — Deploy webhook ────────────────────────────────────────────────────
+
+@app.route("/deploy", methods=["POST"])
+def webhook_deploy():
+    expected = os.getenv("DEPLOY_TOKEN", "")
+    token    = request.headers.get("X-Deploy-Token", "")
+    if not expected or token != expected:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    def run_deploy():
+        subprocess.run(
+            ["bash", "-c",
+             "cd /root/infinity && git pull origin master "
+             "&& source venv/bin/activate "
+             "&& pip install -r requirements.txt "
+             "&& systemctl restart infinity "
+             "&& systemctl restart infinity-web"],
+        )
+
+    threading.Thread(target=run_deploy, daemon=True).start()
+    return jsonify({"ok": True, "message": "Deploy started"}), 200
 
 
 # ── Bootstrap ─────────────────────────────────────────────────────────────────

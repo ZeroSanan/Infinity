@@ -11,19 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          password: ${{ secrets.VPS_PASSWORD }}
-          port: ${{ secrets.VPS_PORT || '22' }}
-          script: |
-            set -e
-            cd ${{ secrets.VPS_DEPLOY_PATH }}
-            git pull origin master
-            source venv/bin/activate
-            pip install -r requirements.txt
-            sudo systemctl restart infinity
-            sudo systemctl restart infinity-web
-            echo "Deploy complete."
+      - name: Trigger deploy webhook
+        run: |
+          curl -f -X POST http://${{ secrets.VPS_HOST }}:5050/deploy \
+            -H "X-Deploy-Token: ${{ secrets.VPS_DEPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --max-time 10
+          echo "Deploy webhook triggered."
