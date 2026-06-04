@@ -89,6 +89,7 @@
   .form-group input[type="date"],
   .form-group input[type="text"] {
     width: 100%; padding: 9px 12px;
+    box-sizing: border-box;
     border: 1.5px solid var(--border2);
     border-radius: 8px; font-size: 14px;
     background: var(--surface); color: var(--text);
@@ -101,7 +102,7 @@
   .form-row > * { min-width: 0; }
 
   /* ── DATE RANGE ── */
-  .date-range { display: flex; flex-direction: column; gap: 10px; }
+  .date-range { display: flex; flex-direction: column; gap: 10px; padding-bottom: 6px; }
 
   /* ── DCA LEVELS TABLE ── */
   .levels-header {
