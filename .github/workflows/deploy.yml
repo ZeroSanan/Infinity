@@ -11,10 +11,5 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger deploy webhook
-        run: |
-          curl -f -X POST http://${{ secrets.VPS_HOST }}:5050/deploy \
-            -H "X-Deploy-Token: ${{ secrets.VPS_DEPLOY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --max-time 10
-          echo "Deploy webhook triggered."
+      - name: Deploy note
+        run: echo "VPS auto-deploys via cron within 60 seconds of each push."
