@@ -25,4 +25,5 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt
             sudo systemctl restart infinity
+            sudo systemctl restart infinity-web
             echo "Deploy complete."
