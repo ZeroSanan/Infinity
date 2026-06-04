@@ -278,6 +278,76 @@
   /* ── SIDEBAR CONFIG STICKY ── */
   .config-sidebar { position: sticky; top: 20px; }
 
+  /* ── MODE TOGGLE ── */
+  .mode-toggle-wrap { margin-bottom: 18px; }
+  .mode-toggle {
+    display: flex; background: var(--surface2);
+    border-radius: 10px; padding: 3px;
+    border: 1.5px solid var(--border2);
+  }
+  .mode-btn {
+    flex: 1; padding: 9px 10px;
+    border: none; border-radius: 8px;
+    cursor: pointer; font-size: 13px; font-weight: 500;
+    font-family: inherit; transition: all .15s;
+    background: transparent; color: var(--muted);
+  }
+  .mode-btn.active {
+    background: var(--surface);
+    box-shadow: var(--shadow-sm); font-weight: 700;
+  }
+  #btn-long.active  { color: var(--blue); }
+  #btn-short.active { color: var(--red);  }
+
+  /* short-mode tint overrides */
+  body.short-mode .run-btn          { background: var(--red); box-shadow: 0 4px 16px rgba(255,59,48,.3); }
+  body.short-mode .level-num        { background: rgba(255,59,48,.1); color: var(--red); }
+  body.short-mode .add-level-btn    { background: rgba(255,59,48,.08); color: var(--red); }
+  body.short-mode .stat-card.blue   { border-top-color: var(--red); }
+  body.short-mode .stat-val.blue    { color: var(--red); }
+
+  /* ── PRESETS PANEL ── */
+  .presets-panel {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .presets-panel .panel-head { padding: 16px 20px 0; }
+  .presets-scroll {
+    display: flex; gap: 10px;
+    padding: 12px 20px 18px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .presets-scroll::-webkit-scrollbar { height: 4px; }
+  .presets-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  .preset-card {
+    flex: 0 0 auto;
+    min-width: 180px; max-width: 200px;
+    padding: 13px 15px;
+    border-radius: 10px;
+    border: 1.5px solid var(--border2);
+    cursor: pointer; transition: all .15s;
+    background: var(--surface2);
+  }
+  .preset-card:hover { border-color: var(--blue); background: var(--blue-bg); }
+  .preset-card.active { border-color: var(--blue); background: var(--blue-bg); box-shadow: 0 0 0 3px rgba(0,122,255,.12); }
+  .preset-rank {
+    display: inline-block;
+    padding: 2px 7px; border-radius: 99px;
+    font-size: 10px; font-weight: 700; letter-spacing: .4px;
+    background: var(--blue); color: #fff;
+    margin-bottom: 7px;
+  }
+  .preset-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .preset-levels { font-size: 11px; color: var(--muted); word-break: break-all; margin-bottom: 6px; }
+  .preset-stats { display: flex; gap: 10px; }
+  .preset-stat { font-size: 11px; }
+  .preset-stat .ps-val { font-weight: 700; color: var(--green); }
+  .preset-stat .ps-label { color: var(--muted); }
+
   /* ── CHART LEGEND ── */
   .chart-legend {
     display: flex; gap: 16px; flex-wrap: wrap;
@@ -328,6 +398,14 @@
     </div>
   </header>
 
+  <!-- ══ PRESETS ROW ══ -->
+  <div class="presets-panel" id="presets-panel" style="display:none">
+    <div class="panel-head">Top Strategies from Optimizer <span id="presets-sub" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--muted);margin-left:6px"></span></div>
+    <div class="presets-scroll" id="presets-scroll">
+      <div style="color:var(--muted);font-size:13px;padding:6px 0">Loading…</div>
+    </div>
+  </div>
+
   <div class="layout">
 
     <!-- ══ LEFT: CONFIG SIDEBAR ══ -->
@@ -336,6 +414,17 @@
       <div class="panel">
         <div class="panel-head">Strategy Config</div>
         <div class="panel-body">
+
+          <!-- Mode toggle -->
+          <div class="mode-toggle-wrap">
+            <div class="mode-toggle">
+              <button class="mode-btn active" id="btn-long"  onclick="setMode('long')">&#9650;&ensp;Long (Bull)</button>
+              <button class="mode-btn"        id="btn-short" onclick="setMode('short')">&#9660;&ensp;Short (Bear)</button>
+            </div>
+          </div>
+          <div id="mode-desc" style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5">
+            Buy on dips, profit on recovery.
+          </div>
 
           <div class="form-group">
             <label>Initial Budget ($)</label>
@@ -356,7 +445,7 @@
 
           <div class="section-title">DCA Levels</div>
           <div class="levels-header">
-            <span></span><span>Dump %</span><span>Alloc $</span><span></span>
+            <span></span><span id="levels-col-label">Dump %</span><span>Alloc $</span><span></span>
           </div>
           <div id="levels-container"></div>
           <button class="add-level-btn" onclick="addLevel()">&#43; Add Level</button>
@@ -491,6 +580,7 @@ let uploadedFile    = null;
 let allTrades       = [];
 let sortKey         = 'num';
 let sortAsc         = true;
+let currentMode     = 'long';   // 'long' | 'short'
 
 // ── Default DCA levels ──────────────────────────────────────────────────────
 const DEFAULT_LEVELS = [
@@ -503,21 +593,76 @@ const DEFAULT_LEVELS = [
   { dump: -45, alloc: 250 },
 ];
 
+const SHORT_DEFAULT_LEVELS = [
+  { dump: 6,  alloc: 50  },
+  { dump: 9,  alloc: 70  },
+  { dump: 12, alloc: 100 },
+  { dump: 16, alloc: 130 },
+  { dump: 20, alloc: 180 },
+  { dump: 24, alloc: 220 },
+];
+
 // ── Boot ────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   DEFAULT_LEVELS.forEach(l => addLevel(l.dump, l.alloc));
   loadDatasets();
+  loadPresets();
 });
+
+// ── Mode switch ──────────────────────────────────────────────────────────────
+function setMode(mode) {
+  if (currentMode === mode) return;
+  currentMode = mode;
+
+  const isShort = mode === 'short';
+
+  // Toggle buttons
+  document.getElementById('btn-long').classList.toggle('active', !isShort);
+  document.getElementById('btn-short').classList.toggle('active', isShort);
+
+  // Body class for CSS tint
+  document.body.classList.toggle('short-mode', isShort);
+
+  // Description
+  document.getElementById('mode-desc').textContent = isShort
+    ? 'Short on pumps, profit on drops. Levels are pump % above anchor.'
+    : 'Buy on dips, profit on recovery. Levels are dump % below anchor.';
+
+  // Column label
+  document.getElementById('levels-col-label').textContent = isShort ? 'Pump %' : 'Dump %';
+
+  // Rebuild DCA level rows with mode-appropriate defaults
+  const container = document.getElementById('levels-container');
+  container.innerHTML = '';
+  const defaults = isShort ? SHORT_DEFAULT_LEVELS : DEFAULT_LEVELS;
+  defaults.forEach(l => addLevel(l.dump, l.alloc));
+
+  // Run button label
+  document.getElementById('run-btn-text').textContent =
+    isShort ? '▶ Run Short Backtest' : '▶ Run Backtest';
+
+  // Refilter presets for this mode
+  renderPresetCards(mode);
+
+  // Clear previous results
+  document.getElementById('results-section').style.display = 'none';
+  document.getElementById('error-banner').style.display = 'none';
+}
 
 // ── DCA Level rows ──────────────────────────────────────────────────────────
 function addLevel(dump = -6, alloc = 100) {
   const container = document.getElementById('levels-container');
-  const idx = container.children.length + 1;
+  const idx       = container.children.length + 1;
+  const isShort   = currentMode === 'short';
+  // short: levels must be positive; long: negative
+  const attrs     = isShort
+    ? `min="0.1" step="0.5" placeholder="e.g. 10"`
+    : `max="-0.1" step="0.5" placeholder="e.g. -10"`;
   const row = document.createElement('div');
   row.className = 'level-row';
   row.innerHTML = `
     <div class="level-num">${idx}</div>
-    <input class="level-input" type="number" value="${dump}" max="-0.1" step="0.5" placeholder="e.g. -10">
+    <input class="level-input" type="number" value="${dump}" ${attrs}>
     <input class="level-input" type="number" value="${alloc}" min="1" step="10" placeholder="$">
     <button class="remove-level" onclick="removeLevel(this)">&#8722;</button>
   `;
@@ -626,9 +771,14 @@ async function runBacktest() {
 
   const { levels, allocs } = getLevels();
   if (!levels.length) { showError('Add at least one DCA level.'); return; }
-  if (levels.some(l => l >= 0)) { showError('All DCA levels must be negative (e.g. -10).'); return; }
+
+  if (currentMode === 'long'  && levels.some(l => l >= 0))
+    { showError('Long mode: all DCA levels must be negative (e.g. -10).'); return; }
+  if (currentMode === 'short' && levels.some(l => l <= 0))
+    { showError('Short mode: all pump levels must be positive (e.g. 10).'); return; }
 
   const params = {
+    mode:                currentMode,
     initial_budget:      parseFloat(document.getElementById('cfg-budget').value),
     dca_levels:          levels,
     dca_allocations:     allocs,
@@ -933,6 +1083,96 @@ function sortTable(key) {
   document.querySelectorAll('thead th').forEach(th => th.classList.remove('sorted'));
   event.currentTarget.classList.add('sorted');
   renderTradesTable();
+}
+
+// ── Presets ──────────────────────────────────────────────────────────────────
+let _presets = [];
+
+async function loadPresets() {
+  try {
+    const res  = await fetch('/api/backtest/presets');
+    const data = await res.json();
+    _presets   = data.strategies || [];
+    renderPresetCards(currentMode);
+  } catch (e) { /* silently skip */ }
+}
+
+function renderPresetCards(mode) {
+  const panel  = document.getElementById('presets-panel');
+  const scroll = document.getElementById('presets-scroll');
+  const sub    = document.getElementById('presets-sub');
+  if (!panel) return;
+
+  const filtered = _presets.filter(p => (p.mode || 'long') === mode);
+
+  if (!filtered.length) {
+    panel.style.display = 'block';
+    sub.textContent = '';
+    const msg = mode === 'short'
+      ? 'No short presets yet — run the optimizer in short mode to generate them.'
+      : 'No presets saved.';
+    scroll.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:6px 0">${msg}</div>`;
+    return;
+  }
+
+  sub.textContent = `(${filtered.length} saved — click to load)`;
+  panel.style.display = 'block';
+
+  scroll.innerHTML = filtered.map(p => {
+    const idx     = _presets.indexOf(p);
+    const lvlStr  = p.dca_levels.join(', ');
+    const slTag   = p.stop_loss_percent > 0
+      ? `<span style="font-size:10px;font-weight:600;color:var(--orange);margin-left:5px">SL${p.stop_loss_percent}%</span>`
+      : '';
+    const rpdStat = p.stats.roi_per_day != null
+      ? `<div class="preset-stat"><div class="ps-val" style="color:var(--blue)">${p.stats.roi_per_day.toFixed(1)}</div><div class="ps-label">ROI/Day</div></div>`
+      : '';
+    const durStat = p.stats.avg_trade_duration_days != null
+      ? `<div class="preset-stat"><div class="ps-val" style="color:var(--orange)">${p.stats.avg_trade_duration_days.toFixed(1)}d</div><div class="ps-label">AvgDur</div></div>`
+      : '';
+    return `
+      <div class="preset-card" id="preset-card-${idx}" onclick="applyPreset(${idx})">
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:7px">
+          <div class="preset-rank">#${p.rank}</div>${slTag}
+        </div>
+        <div class="preset-name">${p.name}</div>
+        <div class="preset-levels">${lvlStr}</div>
+        <div class="preset-stats" style="flex-wrap:wrap;gap:8px 12px">
+          <div class="preset-stat">
+            <div class="ps-val">+${p.stats.roi.toFixed(1)}%</div>
+            <div class="ps-label">ROI</div>
+          </div>
+          ${rpdStat}${durStat}
+          <div class="preset-stat">
+            <div class="ps-val">${p.stats.win_rate.toFixed(0)}%</div>
+            <div class="ps-label">Win</div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function applyPreset(idx) {
+  const p = _presets[idx];
+  if (!p) return;
+
+  // Switch to the preset's mode first
+  const presetMode = p.mode || 'long';
+  if (currentMode !== presetMode) setMode(presetMode);
+
+  // Highlight
+  document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('active'));
+  const card = document.getElementById(`preset-card-${idx}`);
+  if (card) card.classList.add('active');
+
+  // Populate fields
+  document.getElementById('cfg-budget').value = p.initial_budget;
+  document.getElementById('cfg-tp').value     = p.take_profit_percent;
+  document.getElementById('cfg-sl').value     = p.stop_loss_percent;
+
+  // Rebuild DCA level rows
+  document.getElementById('levels-container').innerHTML = '';
+  p.dca_levels.forEach((lvl, i) => addLevel(lvl, p.dca_allocations[i] ?? 100));
 }
 
 function renderTradesTable() {

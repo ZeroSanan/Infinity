@@ -672,6 +672,15 @@ def backtest_page():
     return render_template("backtest.html")
 
 
+@app.route("/api/backtest/presets")
+def api_backtest_presets():
+    path = os.path.join(ROOT, "algo-trading", "top_strategies.json")
+    if not os.path.exists(path):
+        return jsonify({"strategies": []})
+    with open(path) as f:
+        return jsonify(json.load(f))
+
+
 @app.route("/api/backtest/datasets")
 def api_backtest_datasets():
     data_dir = os.path.join(ROOT, "algo-trading", "data")
@@ -701,6 +710,7 @@ def api_backtest_run():
         params = request.json or {}
         csv_file = None
 
+    mode                = params.get("mode", "long")
     initial_budget      = float(params.get("initial_budget", 1000))
     dca_levels          = [float(x) for x in params.get("dca_levels", [-6, -9, -12, -16, -20, -24])]
     dca_allocations_raw = params.get("dca_allocations")
@@ -737,13 +747,23 @@ def api_backtest_run():
         if len(df) == 0:
             return jsonify({"error": "No candles in the specified date range"}), 400
 
-        strategy = DCAStrategy(
-            initial_budget=initial_budget,
-            budget_per_level=dca_allocations,
-            dca_levels=dca_levels,
-            take_profit_percent=take_profit_percent,
-            stop_loss_percent=stop_loss_percent,
-        )
+        if mode == "short":
+            from short_dca_strategy import ShortDCAStrategy
+            strategy = ShortDCAStrategy(
+                initial_budget=initial_budget,
+                budget_per_level=dca_allocations,
+                dca_levels=dca_levels,
+                take_profit_percent=take_profit_percent,
+                stop_loss_percent=stop_loss_percent,
+            )
+        else:
+            strategy = DCAStrategy(
+                initial_budget=initial_budget,
+                budget_per_level=dca_allocations,
+                dca_levels=dca_levels,
+                take_profit_percent=take_profit_percent,
+                stop_loss_percent=stop_loss_percent,
+            )
         trades = strategy.run_backtest(df)
         results = strategy.calculate_backtest_results()
 

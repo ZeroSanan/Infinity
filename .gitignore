@@ -10,6 +10,7 @@ venv/
 # Environment & secrets
 .env
 *.env
+config/accounts.json
 
 # Data files (large CSVs — upload separately to VPS)
 algo-trading/data/
