@@ -36,6 +36,8 @@ def load_configs() -> list[CoinConfig]:
     configs = []
     for item in data["coins"]:
         cfg = CoinConfig(
+            id=item["id"],
+            name=item["name"],
             coin=item["coin"],
             symbol=item["symbol"],
             enabled=item.get("enabled", True),
@@ -98,20 +100,20 @@ def main():
     client = build_client()
     engines = [DCAEngine(cfg, client) for cfg in configs]
 
-    # ── Status mode ──────────────────────────────────────────────────────────
+    # ── Status mode ─────────────────────────────────────────────────────
     if args.status:
         for eng in engines:
             print(eng.status_summary())
         return
 
-    # ── Set reference price ───────────────────────────────────────────────────
+    # ── Set reference price ──────────────────────────────────────────────────
     for eng in engines:
         if args.ref:
             eng.set_reference_price(args.ref)
         elif args.set_ref:
             eng.set_reference_to_current()
 
-    # ── Run engines ───────────────────────────────────────────────────────────
+    # ── Run engines ─────────────────────────────────────────────────────
     if len(engines) == 1:
         engines[0].run()
     else:
