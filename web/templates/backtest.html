@@ -58,11 +58,11 @@
   /* ── LAYOUT ── */
   .layout {
     display: grid;
-    grid-template-columns: 300px 1fr;
+    grid-template-columns: 360px 1fr;
     gap: 20px;
     align-items: start;
   }
-  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+  @media (max-width: 920px) { .layout { grid-template-columns: 1fr; } }
 
   /* ── PANEL ── */
   .panel {
@@ -622,35 +622,26 @@ function setMode(mode) {
 
   const isShort = mode === 'short';
 
-  // Toggle buttons
   document.getElementById('btn-long').classList.toggle('active', !isShort);
   document.getElementById('btn-short').classList.toggle('active', isShort);
-
-  // Body class for CSS tint
   document.body.classList.toggle('short-mode', isShort);
 
-  // Description
   document.getElementById('mode-desc').textContent = isShort
     ? 'Short on pumps, profit on drops. Levels are pump % above anchor.'
     : 'Buy on dips, profit on recovery. Levels are dump % below anchor.';
 
-  // Column label
   document.getElementById('levels-col-label').textContent = isShort ? 'Pump %' : 'Dump %';
 
-  // Rebuild DCA level rows with mode-appropriate defaults
   const container = document.getElementById('levels-container');
   container.innerHTML = '';
   const defaults = isShort ? SHORT_DEFAULT_LEVELS : DEFAULT_LEVELS;
   defaults.forEach(l => addLevel(l.dump, l.alloc));
 
-  // Run button label
   document.getElementById('run-btn-text').textContent =
     isShort ? '▶ Run Short Backtest' : '▶ Run Backtest';
 
-  // Refilter presets for this mode
   renderPresetCards(mode);
 
-  // Clear previous results
   document.getElementById('results-section').style.display = 'none';
   document.getElementById('error-banner').style.display = 'none';
 }
@@ -660,7 +651,6 @@ function addLevel(dump = -6, alloc = 100) {
   const container = document.getElementById('levels-container');
   const idx       = container.children.length + 1;
   const isShort   = currentMode === 'short';
-  // short: levels must be positive; long: negative
   const attrs     = isShort
     ? `min="0.1" step="0.5" placeholder="e.g. 10"`
     : `max="-0.1" step="0.5" placeholder="e.g. -10"`;
@@ -714,7 +704,6 @@ async function loadDatasets() {
         <div class="ds-meta">${ds.rows.toLocaleString()} candles &bull; ${ds.size_mb} MB</div>
       </div>
     `).join('');
-    // Auto-select first
     const first = grid.querySelector('.dataset-card');
     if (first) first.click();
   } catch (e) {
@@ -728,7 +717,6 @@ function selectDataset(name, el) {
   uploadedFile    = null;
   document.querySelectorAll('.dataset-card').forEach(c => c.classList.remove('selected'));
   el.classList.add('selected');
-  // Clear upload UI
   const zone = document.getElementById('upload-zone');
   zone.classList.remove('has-file');
   document.getElementById('upload-filename').textContent = '';
@@ -983,7 +971,6 @@ function renderChart(equityCurve, trades, initialBudget) {
   const beLine  = `<line x1="${PAD.left}" y1="${beY}" x2="${W-PAD.right}" y2="${beY}" stroke="#8e8e93" stroke-width="1" stroke-dasharray="4,3" opacity=".55"/>`;
   const beLabel = `<text x="${W-PAD.right+4}" y="${beY}" dominant-baseline="middle" font-size="10" fill="#8e8e93">start</text>`;
 
-  // Trade exit markers on equity curve (equityCurve[1..N] = trades[0..N-1])
   let markers = '';
   trades.forEach((t, i) => {
     const pt = equityCurve[i + 1];
@@ -1068,11 +1055,8 @@ function renderTradeChart(trades) {
     const exitColor = t.stop_loss ? '#ff9500' : (t.profit_loss >= 0 ? '#34c759' : '#ff3b30');
     const tipAttr = `onmouseenter="showTip(event,tradeTooltipHTML(allTrades[${i}]))" onmousemove="moveTip(event)" onmouseleave="hideTip()"`;
 
-    // Connector line entry→exit
     items += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${exitColor}" stroke-width="1" opacity="0.35"/>`;
-    // Entry dot (blue)
     items += `<circle cx="${x1}" cy="${y1}" r="4" fill="#007aff" stroke="white" stroke-width="1.5" style="cursor:pointer" ${tipAttr}/>`;
-    // Exit dot
     items += `<circle cx="${x2}" cy="${y2}" r="5" fill="${exitColor}" stroke="white" stroke-width="1.5" style="cursor:pointer" ${tipAttr}/>`;
   });
 
@@ -1162,21 +1146,17 @@ function applyPreset(idx) {
   const p = _presets[idx];
   if (!p) return;
 
-  // Switch to the preset's mode first
   const presetMode = p.mode || 'long';
   if (currentMode !== presetMode) setMode(presetMode);
 
-  // Highlight
   document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('active'));
   const card = document.getElementById(`preset-card-${idx}`);
   if (card) card.classList.add('active');
 
-  // Populate fields
   document.getElementById('cfg-budget').value = p.initial_budget;
   document.getElementById('cfg-tp').value     = p.take_profit_percent;
   document.getElementById('cfg-sl').value     = p.stop_loss_percent;
 
-  // Rebuild DCA level rows
   document.getElementById('levels-container').innerHTML = '';
   p.dca_levels.forEach((lvl, i) => addLevel(lvl, p.dca_allocations[i] ?? 100));
 }
