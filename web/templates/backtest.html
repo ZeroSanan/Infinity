@@ -376,6 +376,48 @@
     width: 20px; height: 2px; border-radius: 1px; flex-shrink: 0;
   }
 
+  /* ── MIXED MODE ── */
+  #btn-mixed.active { color: var(--orange); }
+  body.mixed-mode .run-btn {
+    background: linear-gradient(135deg, var(--blue) 0%, var(--orange) 100%);
+    box-shadow: 0 4px 16px rgba(255,149,0,.3);
+  }
+  .mixed-side-header {
+    display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px;
+  }
+  .mixed-side-title {
+    font-size: 13px; font-weight: 700; color: var(--text);
+  }
+  .mixed-side-sub {
+    font-size: 11px; color: var(--muted);
+  }
+  .bull-section .level-num  { background: var(--green-bg);   color: var(--green);  }
+  .bull-section .add-level-btn { background: var(--green-bg); color: var(--green); }
+  .bear-section .level-num  { background: var(--red-bg);     color: var(--red);    }
+  .bear-section .add-level-btn { background: var(--red-bg);   color: var(--red);   }
+  .preset-pair-card {
+    padding: 11px 14px; border-radius: 10px;
+    border: 1.5px solid var(--border2);
+    cursor: pointer; transition: all .15s;
+    background: var(--surface2); margin-bottom: 8px;
+  }
+  .preset-pair-card:hover { border-color: var(--orange); background: var(--orange-bg); }
+  .preset-pair-card.active { border-color: var(--orange); background: var(--orange-bg); box-shadow: 0 0 0 3px rgba(255,149,0,.12); }
+  .preset-pair-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+  .preset-pair-desc { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .regime-band-bull { fill: rgba(52,199,89,0.18); }
+  .regime-band-bear { fill: rgba(255,59,48,0.15); }
+  .regime-band-neutral { fill: rgba(142,142,147,0.1); }
+  .badge-blue   { background: var(--blue-bg);   color: var(--blue);   }
+  .badge-long   { background: var(--blue-bg);   color: var(--blue);   }
+  .badge-short  { background: var(--red-bg);    color: var(--red);    }
+  .warnings-box {
+    background: var(--orange-bg); border: 1px solid rgba(255,149,0,.25);
+    border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px;
+    font-size: 12px; color: var(--text2); line-height: 1.6;
+  }
+  .warnings-box strong { color: var(--orange); }
+
   /* ── TOOLTIP ── */
   #chart-tooltip {
     position: fixed; pointer-events: none; z-index: 9999;
@@ -428,6 +470,7 @@
             <div class="mode-toggle">
               <button class="mode-btn active" id="btn-long"  onclick="setMode('long')">&#9650;&ensp;Long (Bull)</button>
               <button class="mode-btn"        id="btn-short" onclick="setMode('short')">&#9660;&ensp;Short (Bear)</button>
+              <button class="mode-btn"        id="btn-mixed" onclick="setMode('mixed')">&#9889;&ensp;Mixed</button>
             </div>
           </div>
           <div id="mode-desc" style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5">
@@ -439,24 +482,100 @@
             <input type="number" id="cfg-budget" value="1000" min="1" step="100">
           </div>
 
-          <div class="form-group">
-            <label>Take Profit (%)</label>
-            <input type="number" id="cfg-tp" value="7" min="0.1" step="0.1">
+          <!-- Single-mode config (hidden in mixed mode) -->
+          <div id="single-mode-config">
+            <div class="form-group">
+              <label>Take Profit (%)</label>
+              <input type="number" id="cfg-tp" value="7" min="0.1" step="0.1">
+            </div>
+
+            <div class="form-group">
+              <label>Stop Loss (% from anchor — 0 disables)</label>
+              <input type="number" id="cfg-sl" value="0" min="0" step="0.5">
+            </div>
+
+            <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
+
+            <div class="section-title">DCA Levels</div>
+            <div class="levels-header">
+              <span></span><span id="levels-col-label">Dump %</span><span>Alloc $</span><span></span>
+            </div>
+            <div id="levels-container"></div>
+            <button class="add-level-btn" onclick="addLevel()">&#43; Add Level</button>
           </div>
 
-          <div class="form-group">
-            <label>Stop Loss (% from anchor — 0 disables)</label>
-            <input type="number" id="cfg-sl" value="0" min="0" step="0.5">
-          </div>
+          <!-- Mixed mode config (shown only when mode = 'mixed') -->
+          <div id="mixed-config" style="display:none">
 
-          <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
+            <!-- Bull side -->
+            <div class="bull-section">
+              <div class="mixed-side-header">
+                <span class="mixed-side-title">&#9650; Bullish Strategy — Buy Dips</span>
+                <span class="mixed-side-sub">Active during BULLISH regime</span>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Take Profit (%)</label>
+                  <input type="number" id="bull-tp" value="10" min="0.1" step="0.1">
+                </div>
+                <div class="form-group">
+                  <label>Stop Loss (% — 0 off)</label>
+                  <input type="number" id="bull-sl" value="0" min="0" step="0.5">
+                </div>
+              </div>
+              <div class="section-title">DCA Dump Levels</div>
+              <div class="levels-header">
+                <span></span><span>Dump %</span><span>Alloc $</span><span></span>
+              </div>
+              <div id="bull-levels-container"></div>
+              <button class="add-level-btn" onclick="addBullLevel()">&#43; Add Level</button>
+            </div>
 
-          <div class="section-title">DCA Levels</div>
-          <div class="levels-header">
-            <span></span><span id="levels-col-label">Dump %</span><span>Alloc $</span><span></span>
+            <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
+
+            <!-- Bear side -->
+            <div class="bear-section">
+              <div class="mixed-side-header">
+                <span class="mixed-side-title">&#9660; Bearish Strategy — Sell Rallies</span>
+                <span class="mixed-side-sub">Active during BEARISH regime</span>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Take Profit (%)</label>
+                  <input type="number" id="bear-tp" value="10" min="0.1" step="0.1">
+                </div>
+                <div class="form-group">
+                  <label>Stop Loss (% — 0 off)</label>
+                  <input type="number" id="bear-sl" value="0" min="0" step="0.5">
+                </div>
+              </div>
+              <div class="section-title">DCA Pump Levels</div>
+              <div class="levels-header">
+                <span></span><span>Pump %</span><span>Alloc $</span><span></span>
+              </div>
+              <div id="bear-levels-container"></div>
+              <button class="add-level-btn" onclick="addBearLevel()">&#43; Add Level</button>
+            </div>
+
+            <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
+
+            <!-- Preset pairs -->
+            <div class="section-title">Preset Pairs</div>
+            <div id="mixed-presets-container">
+              <div class="preset-pair-card" data-key="conservative" onclick="applyMixedPreset('conservative')">
+                <div class="preset-pair-name">Conservative Mixed</div>
+                <div class="preset-pair-desc">Bull: -6,-10,-15 TP 8% &bull; Bear: +6,+10,+15 TP 8%</div>
+              </div>
+              <div class="preset-pair-card" data-key="aggressive" onclick="applyMixedPreset('aggressive')">
+                <div class="preset-pair-name">Aggressive Mixed</div>
+                <div class="preset-pair-desc">Bull: -8,-13,-20,-28 TP 12% &bull; Bear: +8,+13,+20,+28 TP 12%</div>
+              </div>
+              <div class="preset-pair-card" data-key="asymmetric" onclick="applyMixedPreset('asymmetric')">
+                <div class="preset-pair-name">Asymmetric</div>
+                <div class="preset-pair-desc">Bull: -6,-9,-13,-18 TP 10% &bull; Bear: +5,+8,+12 TP 6%</div>
+              </div>
+            </div>
           </div>
-          <div id="levels-container"></div>
-          <button class="add-level-btn" onclick="addLevel()">&#43; Add Level</button>
 
           <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
 
@@ -533,6 +652,19 @@
           </div>
         </div>
 
+        <!-- Warnings (mixed mode) -->
+        <div id="warnings-box" class="warnings-box" style="display:none"></div>
+
+        <!-- Regime Timeline (mixed mode only) -->
+        <div class="panel" id="regime-timeline-panel" style="display:none">
+          <div class="panel-head">Market Regime Timeline
+            <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--muted);margin-left:8px">green = BULLISH &bull; red = BEARISH &bull; grey = NEUTRAL</span>
+          </div>
+          <div class="panel-body" style="padding-bottom:14px">
+            <div id="regime-timeline"></div>
+          </div>
+        </div>
+
         <!-- Entries & Exits chart -->
         <div class="panel">
           <div class="panel-head">Entries &amp; Exits on Price</div>
@@ -588,7 +720,7 @@ let uploadedFile    = null;
 let allTrades       = [];
 let sortKey         = 'num';
 let sortAsc         = true;
-let currentMode     = 'long';   // 'long' | 'short'
+let currentMode     = 'long';   // 'long' | 'short' | 'mixed'
 
 // ── Default DCA levels ──────────────────────────────────────────────────────
 const DEFAULT_LEVELS = [
@@ -623,29 +755,45 @@ function setMode(mode) {
   currentMode = mode;
 
   const isShort = mode === 'short';
+  const isMixed = mode === 'mixed';
 
-  document.getElementById('btn-long').classList.toggle('active', !isShort);
+  document.getElementById('btn-long').classList.toggle('active',  mode === 'long');
   document.getElementById('btn-short').classList.toggle('active', isShort);
+  document.getElementById('btn-mixed').classList.toggle('active', isMixed);
   document.body.classList.toggle('short-mode', isShort);
+  document.body.classList.toggle('mixed-mode', isMixed);
 
-  document.getElementById('mode-desc').textContent = isShort
-    ? 'Short on pumps, profit on drops. Levels are pump % above anchor.'
-    : 'Buy on dips, profit on recovery. Levels are dump % below anchor.';
+  document.getElementById('single-mode-config').style.display = isMixed ? 'none' : 'block';
+  document.getElementById('mixed-config').style.display       = isMixed ? 'block' : 'none';
 
-  document.getElementById('levels-col-label').textContent = isShort ? 'Pump %' : 'Dump %';
-
-  const container = document.getElementById('levels-container');
-  container.innerHTML = '';
-  const defaults = isShort ? SHORT_DEFAULT_LEVELS : DEFAULT_LEVELS;
-  defaults.forEach(l => addLevel(l.dump, l.alloc));
-
-  document.getElementById('run-btn-text').textContent =
-    isShort ? '▶ Run Short Backtest' : '▶ Run Backtest';
-
-  renderPresetCards(mode);
+  if (!isMixed) {
+    document.getElementById('mode-desc').textContent = isShort
+      ? 'Short on pumps, profit on drops. Levels are pump % above anchor.'
+      : 'Buy on dips, profit on recovery. Levels are dump % below anchor.';
+    document.getElementById('levels-col-label').textContent = isShort ? 'Pump %' : 'Dump %';
+    const container = document.getElementById('levels-container');
+    container.innerHTML = '';
+    const defaults = isShort ? SHORT_DEFAULT_LEVELS : DEFAULT_LEVELS;
+    defaults.forEach(l => addLevel(l.dump, l.alloc));
+    document.getElementById('run-btn-text').textContent =
+      isShort ? '▶ Run Short Backtest' : '▶ Run Backtest';
+    renderPresetCards(mode);
+    document.getElementById('presets-panel').style.display = 'block';
+  } else {
+    document.getElementById('mode-desc').textContent =
+      'Runs LONG during bull markets and SHORT during bear markets, switching on regime detection.';
+    document.getElementById('run-btn-text').textContent = '▶ Run Mixed Backtest';
+    document.getElementById('presets-panel').style.display = 'none';
+    // Populate mixed level containers on first switch
+    if (!document.getElementById('bull-levels-container').children.length) {
+      applyMixedPreset('conservative');
+    }
+  }
 
   document.getElementById('results-section').style.display = 'none';
-  document.getElementById('error-banner').style.display = 'none';
+  document.getElementById('error-banner').style.display    = 'none';
+  document.getElementById('regime-timeline-panel').style.display = 'none';
+  document.getElementById('warnings-box').style.display = 'none';
 }
 
 // ── DCA Level rows ──────────────────────────────────────────────────────────
@@ -669,18 +817,22 @@ function addLevel(dump = -6, alloc = 100) {
 }
 
 function removeLevel(btn) {
-  btn.closest('.level-row').remove();
-  renumberLevels();
+  const row = btn.closest('.level-row');
+  const container = row.parentElement;
+  row.remove();
+  container.querySelectorAll('.level-row').forEach((r, i) => {
+    r.querySelector('.level-num').textContent = i + 1;
+  });
 }
 
 function renumberLevels() {
-  document.querySelectorAll('.level-row').forEach((row, i) => {
+  document.querySelectorAll('#levels-container .level-row').forEach((row, i) => {
     row.querySelector('.level-num').textContent = i + 1;
   });
 }
 
 function getLevels() {
-  const rows = document.querySelectorAll('.level-row');
+  const rows = document.querySelectorAll('#levels-container .level-row');
   const levels = [], allocs = [];
   rows.forEach(row => {
     const inputs = row.querySelectorAll('input');
@@ -688,6 +840,100 @@ function getLevels() {
     allocs.push(parseFloat(inputs[1].value));
   });
   return { levels, allocs };
+}
+
+// ── Mixed mode level management ──────────────────────────────────────────────
+function addBullLevel(dump = -10, alloc = 100) {
+  const container = document.getElementById('bull-levels-container');
+  const idx = container.children.length + 1;
+  const row = document.createElement('div');
+  row.className = 'level-row';
+  row.innerHTML = `
+    <div class="level-num">${idx}</div>
+    <input class="level-input" type="number" value="${dump}" max="-0.1" step="0.5" placeholder="e.g. -10">
+    <input class="level-input" type="number" value="${alloc}" min="1" step="10" placeholder="$">
+    <button class="remove-level" onclick="removeLevel(this)">&#8722;</button>
+  `;
+  container.appendChild(row);
+}
+
+function addBearLevel(pump = 10, alloc = 100) {
+  const container = document.getElementById('bear-levels-container');
+  const idx = container.children.length + 1;
+  const row = document.createElement('div');
+  row.className = 'level-row';
+  row.innerHTML = `
+    <div class="level-num">${idx}</div>
+    <input class="level-input" type="number" value="${pump}" min="0.1" step="0.5" placeholder="e.g. 10">
+    <input class="level-input" type="number" value="${alloc}" min="1" step="10" placeholder="$">
+    <button class="remove-level" onclick="removeLevel(this)">&#8722;</button>
+  `;
+  container.appendChild(row);
+}
+
+function getBullConfig() {
+  const rows = document.querySelectorAll('#bull-levels-container .level-row');
+  const levels = [], sizes = [];
+  rows.forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    levels.push(parseFloat(inputs[0].value));
+    sizes.push(parseFloat(inputs[1].value));
+  });
+  return {
+    dump_levels:         levels,
+    order_sizes:         sizes,
+    take_profit_percent: parseFloat(document.getElementById('bull-tp').value),
+    stop_loss_percent:   parseFloat(document.getElementById('bull-sl').value),
+  };
+}
+
+function getBearConfig() {
+  const rows = document.querySelectorAll('#bear-levels-container .level-row');
+  const levels = [], sizes = [];
+  rows.forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    levels.push(parseFloat(inputs[0].value));
+    sizes.push(parseFloat(inputs[1].value));
+  });
+  return {
+    pump_levels:         levels,
+    order_sizes:         sizes,
+    take_profit_percent: parseFloat(document.getElementById('bear-tp').value),
+    stop_loss_percent:   parseFloat(document.getElementById('bear-sl').value),
+  };
+}
+
+const MIXED_PRESETS = {
+  conservative: {
+    bull: { dump_levels: [-6, -10, -15],        order_sizes: [1500, 2000, 2750],        tp: 8,  sl: 0 },
+    bear: { pump_levels: [6,  10,  15],         order_sizes: [1500, 2000, 2750],        tp: 8,  sl: 0 },
+  },
+  aggressive: {
+    bull: { dump_levels: [-8, -13, -20, -28],   order_sizes: [1500, 2000, 2750, 5500],  tp: 12, sl: 0 },
+    bear: { pump_levels: [8,  13,  20,  28],    order_sizes: [1500, 2000, 2750, 5500],  tp: 12, sl: 0 },
+  },
+  asymmetric: {
+    bull: { dump_levels: [-6, -9, -13, -18],    order_sizes: [1500, 2000, 2750, 5500],  tp: 10, sl: 0 },
+    bear: { pump_levels: [5,  8,  12],          order_sizes: [1500, 2000, 2750],        tp: 6,  sl: 0 },
+  },
+};
+
+function applyMixedPreset(key) {
+  const p = MIXED_PRESETS[key];
+  if (!p) return;
+  document.querySelectorAll('.preset-pair-card').forEach(c => c.classList.remove('active'));
+  const card = document.querySelector(`.preset-pair-card[data-key="${key}"]`);
+  if (card) card.classList.add('active');
+
+  document.getElementById('bull-levels-container').innerHTML = '';
+  p.bull.dump_levels.forEach((lvl, i) => addBullLevel(lvl, p.bull.order_sizes[i] ?? 100));
+  document.getElementById('bull-tp').value = p.bull.tp;
+  document.getElementById('bull-sl').value = p.bull.sl;
+
+  document.getElementById('bear-levels-container').innerHTML = '';
+  p.bear.pump_levels.forEach((lvl, i) => addBearLevel(lvl, p.bear.order_sizes[i] ?? 100));
+  document.getElementById('bear-tp').value = p.bear.tp;
+  document.getElementById('bear-sl').value = p.bear.sl;
 }
 
 // ── Dataset loading ──────────────────────────────────────────────────────────
@@ -754,6 +1000,8 @@ function applyUpload(file) {
 
 // ── Run Backtest ─────────────────────────────────────────────────────────────
 async function runBacktest() {
+  if (currentMode === 'mixed') return runMixedBacktest();
+
   const btn     = document.getElementById('run-btn');
   const spinner = document.getElementById('run-spinner');
   const btnText = document.getElementById('run-btn-text');
@@ -822,7 +1070,79 @@ async function runBacktest() {
     showError('Request failed: ' + e.message);
   } finally {
     btn.disabled = false;
-    btnText.textContent = '▶ Run Backtest';
+    btnText.textContent = currentMode === 'short' ? '▶ Run Short Backtest' : '▶ Run Backtest';
+    spinner.style.display = 'none';
+  }
+}
+
+// ── Mixed Backtest ────────────────────────────────────────────────────────────
+async function runMixedBacktest() {
+  const btn     = document.getElementById('run-btn');
+  const spinner = document.getElementById('run-spinner');
+  const btnText = document.getElementById('run-btn-text');
+  const errEl   = document.getElementById('error-banner');
+  errEl.style.display = 'none';
+
+  if (!selectedDataset && !uploadedFile) {
+    showError('Please select a dataset or upload a CSV file.');
+    return;
+  }
+
+  const bull = getBullConfig();
+  const bear = getBearConfig();
+
+  if (!bull.dump_levels.length) { showError('Add at least one Bullish DCA level.'); return; }
+  if (!bear.pump_levels.length) { showError('Add at least one Bearish DCA level.'); return; }
+  if (bull.dump_levels.some(l => l >= 0)) { showError('Bull levels must be negative (e.g. -10).'); return; }
+  if (bear.pump_levels.some(l => l <= 0)) { showError('Bear levels must be positive (e.g. 10).'); return; }
+
+  const params = {
+    initial_budget: parseFloat(document.getElementById('cfg-budget').value),
+    date_from:      document.getElementById('cfg-start').value || null,
+    date_to:        document.getElementById('cfg-end').value   || null,
+    dataset:        selectedDataset,
+    bull_config:    bull,
+    bear_config:    bear,
+  };
+
+  btn.disabled = true;
+  btnText.textContent = 'Running…';
+  spinner.style.display = 'block';
+
+  try {
+    let res;
+    if (uploadedFile) {
+      const form = new FormData();
+      form.append('params', JSON.stringify(params));
+      form.append('csv_file', uploadedFile);
+      res = await fetch('/api/backtest/mixed', { method: 'POST', body: form });
+    } else {
+      res = await fetch('/api/backtest/mixed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+    }
+
+    const raw = await res.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (_) {
+      showError('Server error (non-JSON response). The server may be restarting or missing a dependency. Check the VPS logs.');
+      return;
+    }
+    if (!res.ok || !data.ok) {
+      showError(data.error || 'Mixed backtest failed.');
+      return;
+    }
+
+    renderMixedResults(data);
+  } catch (e) {
+    showError('Request failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = '▶ Run Mixed Backtest';
     spinner.style.display = 'none';
   }
 }
@@ -838,6 +1158,8 @@ function renderResults(data) {
   const { results, trades, equity_curve, data_range } = data;
   document.getElementById('results-section').style.display = 'block';
   document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('regime-timeline-panel').style.display = 'none';
+  document.getElementById('warnings-box').style.display = 'none';
 
   renderStats(results, data_range);
   renderChart(equity_curve, trades, results.initial_budget);
@@ -847,6 +1169,124 @@ function renderResults(data) {
   sortKey = 'num';
   sortAsc = true;
   renderTradesTable();
+}
+
+// ── Mixed Results ─────────────────────────────────────────────────────────────
+function renderMixedResults(data) {
+  document.getElementById('results-section').style.display = 'block';
+  document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Warnings
+  const warnEl = document.getElementById('warnings-box');
+  if (data.warnings && data.warnings.length) {
+    warnEl.innerHTML = '<strong>Note:</strong> ' + data.warnings.join(' &bull; ');
+    warnEl.style.display = 'block';
+  } else {
+    warnEl.style.display = 'none';
+  }
+
+  renderMixedStats(data);
+  renderChart(data.equity_curve, data.trades, data.initial_budget, data.regime_timeline);
+  renderRegimeTimeline(data.regime_timeline);
+  renderTradeChart(data.trades);
+
+  allTrades = data.trades;
+  sortKey   = 'num';
+  sortAsc   = true;
+  renderTradesTable();
+}
+
+function renderMixedStats(r) {
+  const roiColor = r.total_roi >= 0 ? 'green' : 'red';
+  const pnlColor = r.net_pnl  >= 0 ? 'green' : 'red';
+  const roiSign  = r.total_roi >= 0 ? '+' : '';
+  const pnlSign  = r.net_pnl  >= 0 ? '+' : '';
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card ${roiColor}">
+      <div class="stat-label">Total ROI</div>
+      <div class="stat-val ${roiColor}">${roiSign}${r.total_roi.toFixed(2)}%</div>
+      <div class="stat-sub">$${fmt(r.initial_budget)} &rarr; $${fmt(r.final_budget)}</div>
+    </div>
+    <div class="stat-card ${pnlColor}">
+      <div class="stat-label">Net P&amp;L</div>
+      <div class="stat-val ${pnlColor}">${pnlSign}$${fmt(r.net_pnl)}</div>
+      <div class="stat-sub">+$${fmt(r.total_profit)} / -$${fmt(r.total_loss)}</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Win Rate</div>
+      <div class="stat-val blue">${r.win_rate.toFixed(1)}%</div>
+      <div class="stat-sub">${r.winning_trades}W / ${r.losing_trades}L</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Bull / Bear Trades</div>
+      <div class="stat-val" style="font-size:19px"><span style="color:var(--blue)">${r.bull_trades}L</span>&thinsp;/&thinsp;<span style="color:var(--red)">${r.bear_trades}S</span></div>
+      <div class="stat-sub">${r.regime_switches} regime switch${r.regime_switches !== 1 ? 'es' : ''}</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Avg Trade Duration</div>
+      <div class="stat-val orange">${r.avg_trade_duration_days.toFixed(1)}d</div>
+      <div class="stat-sub">Avg P&amp;L $${fmt(r.avg_trade_pnl)}/trade</div>
+    </div>
+    <div class="stat-card ${r.largest_loss < 0 ? 'red' : 'green'}">
+      <div class="stat-label">Extremes</div>
+      <div class="stat-val" style="font-size:18px">&#9650;$${fmt(r.largest_profit)}</div>
+      <div class="stat-sub">&#9660;$${fmt(Math.abs(r.largest_loss))}</div>
+    </div>
+  `;
+}
+
+// ── Regime Timeline ───────────────────────────────────────────────────────────
+function renderRegimeTimeline(timeline) {
+  const panel = document.getElementById('regime-timeline-panel');
+  const el    = document.getElementById('regime-timeline');
+  if (!timeline || timeline.length < 2) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  const W = el.offsetWidth || 700;
+  const H = 36;
+
+  // Compress per-candle timeline into contiguous spans
+  const spans = [];
+  let cur = { regime: timeline[0].regime, start: timeline[0].date, end: timeline[0].date };
+  for (const pt of timeline.slice(1)) {
+    if (pt.regime === cur.regime) {
+      cur.end = pt.date;
+    } else {
+      spans.push({ ...cur });
+      cur = { regime: pt.regime, start: pt.date, end: pt.date };
+    }
+  }
+  spans.push(cur);
+
+  const allMs = timeline.map(p => +new Date(p.date));
+  const minD  = Math.min(...allMs);
+  const maxD  = Math.max(...allMs);
+  const range = maxD - minD || 1;
+  const sx    = d => ((d - minD) / range * W).toFixed(1);
+
+  const rects = spans.map(s => {
+    const x1 = sx(+new Date(s.start));
+    const x2 = sx(+new Date(s.end));
+    const w  = Math.max(1, +x2 - +x1).toFixed(1);
+    const cls = s.regime === 'BULLISH' ? 'regime-band-bull'
+              : s.regime === 'BEARISH' ? 'regime-band-bear'
+              : 'regime-band-neutral';
+    return `<rect class="${cls}" x="${x1}" y="2" width="${w}" height="${H - 14}"/>`;
+  }).join('');
+
+  let xLabels = '';
+  for (let i = 0; i <= 4; i++) {
+    const d = minD + range * i / 4;
+    const x = +sx(d);
+    const label = new Date(d).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    const anchor = i === 0 ? 'start' : i === 4 ? 'end' : 'middle';
+    xLabels += `<text x="${x.toFixed(1)}" y="${H - 1}" text-anchor="${anchor}" font-size="10" fill="#8e8e93">${label}</text>`;
+  }
+
+  el.innerHTML = `<svg width="${W}" height="${H}" style="display:block">
+    <rect x="0" y="2" width="${W}" height="${H - 14}" rx="4" fill="rgba(0,0,0,0.03)"/>
+    ${rects}${xLabels}
+  </svg>`;
 }
 
 function renderStats(r, dr) {
@@ -927,7 +1367,7 @@ function tradeTooltipHTML(t) {
 }
 
 // ── Equity SVG Chart ────────────────────────────────────────────────────────
-function renderChart(equityCurve, trades, initialBudget) {
+function renderChart(equityCurve, trades, initialBudget, regimeTl) {
   const container = document.getElementById('equity-chart');
   const W = container.offsetWidth || 700;
   const H = 220;
@@ -980,6 +1420,27 @@ function renderChart(equityCurve, trades, initialBudget) {
   const beLine  = `<line x1="${PAD.left}" y1="${beY}" x2="${W-PAD.right}" y2="${beY}" stroke="#8e8e93" stroke-width="1" stroke-dasharray="4,3" opacity=".55"/>`;
   const beLabel = `<text x="${W-PAD.right+4}" y="${beY}" dominant-baseline="middle" font-size="10" fill="#8e8e93">start</text>`;
 
+  // Regime background bands (mixed mode)
+  let regimeBands = '';
+  if (regimeTl && regimeTl.length >= 2) {
+    const spans = [];
+    let cur = { regime: regimeTl[0].regime, start: regimeTl[0].date, end: regimeTl[0].date };
+    for (const pt of regimeTl.slice(1)) {
+      if (pt.regime === cur.regime) { cur.end = pt.date; }
+      else { spans.push({...cur}); cur = { regime: pt.regime, start: pt.date, end: pt.date }; }
+    }
+    spans.push(cur);
+    spans.forEach(s => {
+      const x1 = sx(+new Date(s.start)).toFixed(1);
+      const x2 = sx(+new Date(s.end)).toFixed(1);
+      const w  = Math.max(1, +x2 - +x1).toFixed(1);
+      const fill = s.regime === 'BULLISH' ? 'rgba(52,199,89,0.08)'
+                 : s.regime === 'BEARISH' ? 'rgba(255,59,48,0.07)'
+                 : 'rgba(142,142,147,0.05)';
+      regimeBands += `<rect x="${x1}" y="${PAD.top}" width="${w}" height="${ph}" fill="${fill}"/>`;
+    });
+  }
+
   let markers = '';
   trades.forEach((t, i) => {
     const pt = equityCurve[i + 1];
@@ -1002,6 +1463,7 @@ function renderChart(equityCurve, trades, initialBudget) {
           <stop offset="100%" stop-color="${lineColor}" stop-opacity="0.01"/>
         </linearGradient>
       </defs>
+      ${regimeBands}
       ${yGridHtml}${xLabels}${beLine}${beLabel}
       <path d="${areaPath}" fill="url(#eq-fill)"/>
       <path d="${linePath}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round"/>
@@ -1171,7 +1633,8 @@ function applyPreset(idx) {
 }
 
 function renderTradesTable() {
-  const sorted = [...allTrades].sort((a, b) => {
+  const isMixed = currentMode === 'mixed';
+  const sorted  = [...allTrades].sort((a, b) => {
     let av = a[sortKey], bv = b[sortKey];
     if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
     return sortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
@@ -1179,9 +1642,27 @@ function renderTradesTable() {
 
   document.getElementById('trade-count-badge').textContent = `(${allTrades.length} trades)`;
 
+  // Rebuild table header to include/exclude mixed columns
+  const mixedCols = isMixed
+    ? `<th>Type</th><th>Regime</th>`
+    : '';
+  const colspan   = isMixed ? 11 : 9;
+  document.querySelector('thead tr').innerHTML = `
+    <th onclick="sortTable('num')">#<span class="sort-icon">↕</span></th>
+    <th onclick="sortTable('start')">Date<span class="sort-icon">↕</span></th>
+    <th onclick="sortTable('duration_days')">Duration<span class="sort-icon">↕</span></th>
+    ${mixedCols}
+    <th>Levels</th>
+    <th onclick="sortTable('invested')">Invested<span class="sort-icon">↕</span></th>
+    <th onclick="sortTable('exit_price')">Exit<span class="sort-icon">↕</span></th>
+    <th onclick="sortTable('profit_loss')">P&amp;L $<span class="sort-icon">↕</span></th>
+    <th onclick="sortTable('profit_percent')">P&amp;L %<span class="sort-icon">↕</span></th>
+    <th>Status</th>
+  `;
+
   if (!sorted.length) {
     document.getElementById('trades-body').innerHTML =
-      '<tr><td colspan="9" class="no-trades">No trades completed in this period.</td></tr>';
+      `<tr><td colspan="${colspan}" class="no-trades">No trades completed in this period.</td></tr>`;
     return;
   }
 
@@ -1190,17 +1671,37 @@ function renderTradesTable() {
     const pnlClass = t.profit_loss >= 0 ? 'pos' : 'neg';
     const pnlSign  = t.profit_loss >= 0 ? '+' : '';
     const pctSign  = t.profit_percent >= 0 ? '+' : '';
-    const levels   = t.levels_filled.join(', ');
+    const invested = t.invested ?? t.total_invested;
+    const levels   = Array.isArray(t.levels_filled)
+      ? t.levels_filled.join(', ')
+      : t.levels_filled;
     const startFmt = new Date(t.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
     const badge    = t.stop_loss
       ? '<span class="badge badge-orange">SL</span>'
       : (t.profit_loss >= 0 ? '<span class="badge badge-green">TP</span>' : '<span class="badge badge-red">LOSS</span>');
+
+    const typeBadge = t.type === 'LONG'
+      ? '<span class="badge badge-long">LONG</span>'
+      : t.type === 'SHORT'
+        ? '<span class="badge badge-short">SHORT</span>'
+        : '';
+    const regimeBadge = t.regime === 'BULLISH'
+      ? '<span class="badge badge-green">BULL</span>'
+      : t.regime === 'BEARISH'
+        ? '<span class="badge badge-red">BEAR</span>'
+        : (t.regime ? `<span class="badge">${t.regime}</span>` : '');
+
+    const mixedCells = isMixed
+      ? `<td>${typeBadge}</td><td>${regimeBadge}</td>`
+      : '';
+
     return `<tr class="${rowClass}">
       <td class="num">${t.num}</td>
       <td>${startFmt}</td>
       <td>${t.duration_days.toFixed(1)}d</td>
-      <td style="color:var(--muted)">[${levels}]</td>
-      <td>$${fmt(t.total_invested)}</td>
+      ${mixedCells}
+      <td style="color:var(--muted)">${Array.isArray(t.levels_filled) ? '[' + levels + ']' : levels}</td>
+      <td>$${fmt(invested)}</td>
       <td>$${fmt(t.exit_price)}</td>
       <td class="${pnlClass}">${pnlSign}$${fmt(t.profit_loss)}</td>
       <td class="${pnlClass}">${pctSign}${t.profit_percent.toFixed(2)}%</td>
