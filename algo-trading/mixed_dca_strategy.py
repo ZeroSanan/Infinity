@@ -45,17 +45,67 @@ def _ema(prices: list, period: int) -> list:
 
 def _hh_series(highs: list, lookback: int = 336) -> list:
     """
-    Pre-compute higher-high signal for every index.
-    True  = second half of the lookback window has a higher max than the first.
-    None  = insufficient history (< 10 candles in window).
+    Pre-compute higher-high signal in O(n) using a sliding window maximum.
+
+    Key insight: the lookback window is split into two equal halves.
+    recent_max[i] = max(highs[i-half+1 : i+1])   (last `half` candles)
+    older_max[i]  = max(highs[i-lookback+1 : i-half+1])
+                  = recent_max[i - half]           (same window, shifted back)
+
+    So we only need one O(n) rolling-max pass over a window of size `half`.
+    True  = recent half has a higher max than the older half.
+    None  = insufficient history.
     """
-    n      = len(highs)
-    result = [None] * n
-    for i in range(9, n):
-        window = highs[max(0, i - lookback + 1): i + 1]
-        mid    = len(window) // 2
-        if mid >= 1:
-            result[i] = max(window[mid:]) > max(window[:mid])
+    n    = len(highs)
+    half = max(1, lookback // 2)
+    result  = [None] * n
+    roll_mx = [None] * n
+
+    # Single O(n) monotone-deque pass for rolling max with window = half
+    dq = deque()   # stores indices; highs[dq[0]] is the current window max
+    for i in range(n):
+        while dq and dq[0] < i - half + 1:
+            dq.popleft()
+        while dq and highs[dq[-1]] <= highs[i]:
+            dq.pop()
+        dq.append(i)
+        if i >= half - 1:
+            roll_mx[i] = highs[dq[0]]
+
+    # hh[i] = recent-half-max > older-half-max
+    for i in range(lookback - 1, n):
+        rm_r = roll_mx[i]
+        rm_o = roll_mx[i - half]
+        if rm_r is not None and rm_o is not None:
+            result[i] = rm_r > rm_o
+
+    return result
+
+
+def _vol_signal_series(vols: list) -> list:
+    """
+    Pre-compute the volume-trend signal (+1 / 0 / -1) for each candle in O(n).
+    Uses a prefix-sum array to avoid list-slicing inside the main loop.
+    Returns a list of ints (0 if volume data unavailable or insufficient).
+    """
+    n = len(vols)
+    result = [0] * n
+    if n < 14:
+        return result
+
+    # O(n) prefix sums — avoids 7-element slice + sum() on every candle
+    prefix = [0.0] * (n + 1)
+    for i, v in enumerate(vols):
+        prefix[i + 1] = prefix[i] + v
+
+    for i in range(13, n):
+        v7  = (prefix[i + 1]     - prefix[i - 6])  / 7   # recent 7 candles
+        v7p = (prefix[i - 6]     - prefix[i - 13]) / 7   # prior  7 candles
+        if v7p > 0:
+            ratio = v7 / v7p
+            if   ratio > 1.1: result[i] =  1
+            elif ratio < 0.9: result[i] = -1
+
     return result
 
 
@@ -200,10 +250,11 @@ class MixedDCABacktest:
         vols  = df["volume"].tolist() if has_volume else []
         dates = df["datetime"].tolist()
 
-        # Pre-compute indicator series
+        # Pre-compute all indicator series (O(n) each)
         ema50_s  = _ema(prices, 50)
         ema200_s = _ema(prices, 200)
         hh_s     = _hh_series(highs, lookback=336)
+        vol_sig  = _vol_signal_series(vols) if has_volume else [0] * n
 
         if ema200_s[-1] is None:
             warnings_out.append(
@@ -344,12 +395,7 @@ class MixedDCABacktest:
             if hh is not None:
                 score += 1 if hh else -1
 
-            if has_volume and i >= 13:
-                v7  = sum(vols[i - 6 : i + 1]) / 7
-                v7p = sum(vols[i - 13: i - 6]) / 7
-                if v7p > 0:
-                    if   v7 > v7p * 1.1: score += 1
-                    elif v7 < v7p * 0.9: score -= 1
+            score += vol_sig[i]   # pre-computed; 0 if volume unavailable
 
             raw = ("BULLISH" if score >= 2 else
                    "BEARISH" if score <= -2 else "NEUTRAL")
