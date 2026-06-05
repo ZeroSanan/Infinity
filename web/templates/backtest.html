@@ -418,6 +418,83 @@
   }
   .warnings-box strong { color: var(--orange); }
 
+  /* ── ENTRY INDICATOR TOGGLE ── */
+  .indicator-toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 0 4px; margin-bottom: 4px;
+  }
+  .indicator-toggle-label {
+    font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .indicator-toggle-sub {
+    font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4;
+  }
+  .toggle-switch {
+    position: relative; width: 44px; height: 26px; flex-shrink: 0;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-track {
+    position: absolute; inset: 0; border-radius: 13px;
+    background: var(--border2); transition: background .2s; cursor: pointer;
+  }
+  .toggle-track::after {
+    content: ''; position: absolute;
+    width: 20px; height: 20px; left: 3px; top: 3px;
+    border-radius: 50%; background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    transition: transform .2s;
+  }
+  .toggle-switch input:checked + .toggle-track { background: var(--blue); }
+  .toggle-switch input:checked + .toggle-track::after { transform: translateX(18px); }
+  .indicator-settings { margin-top: 10px; }
+  /* entry type badges */
+  .badge-indicator { background: rgba(255,214,0,.15); color: #b8860b; }
+  .badge-regime    { background: var(--blue-bg); color: var(--blue); }
+  /* comparison */
+  .run-btn-row {
+    display: flex; gap: 10px; margin-bottom: 16px;
+  }
+  .run-btn-row .run-btn { margin-bottom: 0; flex: 1; }
+  .compare-btn {
+    flex: 0 0 auto; padding: 14px 18px;
+    border-radius: var(--radius); border: 1.5px solid var(--blue);
+    background: var(--surface); color: var(--blue);
+    font-size: 14px; font-weight: 600; font-family: inherit;
+    cursor: pointer; transition: opacity .15s;
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .compare-btn:hover { opacity: .8; }
+  .compare-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .comparison-panel { display: none; }
+  .comparison-table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+  }
+  .comparison-table th {
+    padding: 10px 14px; text-align: left;
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    letter-spacing: .4px; text-transform: uppercase;
+    border-bottom: 1.5px solid var(--border2);
+    background: var(--surface2);
+  }
+  .comparison-table td {
+    padding: 11px 14px; border-bottom: 1px solid var(--border);
+    color: var(--text2);
+  }
+  .comparison-table td:first-child { color: var(--text); font-weight: 500; }
+  .comparison-table td.better { color: var(--green); font-weight: 700; }
+  .comparison-table td.worse  { color: var(--red); }
+  .comparison-col-header { font-weight: 700; color: var(--text) !important; font-size: 12px !important; }
+  .indicator-badge-tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .indicator-badge-tag.on  { background: var(--blue-bg); color: var(--blue); }
+  .indicator-badge-tag.off { background: var(--surface2); color: var(--muted); border: 1px solid var(--border2); }
+  /* ind row highlight */
+  tbody tr.ind-row td:first-child { border-left: 3px solid #e6c619; }
+
   /* ── TOOLTIP ── */
   #chart-tooltip {
     position: fixed; pointer-events: none; z-index: 9999;
@@ -559,6 +636,33 @@
 
             <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
 
+            <!-- Entry Indicator toggle -->
+            <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
+            <div class="indicator-toggle-row">
+              <div>
+                <div class="indicator-toggle-label">&#9733; Entry Indicator</div>
+                <div class="indicator-toggle-sub">Wait for EMA retest + RSI turn<br>+ volume before entering</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="use-entry-indicator" checked onchange="onIndicatorToggle()">
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+            <div class="indicator-settings" id="indicator-settings">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>RSI Overbought (flip to SELL)</label>
+                  <input type="number" id="rsi-overbought" value="70" min="50" max="95" step="1">
+                </div>
+                <div class="form-group">
+                  <label>RSI Oversold (flip to BUY)</label>
+                  <input type="number" id="rsi-oversold" value="30" min="5" max="50" step="1">
+                </div>
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
+
             <!-- Preset pairs -->
             <div class="section-title">Preset Pairs</div>
             <div id="mixed-presets-container">
@@ -622,14 +726,30 @@
         </div>
       </div>
 
-      <!-- Run Button -->
-      <button class="run-btn" id="run-btn" onclick="runBacktest()">
-        <span id="run-btn-text">&#9654;&ensp;Run Backtest</span>
-        <div class="spinner" id="run-spinner" style="display:none"></div>
-      </button>
+      <!-- Run / Compare Buttons -->
+      <div class="run-btn-row" id="run-btn-row">
+        <button class="run-btn" id="run-btn" onclick="runBacktest()">
+          <span id="run-btn-text">&#9654;&ensp;Run Backtest</span>
+          <div class="spinner" id="run-spinner" style="display:none"></div>
+        </button>
+        <button class="compare-btn" id="compare-btn" style="display:none" onclick="runMixedComparison()">
+          <div class="spinner" id="compare-spinner" style="display:none"></div>
+          <span id="compare-btn-text">&#8644;&ensp;Compare</span>
+        </button>
+      </div>
 
       <!-- Error Banner -->
       <div class="error-banner" id="error-banner" style="display:none"></div>
+
+      <!-- Comparison Panel (shown only in compare mode) -->
+      <div class="panel comparison-panel" id="comparison-panel">
+        <div class="panel-head">Side-by-Side Comparison</div>
+        <div class="panel-body" style="padding:0">
+          <div style="overflow-x:auto">
+            <table class="comparison-table" id="comparison-table"></table>
+          </div>
+        </div>
+      </div>
 
       <!-- Results -->
       <div id="results-section" style="display:none">
@@ -648,6 +768,7 @@
               <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Loss exit</div>
               <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div> Stop-Loss exit</div>
               <div class="legend-item"><div class="legend-line" style="background:var(--muted);height:1px;border-top:1.5px dashed var(--muted)"></div> Break-even</div>
+              <div class="legend-item" id="legend-signal" style="display:none"><span style="color:var(--green);font-size:13px">&#9733;</span> Entry signal (BUY) &nbsp;<span style="color:var(--red);font-size:13px">&#9733;</span> Entry signal (SELL)</div>
             </div>
           </div>
         </div>
@@ -790,10 +911,12 @@ function setMode(mode) {
     }
   }
 
-  document.getElementById('results-section').style.display = 'none';
-  document.getElementById('error-banner').style.display    = 'none';
+  document.getElementById('results-section').style.display   = 'none';
+  document.getElementById('error-banner').style.display      = 'none';
   document.getElementById('regime-timeline-panel').style.display = 'none';
-  document.getElementById('warnings-box').style.display = 'none';
+  document.getElementById('warnings-box').style.display      = 'none';
+  document.getElementById('comparison-panel').style.display  = 'none';
+  document.getElementById('compare-btn').style.display       = isMixed ? 'flex' : 'none';
 }
 
 // ── DCA Level rows ──────────────────────────────────────────────────────────
@@ -934,6 +1057,11 @@ function applyMixedPreset(key) {
   p.bear.pump_levels.forEach((lvl, i) => addBearLevel(lvl, p.bear.order_sizes[i] ?? 100));
   document.getElementById('bear-tp').value = p.bear.tp;
   document.getElementById('bear-sl').value = p.bear.sl;
+}
+
+function onIndicatorToggle() {
+  const on = document.getElementById('use-entry-indicator').checked;
+  document.getElementById('indicator-settings').style.display = on ? 'block' : 'none';
 }
 
 // ── Dataset loading ──────────────────────────────────────────────────────────
@@ -1096,13 +1224,17 @@ async function runMixedBacktest() {
   if (bull.dump_levels.some(l => l >= 0)) { showError('Bull levels must be negative (e.g. -10).'); return; }
   if (bear.pump_levels.some(l => l <= 0)) { showError('Bear levels must be positive (e.g. 10).'); return; }
 
+  const useIndicator = document.getElementById('use-entry-indicator').checked;
   const params = {
-    initial_budget: parseFloat(document.getElementById('cfg-budget').value),
-    date_from:      document.getElementById('cfg-start').value || null,
-    date_to:        document.getElementById('cfg-end').value   || null,
-    dataset:        selectedDataset,
-    bull_config:    bull,
-    bear_config:    bear,
+    initial_budget:      parseFloat(document.getElementById('cfg-budget').value),
+    date_from:           document.getElementById('cfg-start').value || null,
+    date_to:             document.getElementById('cfg-end').value   || null,
+    dataset:             selectedDataset,
+    bull_config:         bull,
+    bear_config:         bear,
+    use_entry_indicator: useIndicator,
+    rsi_overbought:      parseFloat(document.getElementById('rsi-overbought').value) || 70,
+    rsi_oversold:        parseFloat(document.getElementById('rsi-oversold').value)   || 30,
   };
 
   btn.disabled = true;
@@ -1147,6 +1279,132 @@ async function runMixedBacktest() {
   }
 }
 
+// ── Run Comparison (with indicator ON vs OFF) ─────────────────────────────────
+async function runMixedComparison() {
+  const bull = getBullConfig();
+  const bear = getBearConfig();
+  if (!bull.dump_levels.length) { showError('Add at least one Bullish DCA level.'); return; }
+  if (!bear.pump_levels.length) { showError('Add at least one Bearish DCA level.'); return; }
+  if (!selectedDataset && !uploadedFile) { showError('Please select a dataset or upload a CSV file.'); return; }
+
+  const errEl = document.getElementById('error-banner');
+  errEl.style.display = 'none';
+
+  const btn  = document.getElementById('compare-btn');
+  const spin = document.getElementById('compare-spinner');
+  const txt  = document.getElementById('compare-btn-text');
+  btn.disabled = true; spin.style.display = 'block'; txt.textContent = 'Running…';
+
+  const baseParams = {
+    initial_budget: parseFloat(document.getElementById('cfg-budget').value),
+    date_from:      document.getElementById('cfg-start').value || null,
+    date_to:        document.getElementById('cfg-end').value   || null,
+    dataset:        selectedDataset,
+    bull_config:    bull,
+    bear_config:    bear,
+    rsi_overbought: parseFloat(document.getElementById('rsi-overbought').value) || 70,
+    rsi_oversold:   parseFloat(document.getElementById('rsi-oversold').value)   || 30,
+  };
+
+  async function fetchOne(useIndicator) {
+    const params = { ...baseParams, use_entry_indicator: useIndicator };
+    if (uploadedFile) {
+      const form = new FormData();
+      form.append('params', JSON.stringify(params));
+      form.append('csv_file', uploadedFile);
+      return fetch('/api/backtest/mixed', { method: 'POST', body: form });
+    }
+    return fetch('/api/backtest/mixed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+  }
+
+  try {
+    txt.textContent = 'Run 1/2…';
+    const r1raw = await (await fetchOne(true)).text();
+    txt.textContent = 'Run 2/2…';
+    const r2raw = await (await fetchOne(false)).text();
+
+    let r1, r2;
+    try { r1 = JSON.parse(r1raw); } catch (_) { showError('Server error on indicator run.'); return; }
+    try { r2 = JSON.parse(r2raw); } catch (_) { showError('Server error on regime-only run.'); return; }
+    if (!r1.ok) { showError(r1.error || 'Indicator run failed.'); return; }
+    if (!r2.ok) { showError(r2.error || 'Regime-only run failed.'); return; }
+
+    renderMixedComparison(r1, r2);
+  } catch (e) {
+    showError('Comparison failed: ' + e.message);
+  } finally {
+    btn.disabled = false; spin.style.display = 'none'; txt.textContent = '⇄ Compare';
+  }
+}
+
+function renderMixedComparison(withInd, withoutInd) {
+  // Show comparison panel, hide main results
+  document.getElementById('comparison-panel').style.display = 'block';
+  document.getElementById('results-section').style.display  = 'none';
+  document.getElementById('comparison-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const metrics = [
+    { label: 'Total ROI',         k: 'total_roi',               fmt: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%',  higher: true },
+    { label: 'Net P&L',           k: 'net_pnl',                 fmt: v => (v >= 0 ? '+' : '-') + '$' + fmt(v),       higher: true },
+    { label: 'Win Rate',          k: 'win_rate',                 fmt: v => v.toFixed(1) + '%',                         higher: true },
+    { label: 'Total Trades',      k: 'total_trades',             fmt: v => v,                                          higher: false },
+    { label: 'Bull Trades',       k: 'bull_trades',              fmt: v => v,                                          higher: false },
+    { label: 'Bear Trades',       k: 'bear_trades',              fmt: v => v,                                          higher: false },
+    { label: 'Avg P&L / Trade',   k: 'avg_trade_pnl',           fmt: v => (v >= 0 ? '+' : '-') + '$' + fmt(v),       higher: true },
+    { label: 'Avg Duration',      k: 'avg_trade_duration_days',  fmt: v => v.toFixed(1) + 'd',                         higher: false },
+    { label: 'Largest Profit',    k: 'largest_profit',           fmt: v => '+$' + fmt(v),                             higher: true },
+    { label: 'Largest Loss',      k: 'largest_loss',             fmt: v => '-$' + fmt(Math.abs(v)),                   higher: false },
+    { label: 'Regime Switches',   k: 'regime_switches',          fmt: v => v,                                          higher: false },
+  ];
+
+  // Indicator-specific rows
+  const indMetrics = [];
+  if (withInd.entry_indicator_stats) {
+    const s = withInd.entry_indicator_stats;
+    indMetrics.push({ label: 'Indicator Trades',   val: s.trades_with_indicator });
+    indMetrics.push({ label: 'Skipped (waiting)',  val: s.trades_skipped_waiting });
+    if (s.indicator_win_rate != null)
+      indMetrics.push({ label: 'Indicator Win Rate', val: s.indicator_win_rate.toFixed(1) + '%' });
+    if (s.indicator_avg_pnl != null)
+      indMetrics.push({ label: 'Indicator Avg P&L', val: (s.indicator_avg_pnl >= 0 ? '+' : '-') + '$' + fmt(s.indicator_avg_pnl) });
+  }
+
+  const rows = metrics.map(m => {
+    const v1 = withInd[m.k];
+    const v2 = withoutInd[m.k];
+    const better1 = m.higher ? v1 > v2 : v1 < v2;
+    const better2 = m.higher ? v2 > v1 : v2 < v1;
+    return `<tr>
+      <td>${m.label}</td>
+      <td class="${better1 ? 'better' : (better2 ? 'worse' : '')}">${m.fmt(v1)}</td>
+      <td class="${better2 ? 'better' : (better1 ? 'worse' : '')}">${m.fmt(v2)}</td>
+    </tr>`;
+  }).join('');
+
+  const indRows = indMetrics.map(m =>
+    `<tr><td style="color:var(--muted)">&nbsp;&nbsp;${m.label}</td><td>${m.val}</td><td>—</td></tr>`
+  ).join('');
+
+  document.getElementById('comparison-table').innerHTML = `
+    <thead><tr>
+      <th>Metric</th>
+      <th class="comparison-col-header">&#9733; With Indicator</th>
+      <th class="comparison-col-header">&#9889; Regime Only</th>
+    </tr></thead>
+    <tbody>
+      ${rows}
+      ${indRows ? `<tr><td colspan="3" style="padding:8px 14px;font-size:11px;font-weight:600;color:var(--blue);letter-spacing:.4px;text-transform:uppercase;background:var(--blue-bg)">Entry Indicator Detail</td></tr>${indRows}` : ''}
+    </tbody>`;
+
+  // Also render the with-indicator equity curve below comparison
+  renderMixedResults(withInd);
+  document.getElementById('comparison-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function showError(msg) {
   const el = document.getElementById('error-banner');
   el.textContent = msg;
@@ -1174,6 +1432,7 @@ function renderResults(data) {
 // ── Mixed Results ─────────────────────────────────────────────────────────────
 function renderMixedResults(data) {
   document.getElementById('results-section').style.display = 'block';
+  document.getElementById('comparison-panel').style.display = 'none';
   document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // Warnings
@@ -1185,8 +1444,11 @@ function renderMixedResults(data) {
     warnEl.style.display = 'none';
   }
 
+  const legSig = document.getElementById('legend-signal');
+  if (legSig) legSig.style.display = (data.entry_signals && data.entry_signals.length) ? 'flex' : 'none';
+
   renderMixedStats(data);
-  renderChart(data.equity_curve, data.trades, data.initial_budget, data.regime_timeline);
+  renderChart(data.equity_curve, data.trades, data.initial_budget, data.regime_timeline, data.entry_signals);
   renderRegimeTimeline(data.regime_timeline);
   renderTradeChart(data.trades);
 
@@ -1201,7 +1463,30 @@ function renderMixedStats(r) {
   const pnlColor = r.net_pnl  >= 0 ? 'green' : 'red';
   const roiSign  = r.total_roi >= 0 ? '+' : '';
   const pnlSign  = r.net_pnl  >= 0 ? '+' : '';
+
+  const indBadge = r.entry_indicator_used
+    ? `<div class="indicator-badge-tag on">&#9733; INDICATOR ON</div>`
+    : `<div class="indicator-badge-tag off">&#9889; REGIME ONLY</div>`;
+
+  let indCard = '';
+  if (r.entry_indicator_used && r.entry_indicator_stats) {
+    const s = r.entry_indicator_stats;
+    const wr = s.indicator_win_rate != null ? s.indicator_win_rate.toFixed(1) + '%' : '—';
+    const ap = s.indicator_avg_pnl  != null ? '$' + fmt(s.indicator_avg_pnl)        : '—';
+    indCard = `
+    <div class="stat-card blue" style="grid-column:1/-1">
+      <div class="stat-label">&#9733; Entry Indicator Stats</div>
+      <div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap;margin-top:4px">
+        <span><span class="stat-val blue" style="font-size:17px">${s.trades_with_indicator}</span><span style="font-size:12px;color:var(--muted);margin-left:4px">indicator trades</span></span>
+        <span><span class="stat-val" style="font-size:17px;color:var(--red)">${s.trades_skipped_waiting}</span><span style="font-size:12px;color:var(--muted);margin-left:4px">skipped (regime changed before signal)</span></span>
+        <span><span class="stat-val blue" style="font-size:17px">${wr}</span><span style="font-size:12px;color:var(--muted);margin-left:4px">indicator win rate</span></span>
+        <span><span class="stat-val" style="font-size:17px;color:var(--green)">${ap}</span><span style="font-size:12px;color:var(--muted);margin-left:4px">avg P&amp;L/trade</span></span>
+      </div>
+    </div>`;
+  }
+
   document.getElementById('stats-grid').innerHTML = `
+    ${indBadge}
     <div class="stat-card ${roiColor}">
       <div class="stat-label">Total ROI</div>
       <div class="stat-val ${roiColor}">${roiSign}${r.total_roi.toFixed(2)}%</div>
@@ -1232,6 +1517,7 @@ function renderMixedStats(r) {
       <div class="stat-val" style="font-size:18px">&#9650;$${fmt(r.largest_profit)}</div>
       <div class="stat-sub">&#9660;$${fmt(Math.abs(r.largest_loss))}</div>
     </div>
+    ${indCard}
   `;
 }
 
@@ -1367,7 +1653,7 @@ function tradeTooltipHTML(t) {
 }
 
 // ── Equity SVG Chart ────────────────────────────────────────────────────────
-function renderChart(equityCurve, trades, initialBudget, regimeTl) {
+function renderChart(equityCurve, trades, initialBudget, regimeTl, entrySignals) {
   const container = document.getElementById('equity-chart');
   const W = container.offsetWidth || 700;
   const H = 220;
@@ -1455,6 +1741,29 @@ function renderChart(equityCurve, trades, initialBudget, regimeTl) {
       onmouseleave="hideTip()"/>`;
   });
 
+  // Entry signal star markers (⭐) — yellow, below the equity line
+  let signalMarkers = '';
+  if (entrySignals && entrySignals.length) {
+    const eqDates  = equityCurve.map(p => +new Date(p.date));
+    const eqValues = equityCurve.map(p => p.equity);
+    entrySignals.forEach(ev => {
+      const evMs = +new Date(ev.date);
+      let closest = 0, minDiff = Infinity;
+      for (let k = 0; k < eqDates.length; k++) {
+        const diff = Math.abs(eqDates[k] - evMs);
+        if (diff < minDiff) { minDiff = diff; closest = k; }
+      }
+      const cx = sx(eqDates[closest]).toFixed(1);
+      const cy = (sy(eqValues[closest]) + 12).toFixed(1);
+      const col = ev.type === 'BUY' ? '#34c759' : '#ff3b30';
+      const tipTxt = `Entry signal: ${ev.type} on ${ev.date}`;
+      signalMarkers += `<text x="${cx}" y="${cy}" text-anchor="middle" font-size="12"
+        fill="${col}" style="cursor:pointer"
+        onmouseenter="showTip(event,'${tipTxt}')"
+        onmousemove="moveTip(event)" onmouseleave="hideTip()">&#9733;</text>`;
+    });
+  }
+
   container.innerHTML = `
     <svg width="${W}" height="${H}" style="display:block" onmouseleave="hideTip()">
       <defs>
@@ -1467,7 +1776,7 @@ function renderChart(equityCurve, trades, initialBudget, regimeTl) {
       ${yGridHtml}${xLabels}${beLine}${beLabel}
       <path d="${areaPath}" fill="url(#eq-fill)"/>
       <path d="${linePath}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round"/>
-      ${markers}
+      ${signalMarkers}${markers}
     </svg>`;
 }
 
@@ -1644,9 +1953,9 @@ function renderTradesTable() {
 
   // Rebuild table header to include/exclude mixed columns
   const mixedCols = isMixed
-    ? `<th>Type</th><th>Regime</th>`
+    ? `<th>Type</th><th>Regime</th><th>Entry</th>`
     : '';
-  const colspan   = isMixed ? 11 : 9;
+  const colspan   = isMixed ? 12 : 9;
   document.querySelector('thead tr').innerHTML = `
     <th onclick="sortTable('num')">#<span class="sort-icon">↕</span></th>
     <th onclick="sortTable('start')">Date<span class="sort-icon">↕</span></th>
@@ -1691,11 +2000,15 @@ function renderTradesTable() {
         ? '<span class="badge badge-red">BEAR</span>'
         : (t.regime ? `<span class="badge">${t.regime}</span>` : '');
 
+    const entryBadge = t.entry_triggered_by === 'ENTRY_INDICATOR'
+      ? '<span class="badge badge-indicator">&#9733; INDICATOR</span>'
+      : '<span class="badge badge-regime">REGIME</span>';
     const mixedCells = isMixed
-      ? `<td>${typeBadge}</td><td>${regimeBadge}</td>`
+      ? `<td>${typeBadge}</td><td>${regimeBadge}</td><td>${entryBadge}</td>`
       : '';
+    const indRowClass = (isMixed && t.entry_triggered_by === 'ENTRY_INDICATOR') ? ' ind-row' : '';
 
-    return `<tr class="${rowClass}">
+    return `<tr class="${rowClass}${indRowClass}">
       <td class="num">${t.num}</td>
       <td>${startFmt}</td>
       <td>${t.duration_days.toFixed(1)}d</td>
