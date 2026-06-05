@@ -738,13 +738,26 @@ def load_and_prepare_data(csv_file: str) -> pd.DataFrame:
     # Standardize column names
     df.columns = df.columns.str.strip().str.lower()
     
-    # Set datetime
-    if 'open time' in df.columns:
-        df['datetime'] = pd.to_datetime(df['open time'])
-    elif 'timestamp' in df.columns:
-        df['datetime'] = pd.to_datetime(df['timestamp'])
-    else:
-        raise ValueError("No timestamp column found")
+    # Set datetime — accept common column name variants
+    _ts_candidates = [
+        'open time', 'open_time', 'timestamp', 'time',
+        'date', 'datetime', 'Date', 'Datetime', 'close time', 'close_time',
+    ]
+    ts_col = next((c for c in _ts_candidates if c in df.columns), None)
+    if ts_col is None:
+        # Last resort: use the first column that can be parsed as datetime
+        for c in df.columns:
+            try:
+                pd.to_datetime(df[c].iloc[:5])
+                ts_col = c
+                break
+            except Exception:
+                pass
+    if ts_col is None:
+        raise ValueError(
+            f"No timestamp column found. Columns present: {list(df.columns)}"
+        )
+    df['datetime'] = pd.to_datetime(df[ts_col])
     
     # Ensure datetime is timezone-naive (no conversion)
     if df['datetime'].dt.tz is not None:
