@@ -834,6 +834,62 @@ def api_backtest_run():
             os.unlink(tmp_path)
 
 
+# ── Routes — Settings (API keys stored in .env) ───────────────────────────────
+
+ENV_PATH = os.path.join(ROOT, ".env")
+
+
+def _read_env_file() -> dict:
+    """Parse .env into a key→value dict, preserving order."""
+    pairs = {}
+    if not os.path.exists(ENV_PATH):
+        return pairs
+    with open(ENV_PATH) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, _, v = line.partition("=")
+                pairs[k.strip()] = v.strip()
+    return pairs
+
+
+def _write_env_file(pairs: dict):
+    """Write a key→value dict back to .env, one KEY=VALUE per line."""
+    lines = [f"{k}={v}" for k, v in pairs.items()]
+    with open(ENV_PATH, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+@app.route("/api/settings", methods=["GET"])
+def api_settings_get():
+    key = os.getenv("ANTHROPIC_API_KEY", "")
+    masked = (key[:6] + "•" * (len(key) - 10) + key[-4:]) if len(key) > 10 else ("•" * len(key) if key else "")
+    return jsonify({
+        "anthropic_key_set":    bool(key),
+        "anthropic_key_masked": masked,
+    })
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_settings_save():
+    data = request.json or {}
+    new_key = data.get("anthropic_api_key", "").strip()
+
+    if not new_key:
+        return jsonify({"error": "API key cannot be empty"}), 400
+
+    # Persist to .env
+    pairs = _read_env_file()
+    pairs["ANTHROPIC_API_KEY"] = new_key
+    _write_env_file(pairs)
+
+    # Apply to running process immediately (no restart needed)
+    os.environ["ANTHROPIC_API_KEY"] = new_key
+
+    masked = new_key[:6] + "•" * (len(new_key) - 10) + new_key[-4:] if len(new_key) > 10 else "•" * len(new_key)
+    return jsonify({"ok": True, "anthropic_key_masked": masked})
+
+
 # ── Routes — Regime Detector ─────────────────────────────────────────────────
 
 @app.route("/api/regime")

@@ -1116,6 +1116,50 @@
       </div>
 
     </div>
+
+    <!-- Claude API Key -->
+    <div style="margin-top:20px">
+      <div class="form-panel">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+          <div class="form-panel-title" style="margin:0">Claude API Key</div>
+          <span style="background:var(--blue-bg);color:var(--blue);font-size:11px;font-weight:700;
+                       padding:3px 10px;border-radius:99px;letter-spacing:0.4px">ANTHROPIC</span>
+          <div id="claude-key-status" style="margin-left:auto;font-size:13px;color:var(--muted)">Checking…</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="field">
+            <label class="field-label">API Key</label>
+            <div class="key-wrap">
+              <input class="field-input" id="claude-api-key" type="password"
+                     placeholder="sk-ant-…" autocomplete="off"/>
+              <button class="eye-btn" onclick="toggleVis('claude-api-key',this)">👁</button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-blue" onclick="saveClaudeKey()" style="min-width:140px">Save Key</button>
+            <span style="font-size:12px;color:var(--muted)">
+              Saved to <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;font-size:11px">.env</code>
+              on the VPS · takes effect immediately
+            </span>
+          </div>
+
+          <div class="feedback" id="claude-key-feedback"></div>
+
+          <div class="setup-guide" style="margin-top:0">
+            <div class="section-label">Where to get it</div>
+            <p>
+              1. Go to <span class="hl">console.anthropic.com</span><br>
+              2. Dashboard → <span>API Keys → Create Key</span><br>
+              3. Copy the key (starts with <span>sk-ant-</span>)<br>
+              4. Used for the <span>Weekly Regime</span> AI narrative
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /page-account -->
 
 
@@ -1452,7 +1496,7 @@ function showPage(id, btn){
   document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   btn.classList.add('active');
-  if(id === 'account')    loadAccounts();
+  if(id === 'account')    { loadAccounts(); loadClaudeKeyStatus(); }
   if(id === 'strategies'){ loadAccounts(); loadStrategies(); }
   if(id === 'regime')     loadRegimeState();
 }
@@ -2210,6 +2254,36 @@ window.addEventListener('load', () => {
   newStrategy();
   newAccount();
 });
+
+// ── Claude API Key ────────────────────────────────────────────────────────────
+async function loadClaudeKeyStatus(){
+  try {
+    const r = await api('/api/settings');
+    const el = document.getElementById('claude-key-status');
+    if(!el) return;
+    if(r.anthropic_key_set){
+      el.innerHTML = `<span style="color:var(--green)">✓ Set</span>
+                      <span style="color:var(--muted);font-size:12px;margin-left:6px">${esc(r.anthropic_key_masked)}</span>`;
+    } else {
+      el.innerHTML = `<span style="color:var(--orange)">⚠ Not set</span>`;
+    }
+  } catch(e) {}
+}
+
+async function saveClaudeKey(){
+  const key = document.getElementById('claude-api-key').value.trim();
+  if(!key){ setFeedback('claude-key-feedback', 'Paste your API key first.', 'err'); return; }
+  setFeedback('claude-key-feedback', 'Saving…', 'ok');
+  const r = await api('/api/settings', 'POST', { anthropic_api_key: key });
+  if(r.ok){
+    document.getElementById('claude-api-key').value = '';
+    setFeedback('claude-key-feedback', '✓ Key saved and active.', 'ok');
+    toast('Claude API key saved ✓');
+    loadClaudeKeyStatus();
+  } else {
+    setFeedback('claude-key-feedback', '✗ ' + (r.error || 'Save failed'), 'err');
+  }
+}
 
 // ── Regime Detector ───────────────────────────────────────────────────────────
 let _regimeData = null;
