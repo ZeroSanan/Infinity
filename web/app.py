@@ -28,6 +28,7 @@ from dotenv import load_dotenv
 from binance.exceptions import BinanceAPIException
 from core.binance_client import BinanceSpotClient
 from core.dca_engine import DCAEngine
+from core.regime_detector import RegimeDetector
 from core.state_manager import load_state, save_state, reset_state
 from models.dca_config import CoinConfig
 from utils.calculations import calc_dump_percent, calc_take_profit_price, calc_pnl
@@ -831,6 +832,48 @@ def api_backtest_run():
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+# ── Routes — Regime Detector ─────────────────────────────────────────────────
+
+@app.route("/api/regime")
+def api_regime():
+    symbol = request.args.get("symbol", "BTCUSDT").upper()
+    try:
+        detector = RegimeDetector()
+        analysis = detector.analyze(symbol)
+        if "error" in analysis:
+            return jsonify({"error": analysis["error"]}), 503
+        analysis["narrative"] = detector.get_ai_narrative(analysis)
+        return jsonify(analysis)
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
+
+
+@app.route("/api/regime/confirm", methods=["POST"])
+def api_regime_confirm():
+    data = request.json or {}
+    state = {
+        "confirmed": bool(data.get("confirmed", False)),
+        "strategy":  data.get("strategy", ""),
+        "regime":    data.get("regime", ""),
+        "score":     data.get("score", 0),
+        "timestamp": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+    }
+    os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
+    with open(os.path.join(ROOT, "data", "regime_state.json"), "w") as f:
+        json.dump(state, f, indent=2)
+    return jsonify({"ok": True, "state": state})
+
+
+@app.route("/api/regime/state")
+def api_regime_state():
+    path = os.path.join(ROOT, "data", "regime_state.json")
+    if not os.path.exists(path):
+        return jsonify({"confirmed": False, "strategy": None, "timestamp": None})
+    with open(path) as f:
+        return jsonify(json.load(f))
 
 
 # ── Route — Deploy webhook ────────────────────────────────────────────────────
