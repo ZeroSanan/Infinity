@@ -814,6 +814,61 @@
   .path-anim   { stroke-dasharray: 3000; stroke-dashoffset: 3000; animation: drawPath 2s ease .4s forwards; }
   @keyframes drawPath { to { stroke-dashoffset: 0; } }
 
+  /* ── REGIME DETECTOR ────────────────────────────────────────── */
+  .signal-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.4;
+  }
+  .signal-row:last-child { border-bottom: none; }
+
+  .regime-hero {
+    text-align: center;
+    padding: 28px 20px 22px;
+  }
+
+  .regime-hero-icon { font-size: 52px; line-height: 1; margin-bottom: 10px; }
+  .regime-hero-label {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+  .regime-hero-rec {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-top: 6px;
+    opacity: 0.65;
+  }
+
+  .ind-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .ind-row:last-child { border-bottom: none; }
+  .ind-key { color: var(--muted); }
+  .ind-val { font-weight: 600; color: var(--text); }
+
+  .narrative-body p {
+    font-size: 14px;
+    line-height: 1.75;
+    color: var(--text2);
+    margin-bottom: 14px;
+  }
+  .narrative-body p:last-child { margin-bottom: 0; }
+
+  .regime-grid-top   { display: grid; grid-template-columns: 220px 1fr;  gap: 14px; margin-bottom: 14px; }
+  .regime-grid-mid   { display: grid; grid-template-columns: 260px 1fr;  gap: 14px; margin-bottom: 14px; }
+
   /* ── RESPONSIVE ──────────────────────────────────────────────── */
   @media (max-width: 960px) {
     .metrics     { grid-template-columns: 1fr 1fr; }
@@ -823,6 +878,8 @@
     .two-col-equal { grid-template-columns: 1fr; }
     .cols-2, .cols-3 { grid-template-columns: 1fr; }
     .modal-card { min-width: unset; margin: 16px; }
+    .regime-grid-top { grid-template-columns: 1fr; }
+    .regime-grid-mid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -850,6 +907,7 @@
       <button class="seg-btn active" onclick="showPage('dashboard',this)">Dashboard</button>
       <button class="seg-btn"        onclick="showPage('account',this)">Accounts</button>
       <button class="seg-btn"        onclick="showPage('strategies',this)">Strategies</button>
+      <button class="seg-btn"        onclick="showPage('regime',this)">Weekly Regime</button>
     </div>
     <a href="/backtest" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:99px;background:var(--blue);color:#fff;font-size:13px;font-weight:500;text-decoration:none;box-shadow:0 2px 8px rgba(0,122,255,.3);transition:opacity .15s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">&#9654; Backtest</a>
   </div>
@@ -1147,6 +1205,100 @@
     </div>
   </div><!-- /page-strategies -->
 
+
+  <!-- ══════════════════════════════════════════════════════════
+       PAGE 4 — WEEKLY REGIME
+  ═══════════════════════════════════════════════════════════════ -->
+  <div id="page-regime" class="page">
+
+    <!-- Controls bar -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+      <select id="regime-symbol" class="field-select" style="width:160px;padding:9px 13px;font-size:14px;border-radius:var(--radius-sm);background:var(--surface2);border:1.5px solid transparent;color:var(--text);font-family:inherit;outline:none">
+        <option value="BTCUSDT">BTC / USDT</option>
+        <option value="ETHUSDT">ETH / USDT</option>
+        <option value="SOLUSDT">SOL / USDT</option>
+        <option value="BNBUSDT">BNB / USDT</option>
+      </select>
+      <button class="btn btn-blue" id="regime-run-btn" onclick="runRegimeAnalysis()">⚡&ensp;Run Analysis</button>
+      <div id="regime-status" style="display:none;font-size:13px;color:var(--muted);padding:4px 0"></div>
+    </div>
+
+    <!-- Results (hidden until analysis is done) -->
+    <div id="regime-result" style="display:none">
+
+      <!-- Top row: regime badge + score breakdown -->
+      <div class="regime-grid-top">
+
+        <!-- Regime badge -->
+        <div class="card regime-hero">
+          <div class="regime-hero-icon" id="regime-icon">⚪</div>
+          <div class="regime-hero-label" id="regime-label">—</div>
+          <div class="regime-hero-rec"   id="regime-rec">—</div>
+          <div style="margin-top:14px" id="regime-conf-badge"></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:10px" id="regime-ts"></div>
+        </div>
+
+        <!-- Signals + actions -->
+        <div class="card card-padded">
+          <div class="section-label">Score Breakdown</div>
+          <div id="regime-signals" style="display:flex;flex-direction:column"></div>
+
+          <!-- Warnings (partial data) -->
+          <div id="regime-warnings" style="display:none;margin-top:12px;padding:9px 12px;
+               background:var(--orange-bg);border-radius:var(--radius-sm);
+               border:1px solid rgba(255,149,0,.2)"></div>
+
+          <!-- Actions -->
+          <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);
+                      display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-green" id="regime-confirm-btn"
+                    onclick="confirmRegime()" disabled>
+              ✓&ensp;Confirm &amp; Activate
+            </button>
+            <span style="font-size:12px;color:var(--muted)">
+              Saves the regime and marks it active for strategy decisions.
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mid row: indicator values + AI narrative -->
+      <div class="regime-grid-mid">
+
+        <!-- Indicators table -->
+        <div class="card card-padded">
+          <div class="section-label">Indicator Values</div>
+          <div id="regime-indicators"></div>
+        </div>
+
+        <!-- AI narrative -->
+        <div class="card card-padded">
+          <div class="section-label" style="display:flex;align-items:center;gap:8px">
+            AI Analyst Narrative
+            <span style="background:var(--blue-bg);color:var(--blue);font-size:10px;
+                         font-weight:700;padding:2px 8px;border-radius:99px;letter-spacing:0.4px">
+              CLAUDE
+            </span>
+          </div>
+          <div class="narrative-body" id="regime-narrative">
+            <p style="color:var(--muted)">Run an analysis to generate the narrative.</p>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /regime-result -->
+
+    <!-- Last confirmed state (always visible) -->
+    <div class="card card-padded">
+      <div class="section-label">Last Confirmed Regime</div>
+      <div id="regime-confirmed-state">
+        <div style="font-size:13px;color:var(--muted)">No confirmed regime yet.</div>
+      </div>
+    </div>
+
+  </div><!-- /page-regime -->
+
+
 </div><!-- /container -->
 
 <!-- ══ Start Process Modal ════════════════════════════════════ -->
@@ -1302,6 +1454,7 @@ function showPage(id, btn){
   btn.classList.add('active');
   if(id === 'account')    loadAccounts();
   if(id === 'strategies'){ loadAccounts(); loadStrategies(); }
+  if(id === 'regime')     loadRegimeState();
 }
 
 // ── Strategy tabs ─────────────────────────────────────────────────────────────
@@ -2057,6 +2210,185 @@ window.addEventListener('load', () => {
   newStrategy();
   newAccount();
 });
+
+// ── Regime Detector ───────────────────────────────────────────────────────────
+let _regimeData = null;
+
+const _REGIME_COLOR = { BULLISH: 'green', BEARISH: 'red',    NEUTRAL: 'orange' };
+const _REGIME_ICON  = { BULLISH: '🟢',    BEARISH: '🔴',    NEUTRAL: '🟡'    };
+const _REC_ICON     = { BUY_DCA: '🟢',   SHORT_DCA: '🔴',  WAIT:    '🟡'    };
+
+async function runRegimeAnalysis(){
+  const btn      = document.getElementById('regime-run-btn');
+  const statusEl = document.getElementById('regime-status');
+  const symbol   = document.getElementById('regime-symbol').value || 'BTCUSDT';
+
+  btn.disabled    = true;
+  btn.textContent = '⏳ Analyzing…';
+  statusEl.style.display = 'block';
+  statusEl.style.color   = 'var(--muted)';
+  statusEl.textContent   = 'Fetching candles, sentiment, and macro data…';
+
+  document.getElementById('regime-result').style.display = 'none';
+  document.getElementById('regime-confirm-btn').disabled = true;
+
+  try {
+    const data = await api('/api/regime?symbol=' + encodeURIComponent(symbol));
+
+    if(data.error){
+      statusEl.textContent = '✗ ' + data.error;
+      statusEl.style.color = 'var(--red)';
+      return;
+    }
+
+    _regimeData = data;
+    _renderRegime(data);
+    document.getElementById('regime-result').style.display = 'block';
+    document.getElementById('regime-confirm-btn').disabled = false;
+    statusEl.style.display = 'none';
+
+  } catch(e) {
+    statusEl.textContent = '✗ Analysis failed: ' + e.message;
+    statusEl.style.color = 'var(--red)';
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '⚡ Run Analysis';
+  }
+}
+
+function _renderRegime(data){
+  const ind   = data.indicators || {};
+  const color = _REGIME_COLOR[data.regime] || 'muted';
+  const icon  = _REGIME_ICON[data.regime]  || '⚪';
+
+  // ── Badge ──────────────────────────────────────────────────────────────────
+  document.getElementById('regime-icon').textContent  = icon;
+  document.getElementById('regime-label').textContent = data.regime;
+  document.getElementById('regime-label').style.color = 'var(--' + color + ')';
+  document.getElementById('regime-rec').textContent   = data.recommendation;
+
+  const scoreSign = data.score > 0 ? '+' : '';
+  document.getElementById('regime-conf-badge').innerHTML =
+    `<span class="badge badge-${color === 'green' ? 'green' : color === 'red' ? 'red' : 'muted'}"
+           style="font-size:12px;padding:4px 12px">
+       ${data.confidence} confidence
+     </span>
+     <span style="font-size:13px;color:var(--muted);margin-left:8px">
+       score: ${scoreSign}${data.score}
+     </span>`;
+
+  document.getElementById('regime-ts').textContent = data.timestamp || '';
+
+  // ── Signals ────────────────────────────────────────────────────────────────
+  const signals = data.signals || [];
+  document.getElementById('regime-signals').innerHTML = signals.length
+    ? signals.map(s => {
+        const pos = s.includes('(+'); const neg = s.includes('(-');
+        const c   = pos ? 'green' : neg ? 'red' : 'muted';
+        const sym = pos ? '+1' : neg ? '−1' : '·';
+        return `<div class="signal-row">
+          <span style="min-width:24px;font-size:12px;font-weight:700;
+                       color:var(--${c});text-align:right">${sym}</span>
+          <span style="font-size:13px;color:var(--text2)">${esc(s.replace(/ \([+-]1\)/, ''))}</span>
+        </div>`;
+      }).join('')
+    : '<div style="font-size:13px;color:var(--muted)">No signals fired.</div>';
+
+  // ── Warnings ───────────────────────────────────────────────────────────────
+  const warnEl = document.getElementById('regime-warnings');
+  if(data.warnings && data.warnings.length){
+    warnEl.innerHTML = data.warnings.map(w =>
+      `<div style="font-size:12px;color:var(--orange);line-height:1.6">⚠ ${esc(w)}</div>`
+    ).join('');
+    warnEl.style.display = 'block';
+  } else {
+    warnEl.style.display = 'none';
+  }
+
+  // ── Indicators table ───────────────────────────────────────────────────────
+  const fv  = (n,d=2) => n != null ? Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+  const rows = [
+    ['Price',         `$${fv(ind.price, ind.price > 100 ? 2 : 4)}`],
+    ['EMA 50',        `$${fv(ind.ema50, ind.ema50 > 100 ? 2 : 4)}`],
+    ['EMA 200',       `$${fv(ind.ema200, ind.ema200 > 100 ? 2 : 4)}`],
+    ['ATR (14)',       `$${fv(ind.atr, ind.atr > 100 ? 0 : 2)}`],
+    ['BB Upper',      `$${fv(ind.bb_upper, 2)}`],
+    ['BB Middle',     `$${fv(ind.bb_middle, 2)}`],
+    ['BB Lower',      `$${fv(ind.bb_lower, 2)}`],
+    ['Volume Trend',  ind.volume_trend != null ? fv(ind.volume_trend,2) + 'x' : '—'],
+    ['Fear & Greed',  ind.fear_greed   != null ? ind.fear_greed + ' / 100' : '—'],
+    ['BTC Dominance', ind.btc_dominance!= null ? fv(ind.btc_dominance,1) + '%' : '—'],
+    ['Higher Highs',  ind.higher_highs != null ? (ind.higher_highs ? '✓ Yes' : '✗ No') : '—'],
+  ];
+  document.getElementById('regime-indicators').innerHTML = rows.map(([k,v]) => `
+    <div class="ind-row"><span class="ind-key">${k}</span><span class="ind-val">${v}</span></div>`
+  ).join('');
+
+  // ── AI narrative ───────────────────────────────────────────────────────────
+  const narr = (data.narrative || '').trim();
+  if(narr && !narr.startsWith('[AI narrative unavailable')){
+    const paragraphs = narr.split(/\n\n+/).filter(p => p.trim());
+    document.getElementById('regime-narrative').innerHTML =
+      '<div class="narrative-body">' +
+      paragraphs.map(p => `<p>${esc(p.trim())}</p>`).join('') +
+      '</div>';
+  } else if(narr.startsWith('[')){
+    document.getElementById('regime-narrative').innerHTML =
+      `<p style="font-size:13px;color:var(--orange)">${esc(narr)}</p>`;
+  } else {
+    document.getElementById('regime-narrative').innerHTML =
+      '<p style="font-size:13px;color:var(--muted)">No narrative available.</p>';
+  }
+}
+
+async function confirmRegime(){
+  if(!_regimeData) return;
+  const btn = document.getElementById('regime-confirm-btn');
+  btn.disabled    = true;
+  btn.textContent = 'Saving…';
+
+  const r = await api('/api/regime/confirm', 'POST', {
+    confirmed: true,
+    strategy:  _regimeData.recommendation,
+    regime:    _regimeData.regime,
+    score:     _regimeData.score,
+  });
+
+  if(r.ok){
+    toast('Regime confirmed: ' + _regimeData.regime + ' → ' + _regimeData.recommendation);
+    loadRegimeState();
+  } else {
+    toast('Confirm failed', 'err');
+  }
+
+  btn.disabled    = false;
+  btn.textContent = '✓ Confirm & Activate';
+}
+
+async function loadRegimeState(){
+  try {
+    const r  = await api('/api/regime/state');
+    const el = document.getElementById('regime-confirmed-state');
+    if(!el) return;
+
+    if(r.confirmed && r.strategy){
+      const icon = _REC_ICON[r.strategy] || '⚪';
+      const stratColor = r.strategy === 'BUY_DCA' ? 'green' : r.strategy === 'SHORT_DCA' ? 'red' : 'orange';
+      el.innerHTML = `
+        <div style="display:flex;align-items:center;gap:14px">
+          <span style="font-size:28px">${icon}</span>
+          <div>
+            <div style="font-size:16px;font-weight:700;color:var(--${stratColor})">${esc(r.strategy)}</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">
+              ${r.regime ? esc(r.regime) + ' regime · ' : ''}Confirmed ${esc(r.timestamp || '')}
+            </div>
+          </div>
+        </div>`;
+    } else {
+      el.innerHTML = '<div style="font-size:13px;color:var(--muted)">No confirmed regime yet.</div>';
+    }
+  } catch(e){ /* silently ignore */ }
+}
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 refresh();
