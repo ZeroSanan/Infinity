@@ -559,21 +559,6 @@
 
             <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
 
-            <!-- Extremity Override Thresholds -->
-            <div class="section-title">Extremity Override Thresholds</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>RSI Overbought (BULL &#x2192; SELL)</label>
-                <input type="number" id="rsi-overbought" value="70" min="50" max="95" step="1">
-              </div>
-              <div class="form-group">
-                <label>RSI Oversold (BEAR &#x2192; BUY)</label>
-                <input type="number" id="rsi-oversold" value="30" min="5" max="50" step="1">
-              </div>
-            </div>
-
-            <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
-
             <!-- Preset pairs -->
             <div class="section-title">Preset Pairs</div>
             <div id="mixed-presets-container">
@@ -657,16 +642,12 @@
           <div class="panel-head">Equity Curve</div>
           <div class="panel-body" style="padding-bottom:14px">
             <div id="equity-chart"></div>
-            <div class="chart-legend" id="chart-legend-base">
+            <div class="chart-legend">
               <div class="legend-item"><div class="legend-line" style="background:var(--green)"></div> Equity line</div>
               <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Take Profit exit</div>
               <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Loss exit</div>
               <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div> Stop-Loss exit</div>
               <div class="legend-item"><div class="legend-line" style="background:var(--muted);height:1px;border-top:1.5px dashed var(--muted)"></div> Break-even</div>
-            </div>
-            <div class="chart-legend" id="chart-legend-overrides" style="display:none;margin-top:4px">
-              <div class="legend-item"><svg width="14" height="14" style="vertical-align:middle"><polygon points="7,1 0,13 14,13" fill="#ff9500"/></svg> Overbought override (BUY&#x2192;SELL)</div>
-              <div class="legend-item"><svg width="14" height="14" style="vertical-align:middle"><polygon points="7,13 0,1 14,1" fill="#007aff"/></svg> Oversold override (SELL&#x2192;BUY)</div>
             </div>
           </div>
         </div>
@@ -682,11 +663,6 @@
           <div class="panel-body" style="padding-bottom:14px">
             <div id="regime-timeline"></div>
           </div>
-        </div>
-
-        <!-- Override Events (mixed mode only) -->
-        <div class="panel" id="override-events-box" style="display:none">
-          <div class="panel-body" style="padding:0"></div>
         </div>
 
         <!-- Entries & Exits chart -->
@@ -1127,8 +1103,6 @@ async function runMixedBacktest() {
     dataset:        selectedDataset,
     bull_config:    bull,
     bear_config:    bear,
-    rsi_overbought: parseFloat(document.getElementById('rsi-overbought').value) || 70,
-    rsi_oversold:   parseFloat(document.getElementById('rsi-oversold').value)   || 30,
   };
 
   btn.disabled = true;
@@ -1186,10 +1160,6 @@ function renderResults(data) {
   document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('regime-timeline-panel').style.display = 'none';
   document.getElementById('warnings-box').style.display = 'none';
-  const _ovLeg = document.getElementById('chart-legend-overrides');
-  if (_ovLeg) _ovLeg.style.display = 'none';
-  const _ovBox = document.getElementById('override-events-box');
-  if (_ovBox) _ovBox.style.display = 'none';
 
   renderStats(results, data_range);
   renderChart(equity_curve, trades, results.initial_budget);
@@ -1206,10 +1176,6 @@ function renderMixedResults(data) {
   document.getElementById('results-section').style.display = 'block';
   document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Show override legend if there are override events
-  const ovLegend = document.getElementById('chart-legend-overrides');
-  if (ovLegend) ovLegend.style.display = (data.override_events && data.override_events.length) ? 'flex' : 'none';
-
   // Warnings
   const warnEl = document.getElementById('warnings-box');
   if (data.warnings && data.warnings.length) {
@@ -1220,7 +1186,7 @@ function renderMixedResults(data) {
   }
 
   renderMixedStats(data);
-  renderChart(data.equity_curve, data.trades, data.initial_budget, data.regime_timeline, data.override_events);
+  renderChart(data.equity_curve, data.trades, data.initial_budget, data.regime_timeline);
   renderRegimeTimeline(data.regime_timeline);
   renderTradeChart(data.trades);
 
@@ -1233,10 +1199,8 @@ function renderMixedResults(data) {
 function renderMixedStats(r) {
   const roiColor = r.total_roi >= 0 ? 'green' : 'red';
   const pnlColor = r.net_pnl  >= 0 ? 'green' : 'red';
-  const ovPnlColor = (r.override_pnl || 0) >= 0 ? 'green' : 'red';
   const roiSign  = r.total_roi >= 0 ? '+' : '';
   const pnlSign  = r.net_pnl  >= 0 ? '+' : '';
-  const ovSign   = (r.override_pnl || 0) >= 0 ? '+' : '';
   document.getElementById('stats-grid').innerHTML = `
     <div class="stat-card ${roiColor}">
       <div class="stat-label">Total ROI</div>
@@ -1268,51 +1232,7 @@ function renderMixedStats(r) {
       <div class="stat-val" style="font-size:18px">&#9650;$${fmt(r.largest_profit)}</div>
       <div class="stat-sub">&#9660;$${fmt(Math.abs(r.largest_loss))}</div>
     </div>
-    <div class="stat-card orange" style="grid-column:1/-1">
-      <div class="stat-label">&#9651; Override Performance</div>
-      <div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap;margin-top:4px">
-        <span><span class="stat-val" style="font-size:17px">${r.total_overrides || 0}</span><span style="font-size:12px;color:var(--muted);margin-left:4px">override events</span></span>
-        <span><span class="stat-val orange" style="font-size:17px">${(r.override_win_rate || 0).toFixed(1)}%</span><span style="font-size:12px;color:var(--muted);margin-left:4px">override win rate</span></span>
-        <span><span class="stat-val ${ovPnlColor}" style="font-size:17px">${ovSign}$${fmt(r.override_pnl || 0)}</span><span style="font-size:12px;color:var(--muted);margin-left:4px">override P&amp;L</span></span>
-      </div>
-    </div>
   `;
-
-  // Override events list
-  const ovEl = document.getElementById('override-events-box');
-  if (ovEl) {
-    if (r.override_events && r.override_events.length) {
-      const rows = r.override_events.map(e => {
-        const isActivation = e.type !== 'OVERRIDE_RELEASED';
-        const icon  = e.type === 'OVERBOUGHT_OVERRIDE' ? '&#9651;' : e.type === 'OVERSOLD_OVERRIDE' ? '&#9661;' : '&#8635;';
-        const color = e.type === 'OVERBOUGHT_OVERRIDE' ? 'var(--orange)' : e.type === 'OVERSOLD_OVERRIDE' ? 'var(--blue)' : 'var(--muted)';
-        const rsiStr = e.rsi != null ? e.rsi.toFixed(1) : 'n/a';
-        return `<tr>
-          <td>${e.date}</td>
-          <td><span style="color:${color};font-weight:600">${icon} ${e.type.replace(/_/g,' ')}</span></td>
-          <td>${e.regime}</td>
-          <td>${e.active_mode_before} &#x2192; ${e.active_mode_after}</td>
-          <td>${rsiStr}</td>
-          <td>${e.bb_position.replace(/_/g,' ')}</td>
-          <td>${e.regime_score}</td>
-        </tr>`;
-      }).join('');
-      ovEl.innerHTML = `
-        <div class="panel-head">Override Events (${r.override_events.length})</div>
-        <div style="overflow-x:auto">
-          <table class="trades-table">
-            <thead><tr>
-              <th>Date</th><th>Type</th><th>Regime</th><th>Mode Change</th>
-              <th>RSI</th><th>BB Position</th><th>Score</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>`;
-      ovEl.style.display = 'block';
-    } else {
-      ovEl.style.display = 'none';
-    }
-  }
 }
 
 // ── Regime Timeline ───────────────────────────────────────────────────────────
@@ -1447,7 +1367,7 @@ function tradeTooltipHTML(t) {
 }
 
 // ── Equity SVG Chart ────────────────────────────────────────────────────────
-function renderChart(equityCurve, trades, initialBudget, regimeTl, overrideEvents) {
+function renderChart(equityCurve, trades, initialBudget, regimeTl) {
   const container = document.getElementById('equity-chart');
   const W = container.offsetWidth || 700;
   const H = 220;
@@ -1535,39 +1455,6 @@ function renderChart(equityCurve, trades, initialBudget, regimeTl, overrideEvent
       onmouseleave="hideTip()"/>`;
   });
 
-  // Override event markers — triangles on the equity line
-  let ovMarkers = '';
-  if (overrideEvents && overrideEvents.length && equityCurve.length >= 2) {
-    const eqDates  = equityCurve.map(p => +new Date(p.date));
-    const eqValues = equityCurve.map(p => p.equity);
-    overrideEvents.forEach((ev, idx) => {
-      if (ev.type === 'OVERRIDE_RELEASED') return;
-      const evMs  = +new Date(ev.date);
-      // Find closest equity curve point
-      let closest = 0;
-      let minDiff = Infinity;
-      for (let k = 0; k < eqDates.length; k++) {
-        const diff = Math.abs(eqDates[k] - evMs);
-        if (diff < minDiff) { minDiff = diff; closest = k; }
-      }
-      const cx = sx(eqDates[closest]).toFixed(1);
-      const cy = sy(eqValues[closest]).toFixed(1);
-      const isOver = ev.type === 'OVERBOUGHT_OVERRIDE';
-      const color  = isOver ? '#ff9500' : '#007aff';
-      // Triangle pointing up (overbought=sell) or down (oversold=buy)
-      const S = 7;
-      const tri = isOver
-        ? `${cx},${+cy - S - 2} ${+cx - S},${+cy + S - 2} ${+cx + S},${+cy + S - 2}`
-        : `${cx},${+cy + S + 2} ${+cx - S},${+cy - S + 2} ${+cx + S},${+cy - S + 2}`;
-      const tipHtml = `<b>${isOver ? '&#9651; Overbought Override' : '&#9661; Oversold Override'}</b><br>Date: ${ev.date}<br>RSI: ${ev.rsi != null ? ev.rsi.toFixed(1) : 'n/a'}<br>BB: ${ev.bb_position}<br>Score: ${ev.regime_score}<br>Mode: ${ev.active_mode_before} &#x2192; ${ev.active_mode_after}`;
-      ovMarkers += `<polygon points="${tri}" fill="${color}" stroke="white" stroke-width="1.5"
-        style="cursor:pointer"
-        onmouseenter="showTip(event,'${tipHtml.replace(/'/g, '&#39;')}')"
-        onmousemove="moveTip(event)"
-        onmouseleave="hideTip()"/>`;
-    });
-  }
-
   container.innerHTML = `
     <svg width="${W}" height="${H}" style="display:block" onmouseleave="hideTip()">
       <defs>
@@ -1580,7 +1467,7 @@ function renderChart(equityCurve, trades, initialBudget, regimeTl, overrideEvent
       ${yGridHtml}${xLabels}${beLine}${beLabel}
       <path d="${areaPath}" fill="url(#eq-fill)"/>
       <path d="${linePath}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round"/>
-      ${markers}${ovMarkers}
+      ${markers}
     </svg>`;
 }
 

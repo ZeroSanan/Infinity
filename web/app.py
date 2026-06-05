@@ -854,8 +854,6 @@ def api_backtest_mixed():
         start_date     = params.get("date_from") or params.get("start_date") or None
         end_date       = params.get("date_to")   or params.get("end_date")   or None
         dataset_name   = params.get("dataset")
-        rsi_overbought = float(params.get("rsi_overbought", 70))
-        rsi_oversold   = float(params.get("rsi_oversold",   30))
 
         if csv_file:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
@@ -880,8 +878,7 @@ def api_backtest_mixed():
             return jsonify({"error": "No candles in the specified date range"}), 400
 
         engine = MixedDCABacktest()
-        result = engine.run(df, bull_config, bear_config, initial_budget,
-                            rsi_overbought=rsi_overbought, rsi_oversold=rsi_oversold)
+        result = engine.run(df, bull_config, bear_config, initial_budget)
         result["data_range"] = {
             "start":   df["datetime"].iloc[0].isoformat(),
             "end":     df["datetime"].iloc[-1].isoformat(),
