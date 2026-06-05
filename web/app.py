@@ -833,6 +833,67 @@ def api_backtest_run():
             os.unlink(tmp_path)
 
 
+@app.route("/api/backtest/mixed", methods=["POST"])
+def api_backtest_mixed():
+    tmp_path = None
+    try:
+        import pandas as pd
+        from mixed_dca_strategy import MixedDCABacktest, load_mixed_data
+        import io, contextlib
+
+        if request.content_type and "multipart" in request.content_type:
+            params   = json.loads(request.form.get("params", "{}"))
+            csv_file = request.files.get("csv_file")
+        else:
+            params   = request.json or {}
+            csv_file = None
+
+        initial_budget = float(params.get("initial_budget", 10000))
+        bull_config    = params.get("bull_config", {})
+        bear_config    = params.get("bear_config", {})
+        start_date     = params.get("date_from") or params.get("start_date") or None
+        end_date       = params.get("date_to")   or params.get("end_date")   or None
+        dataset_name   = params.get("dataset")
+
+        if csv_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+                csv_file.save(tmp)
+                tmp_path = tmp.name
+            with contextlib.redirect_stdout(io.StringIO()):
+                df = load_mixed_data(tmp_path)
+        elif dataset_name:
+            data_path = os.path.join(ROOT, "algo-trading", "data", dataset_name)
+            if not os.path.exists(data_path):
+                return jsonify({"error": f"Dataset not found: {dataset_name}"}), 404
+            with contextlib.redirect_stdout(io.StringIO()):
+                df = load_mixed_data(data_path)
+        else:
+            return jsonify({"error": "No dataset specified"}), 400
+
+        if start_date:
+            df = df[df["datetime"] >= pd.to_datetime(start_date)]
+        if end_date:
+            df = df[df["datetime"] <= pd.to_datetime(end_date)]
+        if len(df) == 0:
+            return jsonify({"error": "No candles in the specified date range"}), 400
+
+        engine = MixedDCABacktest()
+        result = engine.run(df, bull_config, bear_config, initial_budget)
+        result["data_range"] = {
+            "start":   df["datetime"].iloc[0].isoformat(),
+            "end":     df["datetime"].iloc[-1].isoformat(),
+            "candles": len(df),
+        }
+        return jsonify(result)
+
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
 # ── Routes — Settings (API keys stored in .env) ───────────────────────────────
 
 ENV_PATH = os.path.join(ROOT, ".env")
