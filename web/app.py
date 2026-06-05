@@ -701,30 +701,29 @@ def api_backtest_datasets():
 
 @app.route("/api/backtest/run", methods=["POST"])
 def api_backtest_run():
-    import pandas as pd
-    from dca_strategy import DCAStrategy, load_and_prepare_data
-
-    # Support both multipart (with file upload) and plain JSON
-    if request.content_type and "multipart" in request.content_type:
-        params = json.loads(request.form.get("params", "{}"))
-        csv_file = request.files.get("csv_file")
-    else:
-        params = request.json or {}
-        csv_file = None
-
-    mode                = params.get("mode", "long")
-    initial_budget      = float(params.get("initial_budget", 1000))
-    dca_levels          = [float(x) for x in params.get("dca_levels", [-6, -9, -12, -16, -20, -24])]
-    dca_allocations_raw = params.get("dca_allocations")
-    dca_allocations     = [float(x) for x in dca_allocations_raw] if dca_allocations_raw else None
-    take_profit_percent = float(params.get("take_profit_percent", 5.0))
-    stop_loss_percent   = float(params.get("stop_loss_percent", 0.0))
-    start_date          = params.get("start_date") or None
-    end_date            = params.get("end_date") or None
-    dataset_name        = params.get("dataset")
-
     tmp_path = None
     try:
+        import pandas as pd
+        from dca_strategy import DCAStrategy, load_and_prepare_data
+
+        # Support both multipart (with file upload) and plain JSON
+        if request.content_type and "multipart" in request.content_type:
+            params = json.loads(request.form.get("params", "{}"))
+            csv_file = request.files.get("csv_file")
+        else:
+            params = request.json or {}
+            csv_file = None
+
+        mode                = params.get("mode", "long")
+        initial_budget      = float(params.get("initial_budget", 1000))
+        dca_levels          = [float(x) for x in params.get("dca_levels", [-6, -9, -12, -16, -20, -24])]
+        dca_allocations_raw = params.get("dca_allocations")
+        dca_allocations     = [float(x) for x in dca_allocations_raw] if dca_allocations_raw else None
+        take_profit_percent = float(params.get("take_profit_percent", 5.0))
+        stop_loss_percent   = float(params.get("stop_loss_percent", 0.0))
+        start_date          = params.get("start_date") or None
+        end_date            = params.get("end_date") or None
+        dataset_name        = params.get("dataset")
         if csv_file:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
                 csv_file.save(tmp)
