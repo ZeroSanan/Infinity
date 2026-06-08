@@ -1570,8 +1570,8 @@ function renderRegimeTimeline(timeline) {
   spans.push(cur);
 
   const allMs = timeline.map(p => +new Date(p.date));
-  const minD  = Math.min(...allMs);
-  const maxD  = Math.max(...allMs);
+  const minD  = allMs.reduce((a, b) => a < b ? a : b);
+  const maxD  = allMs.reduce((a, b) => a > b ? a : b);
   const range = maxD - minD || 1;
   const sx    = d => ((d - minD) / range * W).toFixed(1);
 
@@ -1693,10 +1693,10 @@ function renderChart(equityCurve, trades, initialBudget, regimeTl, entrySignals)
 
   const dates  = equityCurve.map(p => +new Date(p.date));
   const values = equityCurve.map(p => p.equity);
-  const minD   = Math.min(...dates);
-  const maxD   = Math.max(...dates);
-  const minV   = Math.min(...values, initialBudget) * 0.995;
-  const maxV   = Math.max(...values, initialBudget) * 1.005;
+  const minD   = dates.reduce((a, b) => a < b ? a : b);
+  const maxD   = dates.reduce((a, b) => a > b ? a : b);
+  const minV   = values.reduce((a, b) => a < b ? a : b, initialBudget) * 0.995;
+  const maxV   = values.reduce((a, b) => a > b ? a : b, initialBudget) * 1.005;
   const dRange = maxD - minD || 1;
   const vRange = maxV - minV || 1;
 
@@ -1825,10 +1825,10 @@ function renderTradeChart(trades) {
   const exits   = trades.map(t => t.exit_price);
   const allPrices = [...anchors, ...exits];
 
-  const minD = Math.min(...startMs);
-  const maxD = Math.max(...endMs);
-  const rawMinP = Math.min(...allPrices);
-  const rawMaxP = Math.max(...allPrices);
+  const minD    = startMs.reduce((a, b) => a < b ? a : b);
+  const maxD    = endMs.reduce((a, b) => a > b ? a : b);
+  const rawMinP = allPrices.reduce((a, b) => a < b ? a : b);
+  const rawMaxP = allPrices.reduce((a, b) => a > b ? a : b);
   const pad5 = (rawMaxP - rawMinP) * 0.06 || rawMinP * 0.02;
   const minP = rawMinP - pad5;
   const maxP = rawMaxP + pad5;
