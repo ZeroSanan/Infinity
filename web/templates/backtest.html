@@ -450,6 +450,31 @@
   /* entry type badges */
   .badge-indicator { background: rgba(255,214,0,.15); color: #b8860b; }
   .badge-regime    { background: var(--blue-bg); color: var(--blue); }
+  /* expandable detail rows */
+  tr[data-expandable] { cursor: pointer; }
+  tr[data-expandable]:hover td { background: rgba(255,255,255,0.025); }
+  tr.detail-row.hidden { display: none; }
+  tr.detail-row td { padding: 0 !important; border-top: none !important; }
+  .detail-panel {
+    background: rgba(255,255,255,0.03);
+    border-left: 3px solid var(--blue);
+    border-radius: 0 6px 6px 0;
+    padding: 12px 20px;
+    margin: 0 0 6px 0;
+    display: flex; flex-wrap: wrap; gap: 24px;
+  }
+  .detail-section { flex: 1; min-width: 220px; }
+  .detail-title { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin-bottom: 8px; }
+  .detail-chips { display: flex; flex-wrap: wrap; gap: 12px; }
+  .detail-chip { display: flex; flex-direction: column; gap: 2px; }
+  .detail-chip .dc-label { font-size: 10px; color: var(--muted); }
+  .detail-chip .dc-val   { font-size: 13px; font-weight: 600; color: var(--text); }
+  .sig-tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: rgba(99,179,237,.15); color: #63b3ed; margin: 0 3px 0 0; }
+  .level-tbl { font-size: 12px; border-collapse: collapse; width: 100%; }
+  .level-tbl th { color: var(--muted); font-weight: 500; padding: 3px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .level-tbl td { padding: 4px 10px; }
+  .lv-hit td:first-child { color: #4ade80; font-weight: 600; }
+  .lv-miss td:first-child { color: var(--muted); }
   /* comparison */
   .run-btn-row {
     display: flex; gap: 10px; margin-bottom: 16px;
@@ -1941,6 +1966,11 @@ function applyPreset(idx) {
   p.dca_levels.forEach((lvl, i) => addLevel(lvl, p.dca_allocations[i] ?? 100));
 }
 
+function toggleDetail(idx) {
+  const row = document.getElementById('detail-' + idx);
+  if (row) row.classList.toggle('hidden');
+}
+
 function renderTradesTable() {
   const isMixed = currentMode === 'mixed';
   const sorted  = [...allTrades].sort((a, b) => {
@@ -1951,10 +1981,7 @@ function renderTradesTable() {
 
   document.getElementById('trade-count-badge').textContent = `(${allTrades.length} trades)`;
 
-  // Rebuild table header to include/exclude mixed columns
-  const mixedCols = isMixed
-    ? `<th>Type</th><th>Regime</th><th>Entry</th>`
-    : '';
+  const mixedCols = isMixed ? `<th>Type</th><th>Regime</th><th>Entry</th>` : '';
   const colspan   = isMixed ? 12 : 9;
   document.querySelector('thead tr').innerHTML = `
     <th onclick="sortTable('num')">#<span class="sort-icon">↕</span></th>
@@ -1975,15 +2002,13 @@ function renderTradesTable() {
     return;
   }
 
-  document.getElementById('trades-body').innerHTML = sorted.map(t => {
+  document.getElementById('trades-body').innerHTML = sorted.map((t, idx) => {
     const rowClass = t.stop_loss ? 'sl' : (t.profit_loss >= 0 ? 'win' : 'loss');
     const pnlClass = t.profit_loss >= 0 ? 'pos' : 'neg';
     const pnlSign  = t.profit_loss >= 0 ? '+' : '';
     const pctSign  = t.profit_percent >= 0 ? '+' : '';
     const invested = t.invested ?? t.total_invested;
-    const levels   = Array.isArray(t.levels_filled)
-      ? t.levels_filled.join(', ')
-      : t.levels_filled;
+    const levels   = Array.isArray(t.levels_filled) ? t.levels_filled.join(', ') : t.levels_filled;
     const startFmt = new Date(t.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
     const badge    = t.stop_loss
       ? '<span class="badge badge-orange">SL</span>'
@@ -1991,24 +2016,67 @@ function renderTradesTable() {
 
     const typeBadge = t.type === 'LONG'
       ? '<span class="badge badge-long">LONG</span>'
-      : t.type === 'SHORT'
-        ? '<span class="badge badge-short">SHORT</span>'
-        : '';
+      : t.type === 'SHORT' ? '<span class="badge badge-short">SHORT</span>' : '';
     const regimeBadge = t.regime === 'BULLISH'
       ? '<span class="badge badge-green">BULL</span>'
-      : t.regime === 'BEARISH'
-        ? '<span class="badge badge-red">BEAR</span>'
-        : (t.regime ? `<span class="badge">${t.regime}</span>` : '');
-
+      : t.regime === 'BEARISH' ? '<span class="badge badge-red">BEAR</span>'
+      : (t.regime ? `<span class="badge">${t.regime}</span>` : '');
     const entryBadge = t.entry_triggered_by === 'ENTRY_INDICATOR'
       ? '<span class="badge badge-indicator">&#9733; INDICATOR</span>'
       : '<span class="badge badge-regime">REGIME</span>';
-    const mixedCells = isMixed
-      ? `<td>${typeBadge}</td><td>${regimeBadge}</td><td>${entryBadge}</td>`
-      : '';
+    const mixedCells  = isMixed ? `<td>${typeBadge}</td><td>${regimeBadge}</td><td>${entryBadge}</td>` : '';
     const indRowClass = (isMixed && t.entry_triggered_by === 'ENTRY_INDICATOR') ? ' ind-row' : '';
 
-    return `<tr class="${rowClass}${indRowClass}">
+    // ── Detail panel ──────────────────────────────────────────────────────────
+    const sigTags = (t.signals_fired || []).map(s => {
+      const label = s === 'EMA_RETEST' ? 'EMA Retest' : s === 'RSI_TURN' ? 'RSI Turn' : 'Volume';
+      return `<span class="sig-tag">${label}</span>`;
+    }).join('');
+
+    const entryChips = [
+      t.entry_close        != null ? `<div class="detail-chip"><span class="dc-label">Entry Close</span><span class="dc-val">$${fmt(t.entry_close)}</span></div>` : '',
+      t.anchor_price       != null ? `<div class="detail-chip"><span class="dc-label">Anchor / EMA21</span><span class="dc-val">$${fmt(t.anchor_price)}</span></div>` : '',
+      t.entry_rsi          != null ? `<div class="detail-chip"><span class="dc-label">RSI at Entry</span><span class="dc-val">${t.entry_rsi.toFixed(1)}</span></div>` : '',
+      t.entry_regime_score != null ? `<div class="detail-chip"><span class="dc-label">Regime Score</span><span class="dc-val">${t.entry_regime_score >= 0 ? '+' : ''}${t.entry_regime_score}</span></div>` : '',
+      t.entry_score        != null && t.entry_score > 0 ? `<div class="detail-chip"><span class="dc-label">Indicator Score</span><span class="dc-val">${t.entry_score} / 5</span></div>` : '',
+      sigTags              ? `<div class="detail-chip"><span class="dc-label">Signals Fired</span><span class="dc-val">${sigTags}</span></div>` : '',
+    ].filter(Boolean).join('');
+
+    const levelRows = (t.dca_levels || []).map(lv => {
+      const pctStr  = (lv.pct > 0 ? '+' : '') + lv.pct + '%';
+      const status  = lv.filled
+        ? `<span style="color:#4ade80">✓ Filled</span>`
+        : `<span style="color:var(--muted)">✗ Not reached</span>`;
+      const fillPx  = lv.fill_price ? `$${fmt(lv.fill_price)}` : '—';
+      return `<tr class="${lv.filled ? 'lv-hit' : 'lv-miss'}">
+        <td>${status}</td>
+        <td>Step ${lv.step}</td>
+        <td>${pctStr}</td>
+        <td style="color:var(--muted)">Target $${fmt(lv.price)}</td>
+        <td>${fillPx}</td>
+      </tr>`;
+    }).join('');
+
+    const detailHtml = `
+      <tr class="detail-row hidden" id="detail-${idx}">
+        <td colspan="${colspan}">
+          <div class="detail-panel">
+            <div class="detail-section">
+              <div class="detail-title">Entry Candle · ${t.entry_date}</div>
+              <div class="detail-chips">${entryChips}</div>
+            </div>
+            ${levelRows ? `<div class="detail-section">
+              <div class="detail-title">DCA Levels</div>
+              <table class="level-tbl">
+                <tr><th>Status</th><th>Step</th><th>%</th><th>Target</th><th>Fill Price</th></tr>
+                ${levelRows}
+              </table>
+            </div>` : ''}
+          </div>
+        </td>
+      </tr>`;
+
+    return `<tr class="${rowClass}${indRowClass}" data-expandable onclick="toggleDetail(${idx})">
       <td class="num">${t.num}</td>
       <td>${startFmt}</td>
       <td>${t.duration_days.toFixed(1)}d</td>
@@ -2019,7 +2087,7 @@ function renderTradesTable() {
       <td class="${pnlClass}">${pnlSign}$${fmt(t.profit_loss)}</td>
       <td class="${pnlClass}">${pctSign}${t.profit_percent.toFixed(2)}%</td>
       <td>${badge}</td>
-    </tr>`;
+    </tr>${detailHtml}`;
   }).join('');
 }
 </script>

@@ -313,6 +313,14 @@ class MixedDCABacktest:
         # Entry indicator wait tracking
         indicator_wait_active = False        # waiting for entry signal
 
+        # Entry candle snapshot (set when trade opens, written to trade dict on close)
+        entry_close_px:   Optional[float] = None
+        entry_rsi_val:    Optional[float] = None
+        entry_ema21_val:  Optional[float] = None
+        entry_regime_scr: int             = 0
+        entry_sigs_fired: List[str]       = []
+        entry_score_val:  int             = 0
+
         # ── Output accumulators ───────────────────────────────────────────────
         budget          = initial_budget
         trades_out      = []
@@ -367,6 +375,8 @@ class MixedDCABacktest:
 
         def _close_trade(ci: int, px: float, reason: str):
             nonlocal budget, in_trade, ttype, anchor, t_start, act_lvls, entry_triggered_by
+            nonlocal entry_close_px, entry_rsi_val, entry_ema21_val, entry_regime_scr
+            nonlocal entry_sigs_fired, entry_score_val
             f = _filled(act_lvls)
             if not f:
                 in_trade = False; ttype = None; act_lvls = []
@@ -398,11 +408,31 @@ class MixedDCABacktest:
                 "anchor_price":       round(anchor, 2),
                 "stop_loss":          reason == "stop_loss" and pnl < 0,
                 "reason":             reason,
+                # ── Entry candle snapshot ──────────────────────────────────────
+                "entry_close":        round(entry_close_px, 2)  if entry_close_px  is not None else None,
+                "entry_rsi":          round(entry_rsi_val,  2)  if entry_rsi_val   is not None else None,
+                "entry_ema21":        round(entry_ema21_val, 2) if entry_ema21_val is not None else None,
+                "entry_regime_score": entry_regime_scr,
+                "entry_score":        entry_score_val,
+                "signals_fired":      list(entry_sigs_fired),
+                # ── DCA level map ──────────────────────────────────────────────
+                "dca_levels": [
+                    {
+                        "step":       lv.level_num,
+                        "pct":        lv.level_percent,
+                        "price":      round(lv.entry_price, 2),
+                        "filled":     lv.filled,
+                        "fill_price": round(lv.fill_price, 2) if lv.fill_price else None,
+                    }
+                    for lv in act_lvls
+                ],
             })
             budget += pnl
             equity_curve.append({"date": str(dates[ci])[:10], "equity": round(budget, 2)})
             in_trade = False; ttype = None; act_lvls = []
             entry_triggered_by = "REGIME_ONLY"
+            entry_close_px = None; entry_rsi_val = None; entry_ema21_val = None
+            entry_regime_scr = 0;  entry_sigs_fired = []; entry_score_val = 0
 
         def _bb_pos(ci):
             bbu = bb_u_s[ci]; bbl = bb_l_s[ci]
@@ -424,49 +454,45 @@ class MixedDCABacktest:
                 "regime_score":       score,
             })
 
-        def _entry_score_buy(ci) -> int:
+        def _entry_score_buy(ci):
+            """Returns (score, signals_fired)."""
             rsi = rsi_s[ci]; e21 = ema21_s[ci]; e50 = ema50_s[ci]
-            if rsi is None or e21 is None or e50 is None: return 0
-            sc = 0; p = prices[ci]
-            # EMA21 retest: price within 1.5% of EMA21 AND above EMA50
+            if rsi is None or e21 is None or e50 is None: return 0, []
+            sc = 0; sigs = []; p = prices[ci]
             if abs(p - e21) / e21 <= 0.015 and p > e50:
-                sc += 2
-            # RSI turn: was below 45 recently, now above 45
+                sc += 2; sigs.append("EMA_RETEST")
             if rsi > 45:
                 for back in range(1, 4):
                     if ci >= back:
                         prev = rsi_s[ci - back]
                         if prev is not None and prev < 45:
-                            sc += 2; break
-            # Volume: above 1.5x avg AND close in upper half of candle
+                            sc += 2; sigs.append("RSI_TURN"); break
             if has_volume:
                 v10 = vol10_s[ci]
                 if v10 and v10 > 0 and vols[ci] > 1.5 * v10:
                     green = (prices[ci] > opens[ci]) if has_open else (prices[ci] > (highs[ci] + lows[ci]) / 2)
-                    if green: sc += 1
-            return sc
+                    if green: sc += 1; sigs.append("VOLUME")
+            return sc, sigs
 
-        def _entry_score_sell(ci) -> int:
+        def _entry_score_sell(ci):
+            """Returns (score, signals_fired)."""
             rsi = rsi_s[ci]; e21 = ema21_s[ci]; e50 = ema50_s[ci]
-            if rsi is None or e21 is None or e50 is None: return 0
-            sc = 0; p = prices[ci]
-            # EMA21 retest: price within 1.5% of EMA21 AND below EMA50
+            if rsi is None or e21 is None or e50 is None: return 0, []
+            sc = 0; sigs = []; p = prices[ci]
             if abs(p - e21) / e21 <= 0.015 and p < e50:
-                sc += 2
-            # RSI turn: was above 55 recently, now below 55
+                sc += 2; sigs.append("EMA_RETEST")
             if rsi < 55:
                 for back in range(1, 4):
                     if ci >= back:
                         prev = rsi_s[ci - back]
                         if prev is not None and prev > 55:
-                            sc += 2; break
-            # Volume: above 1.5x avg AND close in lower half of candle
+                            sc += 2; sigs.append("RSI_TURN"); break
             if has_volume:
                 v10 = vol10_s[ci]
                 if v10 and v10 > 0 and vols[ci] > 1.5 * v10:
                     red = (prices[ci] < opens[ci]) if has_open else (prices[ci] < (highs[ci] + lows[ci]) / 2)
-                    if red: sc += 1
-            return sc
+                    if red: sc += 1; sigs.append("VOLUME")
+            return sc, sigs
 
         # ── Main candle loop ──────────────────────────────────────────────────
 
@@ -587,27 +613,33 @@ class MixedDCABacktest:
                         continue
 
                     if active_mode == "BUY":
-                        sig = _entry_score_buy(i)
+                        sig, sigs = _entry_score_buy(i)
                         if sig >= 4:
                             entry_signals.append({"date": str(dates[i])[:10], "type": "BUY"})
                             anchor = e21
                             in_trade = True; ttype = "LONG"
                             t_start  = dates[i]
-                            entry_triggered_by = "ENTRY_INDICATOR"
+                            entry_triggered_by    = "ENTRY_INDICATOR"
                             indicator_wait_active = False
+                            entry_close_px   = prices[i]; entry_rsi_val  = rsi_s[i]
+                            entry_ema21_val  = e21;        entry_regime_scr = score
+                            entry_sigs_fired = sigs;       entry_score_val  = sig
                             act_lvls = _build_long(anchor)
                             _fill_long(act_lvls, lo)
                         else:
                             indicator_wait_active = True
                     else:  # SELL
-                        sig = _entry_score_sell(i)
+                        sig, sigs = _entry_score_sell(i)
                         if sig >= 4:
                             entry_signals.append({"date": str(dates[i])[:10], "type": "SELL"})
                             anchor = e21
                             in_trade = True; ttype = "SHORT"
                             t_start  = dates[i]
-                            entry_triggered_by = "ENTRY_INDICATOR"
+                            entry_triggered_by    = "ENTRY_INDICATOR"
                             indicator_wait_active = False
+                            entry_close_px   = prices[i]; entry_rsi_val  = rsi_s[i]
+                            entry_ema21_val  = e21;        entry_regime_scr = score
+                            entry_sigs_fired = sigs;       entry_score_val  = sig
                             act_lvls = _build_short(anchor)
                             _fill_short(act_lvls, hi)
                         else:
@@ -625,6 +657,9 @@ class MixedDCABacktest:
                             in_trade = True; ttype = "LONG"
                             t_start  = dates[i]
                             entry_triggered_by = "REGIME_ONLY"
+                            entry_close_px = prices[i]; entry_rsi_val = rsi_s[i]
+                            entry_ema21_val = ema21_s[i]; entry_regime_scr = score
+                            entry_sigs_fired = []; entry_score_val = 0
                             act_lvls = _build_long(anchor)
                             _fill_long(act_lvls, lo)
                         else:
@@ -635,6 +670,9 @@ class MixedDCABacktest:
                             in_trade = True; ttype = "SHORT"
                             t_start  = dates[i]
                             entry_triggered_by = "REGIME_ONLY"
+                            entry_close_px = prices[i]; entry_rsi_val = rsi_s[i]
+                            entry_ema21_val = ema21_s[i]; entry_regime_scr = score
+                            entry_sigs_fired = []; entry_score_val = 0
                             act_lvls = _build_short(anchor)
                             _fill_short(act_lvls, hi)
                         else:
