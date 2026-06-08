@@ -898,6 +898,9 @@
       <div id="conn-badge" class="status-pill warn">
         <span class="dot"></span> Connecting…
       </div>
+      <div id="deploy-info" style="display:none;font-size:11px;color:var(--muted);text-align:right;line-height:1.5">
+        Last deploy<br><strong id="deploy-info-val" style="color:var(--text2)"></strong>
+      </div>
     </div>
   </header>
 
@@ -1534,6 +1537,11 @@ async function refresh(){
     } else {
       badge.innerHTML = '<span class="dot"></span> Disconnected';
       badge.className = 'status-pill warn';
+    }
+
+    if (data.deploy_time) {
+      document.getElementById('deploy-info-val').textContent = data.deploy_time.substring(0, 16);
+      document.getElementById('deploy-info').style.display = 'block';
     }
 
     buildTabs();
