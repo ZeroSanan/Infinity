@@ -53,14 +53,18 @@ def load_configs() -> list[CoinConfig]:
 
 
 def build_client() -> BinanceSpotClient:
-    api_key = os.getenv("BINANCE_API_KEY", "")
-    secret_key = os.getenv("BINANCE_SECRET_KEY", "")
     testnet = os.getenv("USE_TESTNET", "false").lower() == "true"
 
+    if testnet:
+        api_key    = os.getenv("BINANCE_TESTNET_API_KEY")    or os.getenv("BINANCE_API_KEY", "")
+        secret_key = os.getenv("BINANCE_TESTNET_SECRET_KEY") or os.getenv("BINANCE_SECRET_KEY", "")
+    else:
+        api_key    = os.getenv("BINANCE_API_KEY", "")
+        secret_key = os.getenv("BINANCE_SECRET_KEY", "")
+
     if not api_key or not secret_key:
-        logger.error(
-            "BINANCE_API_KEY and BINANCE_SECRET_KEY must be set in your .env file."
-        )
+        key_hint = "BINANCE_TESTNET_API_KEY / BINANCE_TESTNET_SECRET_KEY" if testnet else "BINANCE_API_KEY / BINANCE_SECRET_KEY"
+        logger.error(f"{key_hint} must be set in your .env file.")
         sys.exit(1)
 
     return BinanceSpotClient(api_key, secret_key, testnet=testnet)
