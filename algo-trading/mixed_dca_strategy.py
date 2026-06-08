@@ -589,17 +589,15 @@ class MixedDCABacktest:
                         am_before = active_mode
                         if indicator_wait_active and use_entry_indicator:
                             trades_skipped += 1; indicator_wait_active = False
-                        if in_trade: _close_trade(i, price, "overbought_override")
                         override_active = True; override_type = "OVERBOUGHT"; override_saw_exit = False
-                        active_mode = "SELL"; anchor = hi
+                        if not in_trade: active_mode = "SELL"; anchor = hi
                         _log_override(i, "OVERBOUGHT_OVERRIDE", am_before, "SELL")
                     elif confirmed == "BEARISH" and (rsi_val < rsi_oversold or bb_pos == "BELOW_LOWER"):
                         am_before = active_mode
                         if indicator_wait_active and use_entry_indicator:
                             trades_skipped += 1; indicator_wait_active = False
-                        if in_trade: _close_trade(i, price, "oversold_override")
                         override_active = True; override_type = "OVERSOLD"; override_saw_exit = False
-                        active_mode = "BUY"; anchor = lo
+                        if not in_trade: active_mode = "BUY"; anchor = lo
                         _log_override(i, "OVERSOLD_OVERRIDE", am_before, "BUY")
 
             # ── 5. Trade logic ────────────────────────────────────────────────
