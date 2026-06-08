@@ -57,6 +57,10 @@ def _get_deploy_time() -> str:
 
 _DEPLOY_TIME = _get_deploy_time()
 
+# ── Market signals cache ──────────────────────────────────────────────────────
+_market_signals_cache: dict = {"data": None, "ts": 0.0}
+_SIGNALS_TTL = 900  # seconds (15 min)
+
 # ── In-memory state ───────────────────────────────────────────────────────────
 _clients: dict = {}        # account_id -> BinanceSpotClient
 _engines: dict = {}        # account_id -> { strategy_id -> DCAEngine }
@@ -282,6 +286,100 @@ def api_status():
         "account_count": len(_accounts),
         "deploy_time": _DEPLOY_TIME,
     })
+
+
+@app.route("/api/market/signals")
+def api_market_signals():
+    """Bull/bear regime signals for BTC, ETH, XRP, SOL via public Binance klines."""
+    import datetime as _dt
+    global _market_signals_cache
+    now = time.time()
+    force = "bust" in request.args
+    if not force and _market_signals_cache["data"] and now - _market_signals_cache["ts"] < _SIGNALS_TTL:
+        return jsonify(_market_signals_cache["data"])
+
+    try:
+        import requests as _req
+    except ImportError:
+        return jsonify({"error": "requests not installed"}), 500
+
+    coins = [
+        ("BTC", "BTCUSDT"),
+        ("ETH", "ETHUSDT"),
+        ("XRP", "XRPUSDT"),
+        ("SOL", "SOLUSDT"),
+    ]
+
+    def _ema(data: list, period: int) -> list:
+        k = 2.0 / (period + 1)
+        out = [data[0]]
+        for p in data[1:]:
+            out.append(p * k + out[-1] * (1 - k))
+        return out
+
+    def _rsi(closes: list, period: int = 14) -> float:
+        diffs  = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+        gains  = [max(d, 0) for d in diffs[-period:]]
+        losses = [max(-d, 0) for d in diffs[-period:]]
+        ag = sum(gains) / period
+        al = sum(losses) / period
+        return 100.0 - (100.0 / (1 + ag / al)) if al else 100.0
+
+    signals = []
+    for coin, symbol in coins:
+        try:
+            resp = _req.get(
+                "https://api.binance.com/api/v3/klines",
+                params={"symbol": symbol, "interval": "4h", "limit": 200},
+                timeout=8,
+            )
+            klines = resp.json()
+            if not isinstance(klines, list) or len(klines) < 55:
+                raise ValueError("insufficient data")
+
+            closes  = [float(k[4]) for k in klines]
+            price   = closes[-1]
+            e50     = _ema(closes, 50)[-1]
+            e200    = _ema(closes, 200)[-1]
+            rsi     = _rsi(closes)
+            n7      = min(42, len(closes) - 1)
+            week_ret = (price - closes[-n7 - 1]) / closes[-n7 - 1] * 100
+
+            s1 = price > e50
+            s2 = e50   > e200
+            s3 = rsi   > 55
+            s4 = week_ret > 0
+
+            score = int(s1) + int(s2) + int(s3) + int(s4)
+            if   score >= 3: regime, rec = "BULL",    "Long DCA"
+            elif score <= 1: regime, rec = "BEAR",    "Short DCA"
+            else:            regime, rec = "NEUTRAL", "Stand By"
+
+            dec = 4 if price < 10 else (2 if price < 1000 else 0)
+            signals.append({
+                "coin":       coin,
+                "price":      round(price, dec),
+                "ema50":      round(e50,  2),
+                "ema200":     round(e200, 2),
+                "rsi":        round(rsi,  1),
+                "week_ret":   round(week_ret, 2),
+                "score":      score,
+                "regime":     regime,
+                "rec":        rec,
+                "s1": s1, "s2": s2, "s3": s3, "s4": s4,
+            })
+        except Exception as exc:
+            signals.append({
+                "coin": coin, "regime": "UNKNOWN", "rec": "—",
+                "score": 0, "error": str(exc),
+            })
+
+    result = {
+        "signals":   signals,
+        "timestamp": _dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+    }
+    _market_signals_cache = {"data": result, "ts": now}
+    return jsonify(result)
 
 
 @app.route("/api/running")
