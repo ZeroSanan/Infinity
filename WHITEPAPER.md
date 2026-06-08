@@ -40,6 +40,7 @@ Infinity/
 ├── core/
 │   ├── dca_engine.py        # Trading logic: price polling, buy/sell execution
 │   ├── binance_client.py    # Binance API wrapper (spot orders, price feed)
+│   ├── regime_detector.py   # Live regime analysis (EMA, volume, AI narrative)
 │   ├── state_manager.py     # Persists position state to JSON files
 │   └── logger.py            # Structured logging
 ├── models/
@@ -52,12 +53,13 @@ Infinity/
 ├── algo-trading/
 │   ├── dca_strategy.py      # Backtest engine (long/buy-the-dip mode)
 │   ├── short_dca_strategy.py# Backtest engine (short/sell-the-rally mode)
+│   ├── mixed_dca_strategy.py# Backtest engine (adaptive bull/bear with regime + entry indicator)
 │   └── data/                # Historical OHLCV CSV datasets
 └── web/
     ├── app.py               # Flask dashboard (API + UI)
     └── templates/
         ├── index.html       # Live trading dashboard
-        └── backtest.html    # Backtesting interface
+        └── backtest.html    # Backtesting interface (long, short, mixed modes)
 ```
 
 **Deployment:** Runs on a Linux VPS (Hostinger) as two `systemd` services:
@@ -267,6 +269,8 @@ Multiple strategies run concurrently in **separate threads**, one engine per str
 
 ## 8. Backtesting Engine
 
+Infinity has three backtest engines, all in `algo-trading/`. They share the same DCA fill and portfolio-TP logic but differ in direction and regime awareness.
+
 ### 8.1 Long Mode (Buy the Dip)
 
 The long backtest (`algo-trading/dca_strategy.py`) simulates DCA strategy performance on historical OHLCV data using the exact same portfolio-level TP logic as the live engine.
@@ -319,7 +323,7 @@ Short mode is useful for bear markets where assets rally and then resume falling
 
 ### 8.3 Stop-Loss (Optional)
 
-Both backtest modes support an optional stop-loss. When enabled:
+Both long and short backtest modes support an optional stop-loss. When enabled:
 
 ```
 Long SL:  threshold = anchor × (1 - sl_percent/100)
@@ -331,7 +335,144 @@ Short SL: threshold = anchor × (1 + sl_percent/100)
 
 The default live trading engine does **not** use a stop-loss — it simply waits for TP no matter how deep the dump goes. Stop-loss is a backtesting parameter only, used to model risk-limited scenarios.
 
-### 8.4 Output Metrics
+### 8.4 Mixed Mode — Adaptive Bull/Bear Strategy
+
+The mixed backtest (`algo-trading/mixed_dca_strategy.py`) is the most sophisticated engine. It **automatically switches** between long (buy-the-dip) and short (sell-the-rally) modes based on detected market regime, optionally gating entries behind a multi-factor confirmation signal.
+
+#### 8.4.1 Three-Layer Decision Architecture
+
+Every candle passes through three layers before a trade is entered:
+
+```
+Layer 1 — Regime (smoothed, 5-candle confirmation)
+  Score ≥ +2  →  BULLISH  →  default active_mode = BUY
+  Score ≤ -2  →  BEARISH  →  default active_mode = SELL
+  Otherwise   →  NEUTRAL  →  hold prior mode, no new trades
+
+Layer 2 — Extremity Overrides (single-candle activation)
+  BULLISH + overbought signal  →  flip active_mode to SELL (counter-trend short)
+  BEARISH + oversold signal    →  flip active_mode to BUY  (counter-trend long)
+  Released via two-step exit: score leaves zone, then re-enters
+
+Layer 3 — Entry Indicator (optional)
+  Wait for EMA21 retest + RSI momentum turn + volume surge
+  Entry confirmed when composite score ≥ 4
+  Reference price = EMA21 at signal candle
+```
+
+#### 8.4.2 Regime Score
+
+Each candle receives a score from −5 to +5 based on five signals:
+
+| Signal | Bullish (+1) | Bearish (−1) |
+|--------|-------------|-------------|
+| Price vs EMA-50 | price > EMA50 | price < EMA50 |
+| Price vs EMA-200 | price > EMA200 | price < EMA200 |
+| EMA-50 vs EMA-200 | EMA50 > EMA200 | EMA50 < EMA200 |
+| Higher-high (2-week) | new 2-week high | no new high |
+| Volume trend (7d vs prior 7d) | volume rising >10% | volume falling >10% |
+
+Volume signal is omitted if no volume column is present in the CSV.
+
+Score ≥ +2 → raw BULLISH. Score ≤ −2 → raw BEARISH. Between −2 and +2 → NEUTRAL.
+
+#### 8.4.3 Regime Smoothing
+
+A raw regime signal does not immediately change the confirmed regime. A **5-candle confirmation buffer** is required: the raw signal must be the same non-neutral value for 5 consecutive candles before the confirmed regime switches. A single NEUTRAL candle clears the buffer.
+
+This prevents whipsawing on short-lived crossovers. A minimum of 5 candles between switches is also enforced.
+
+On a confirmed regime switch:
+- Any open trade is closed at the current price (`regime_switch` reason)
+- Any active extremity override is cancelled
+- Any pending entry indicator wait is counted as skipped
+- The anchor resets to the current candle's high (BULLISH) or low (BEARISH)
+
+#### 8.4.4 Extremity Overrides
+
+When the confirmed regime is BULLISH but the asset becomes overbought, the engine flips `active_mode` to SELL — enabling a counter-trend short DCA on the overextension. Symmetrically, a BEARISH regime that becomes oversold flips to BUY.
+
+**Overbought** is triggered when RSI(14) > `rsi_overbought` (default 70) **or** price closes above the upper Bollinger Band (20-period, 2σ).
+
+**Oversold** is triggered when RSI(14) < `rsi_oversold` (default 30) **or** price closes below the lower Bollinger Band.
+
+**Two-step release** prevents premature exits on brief corrections:
+```
+OVERBOUGHT override release:
+  Step 1 — regime score drops below +2 (exits overbought zone): override_saw_exit = True
+  Step 2 — score rises back to ≥ +2: override released → active_mode = BUY, anchor = high
+
+OVERSOLD override release:
+  Step 1 — regime score rises above -2 (exits oversold zone): override_saw_exit = True
+  Step 2 — score drops back to ≤ -2: override released → active_mode = SELL, anchor = low
+```
+
+#### 8.4.5 Entry Indicator (Optional)
+
+When `use_entry_indicator=True` (the default), the engine does not enter a trade immediately when `active_mode` changes. It waits for a **three-factor confirmation signal**:
+
+**BUY signal scoring:**
+
+| Factor | Score | Condition |
+|--------|-------|-----------|
+| EMA21 retest | +2 | Price within 1.5% of EMA21 AND price > EMA50 |
+| RSI momentum turn | +2 | RSI was below 45 in the last 3 candles, now above 45 |
+| Volume surge | +1 | Volume > 1.5× 10-period average AND candle closes in upper half |
+
+Entry fires when total score ≥ 4. The EMA21 price at the signal candle becomes the **reference price** (anchor) for DCA level calculations — not a rolling high.
+
+**SELL signal scoring** (mirror):
+
+| Factor | Score | Condition |
+|--------|-------|-----------|
+| EMA21 retest | +2 | Price within 1.5% of EMA21 AND price < EMA50 |
+| RSI momentum turn | +2 | RSI was above 55 in the last 3 candles, now below 55 |
+| Volume surge | +1 | Volume > 1.5× 10-period average AND candle closes in lower half |
+
+When `use_entry_indicator=False`, trades open immediately on regime/override confirmation, and DCA levels are anchored to the rolling candle high or low.
+
+#### 8.4.6 Warmup Guard
+
+EMA-200 requires 200 candles to initialize. No trades are opened during the warmup period. A warning is emitted if the dataset contains fewer than 200 candles.
+
+#### 8.4.7 Indicator Implementation
+
+All indicators are implemented from scratch in O(n) — no external TA libraries:
+
+| Indicator | Implementation |
+|-----------|---------------|
+| EMA(n) | Exponential smoothing, k = 2/(n+1), seeded with simple average |
+| RSI(14) | Wilder smoothing (alpha = 1/14); `None` during 14-candle warmup |
+| Bollinger Bands(20, 2σ) | O(n) prefix sums for rolling mean and variance |
+| Higher-high | O(n) sliding-window maximum via monotone deque |
+| Volume trend | O(n) prefix sums for 7-day average comparison |
+| 10-period vol average | O(n) prefix sums |
+
+#### 8.4.8 Output Fields
+
+The mixed engine returns all standard backtest metrics plus:
+
+| Field | Description |
+|-------|-------------|
+| `entry_indicator_used` | Whether indicator mode was active for this run |
+| `entry_signals` | List of `{date, type: BUY\|SELL}` at each signal candle |
+| `entry_indicator_stats` | `trades_with_indicator`, `trades_skipped_waiting`, `indicator_win_rate`, `indicator_avg_pnl` |
+| `total_overrides` | Number of extremity override activations |
+| `override_events` | Per-event log: date, type, regime, RSI value, BB position |
+| `regime_switches` | Total confirmed regime transitions |
+| `regime_timeline` | Per-candle `{date, regime, active_mode}` |
+| `trades[].entry_triggered_by` | `"ENTRY_INDICATOR"` or `"REGIME_ONLY"` |
+| `trades[].active_mode` | `active_mode` state at trade entry |
+
+#### 8.4.9 Preset Configurations
+
+| Preset | Bull Levels | Bear Levels | TP |
+|--------|------------|------------|-----|
+| Conservative | −6%, −10%, −15% | +6%, +10%, +15% | 8% |
+| Aggressive | −8%, −13%, −20%, −28% | +8%, +13%, +20%, +28% | 12% |
+| Asymmetric | −6%, −9%, −13%, −18% | +5%, +8%, +12% | 10% / 6% |
+
+### 8.5 Output Metrics (All Modes)
 
 | Metric | Description |
 |--------|-------------|
@@ -346,7 +487,79 @@ The default live trading engine does **not** use a stop-loss — it simply waits
 
 ---
 
-## 9. Web Dashboard
+## 9. Backtested Top Strategies
+
+The following strategies were discovered by the optimizer running exhaustive grid search over BTC/USDT 1-hour candles from **2018 to 2025** (7 years, ~61,000 candles). All results use a starting budget of **$1,000 USDT** with equal capital split across DCA levels. Strategies are ranked by **ROI/day** — total return divided by the number of calendar days in the test window — to normalize for how quickly capital compounds.
+
+> **Note:** Past backtest performance does not guarantee future results. These configurations represent historically optimal parameters on BTC 1H data and should be validated against other assets and timeframes before deployment.
+
+---
+
+### 9.1 Top 10 Long Strategies (Buy the Dip)
+
+Long strategies profit when the asset dips and then recovers. Lower stop-loss or no stop-loss configurations show higher total ROI but require capital to remain locked longer in losing trades.
+
+| Rank | Name | DCA Levels | Allocation / Level | TP | SL | ROI | ROI/Day | Trades | Win Rate | Avg Duration |
+|------|------|-----------|-------------------|-----|-----|-----|---------|--------|----------|-------------|
+| 1 | Fast #1 | −5%, −9%, −13% | $333 × 3 | 3% | 30% | **138%** | 44.4 | 317 | 96.5% | 3.1 days |
+| 2 | Fast #2 | −5%, −10%, −15% | $333 × 3 | 3% | 30% | 97% | 30.3 | 311 | 96.5% | 3.2 days |
+| 3 | Fast #3 | −5%, −8%, −11%, −14% | $250 × 4 | 3% | 30% | 89% | 29.8 | 326 | 96.6% | 3.0 days |
+| 4 | Fast #4 | −7%, −11%, −15% | $333 × 3 | 3% | None | **225%** | 29.5 | 147 | 100% | 7.6 days |
+| 5 | Fast #5 | −5%, −8%, −11% | $333 × 3 | 3% | 30% | 111% | 29.2 | 281 | 96.1% | 3.8 days |
+| 6 | Fast #6 | −5%, −9%, −13%, −17% | $250 × 4 | 3% | 30% | 73% | 26.8 | 345 | 96.8% | 2.7 days |
+| 7 | Fast #7 | −7%, −11%, −15% | $333 × 3 | 3% | 30% | 70% | 25.1 | 241 | 96.3% | 2.8 days |
+| 8 | Fast #8 | −7%, −11%, −15%, −19% | $250 × 4 | 3% | None | **178%** | 23.6 | 148 | 100% | 7.5 days |
+| 9 | Fast #9 | −5%, −9%, −13% | $333 × 3 | 3% | None | **223%** | 22.5 | 141 | 100% | 9.9 days |
+| 10 | Fast #10 | −5%, −8%, −11% | $333 × 3 | 4% | 30% | 117% | 21.8 | 230 | 94.4% | 5.4 days |
+
+**Best overall ROI (no SL):** Fast #4 — 225% total return, 100% win rate, 147 trades.
+**Best ROI/day (with SL):** Fast #1 — 138% total return, 317 trades, 3.5% stopped out.
+
+**Key pattern:** Tight first entry (−5% to −7%), narrow step spacing (3–4%), low take profit (3%), and shallow stop-loss (30%) consistently outperforms on BTC. The −5%/−9%/−13% shape is the most recurring optimal structure.
+
+---
+
+### 9.2 Top 10 Short Strategies (Sell the Rally)
+
+Short strategies profit when the asset pumps and then resumes falling. Short entries are inherently riskier in a long-term bull market — higher stop-loss rates are expected and priced in. The optimizer found these configurations to be net-positive even accounting for frequent stops.
+
+| Rank | Name | DCA Levels | Allocation / Level | TP | SL | ROI | ROI/Day | Trades | Win Rate | Avg Duration |
+|------|------|-----------|-------------------|-----|-----|-----|---------|--------|----------|-------------|
+| 1 | Short Fast #1 | +8%, +11%, +14% | $333 × 3 | 3% | 10% | 43% | 87.5 | 359 | 41.5% | 0.49 days |
+| 2 | Short Fast #2 | +8%, +11%, +14%, +17% | $250 × 4 | 3% | 10% | 40% | 80.9 | 359 | 41.5% | 0.49 days |
+| 3 | Short Fast #3 | +8%, +12%, +16% | $333 × 3 | 3% | 10% | 37% | 76.1 | 359 | 39.6% | 0.49 days |
+| 4 | Short Fast #4 | +8%, +11%, +14%, +17%, +20% | $200 × 5 | 3% | 10% | 37% | 74.9 | 359 | 41.5% | 0.49 days |
+| 5 | Short Fast #5 | +8%, +11%, +14% | $333 × 3 | 4% | 10% | **51%** | 71.2 | 351 | 36.2% | 0.72 days |
+| 6 | Short Fast #6 | +8%, +12%, +16%, +20% | $250 × 4 | 3% | 10% | 34% | 69.9 | 359 | 39.6% | 0.49 days |
+| 7 | Short Fast #7 | +8%, +11%, +14%, +17%, +20%, +23% | $167 × 6 | 3% | 10% | 34% | 69.6 | 359 | 41.5% | 0.49 days |
+| 8 | Short Fast #8 | +8%, +12%, +16%, +20%, +24% | $200 × 5 | 3% | 10% | 32% | 65.1 | 359 | 39.6% | 0.49 days |
+| 9 | Short Fast #9 | +8%, +11%, +14%, +17% | $250 × 4 | 4% | 10% | 46% | 63.8 | 351 | 36.2% | 0.72 days |
+| 10 | Short Fast #10 | +8%, +11%, +14% | $333 × 3 | 5% | 10% | **53%** | 59.7 | 343 | 31.8% | 0.88 days |
+
+**Best overall ROI:** Short Fast #10 — 53% return, highest TP (5%), trades close quickly.
+**Best ROI/day:** Short Fast #1 — 87.5 ROI/day, fastest average duration (0.49 days ≈ 12 hours).
+
+**Key pattern:** Short trades are high-frequency and short-lived. The +8% first entry is optimal — tight enough to catch most rallies, far enough to avoid noise. A 10% stop-loss is essential; without it, a sustained uptrend would leave capital locked indefinitely. Win rates of 30–42% are acceptable because winning trades close quickly at 3–5% TP while losses are capped at 10%.
+
+---
+
+### 9.3 Long vs Short Comparison
+
+| Dimension | Long (Buy Dips) | Short (Sell Rallies) |
+|-----------|----------------|---------------------|
+| Dataset bias | Strongly favoured (7-year BTC bull trend) | Works against the trend |
+| Typical win rate | 94–100% | 32–42% |
+| Typical trade duration | 3–10 days | 0.5–1 day |
+| Stop-loss necessity | Optional (30% or none) | Essential (10%) |
+| Best ROI/day | 44.4 (Fast #1) | 87.5 (Short Fast #1) |
+| Best total ROI | 225% (Fast #4) | 53% (Short Fast #10) |
+| Capital efficiency | Lower frequency, higher per-trade gain | High frequency, small gains add up |
+
+Short strategies generate more ROI/day in absolute terms despite lower win rates, because each trade closes in hours rather than days. In a bear market or during the short-sell phase of the Mixed Strategy, short DCA outperforms the long mode on a per-day basis.
+
+---
+
+## 10. Web Dashboard
 
 The Flask dashboard (port 5050) provides full visibility and control over live strategies.
 
@@ -359,6 +572,8 @@ The Flask dashboard (port 5050) provides full visibility and control over live s
 - Reset position state
 
 ### Backtesting Tab
+
+#### Long & Short Modes
 - Run historical simulations on uploaded OHLCV CSV data (Binance export format)
 - Configure: initial budget, DCA levels, allocations, take profit %, stop loss %
 - Optional date range filter
@@ -368,6 +583,18 @@ The Flask dashboard (port 5050) provides full visibility and control over live s
 - Preset strategies panel (pre-loaded top-performing configurations)
 - Long (buy dips) and Short (sell rallies) modes
 
+#### Mixed Mode
+- Adaptive bull/bear mode that automatically switches direction by detected regime
+- Separate bull and short DCA level/size configuration panels
+- **Entry Indicator toggle** — iOS-style switch to enable/disable the three-factor confirmation gate
+  - RSI Overbought threshold input (flip regime to SELL; default 70)
+  - RSI Oversold threshold input (flip regime to BUY; default 30)
+- **⇄ Compare button** — runs the backtest twice (indicator ON vs OFF) and renders a side-by-side metrics table; better value highlighted green, worse in red
+- **★ Star markers** on the equity curve chart at each entry signal candle (green = BUY signal, red = SELL signal)
+- **Indicator stats card** when indicator mode is active: trades triggered by indicator, trades skipped while waiting, indicator win rate, indicator avg P&L
+- **INDICATOR / REGIME badges** in the trade table identifying how each trade was entered; indicator-triggered rows highlighted with a gold left border
+- Regime timeline overlay on equity chart (color-coded BULLISH/BEARISH/NEUTRAL background bands)
+
 ### Accounts Tab
 - Add/remove Binance API accounts
 - Test connectivity and view USDT balance
@@ -375,7 +602,7 @@ The Flask dashboard (port 5050) provides full visibility and control over live s
 
 ---
 
-## 10. Data Persistence
+## 11. Data Persistence
 
 Position state is stored as JSON files in the `data/` directory. Each file corresponds to one strategy:
 
@@ -407,7 +634,7 @@ State survives process restarts and VPS reboots. The engine resumes exactly wher
 
 ---
 
-## 11. Exchange Integration
+## 12. Exchange Integration
 
 - **Exchange:** Binance (spot markets only)
 - **Order types:** Market buy, market sell
@@ -416,7 +643,7 @@ State survives process restarts and VPS reboots. The engine resumes exactly wher
 
 ---
 
-## 12. Configuration
+## 13. Configuration
 
 Strategies are defined in `config/coins.json`. Each entry includes:
 
@@ -435,7 +662,7 @@ Strategies are defined in `config/coins.json`. Each entry includes:
 
 ---
 
-## 13. CLI Usage
+## 14. CLI Usage
 
 ```bash
 python main.py                        # Run all enabled strategies
@@ -447,7 +674,7 @@ python main.py --status               # Print position status and exit
 
 ---
 
-## 14. Infrastructure & Deployment
+## 15. Infrastructure & Deployment
 
 | Component | Details |
 |-----------|---------|
@@ -462,7 +689,7 @@ python main.py --status               # Print position status and exit
 
 ---
 
-## 15. What the System Aims to Achieve
+## 16. What the System Aims to Achieve
 
 The core thesis: **crypto markets are volatile and mean-reverting over medium time horizons**. Assets regularly dump 10–40% from local tops and then recover. Infinity is built to exploit this pattern mechanically, without needing to predict when or how deep each dump will be.
 
@@ -477,9 +704,11 @@ The system does not need to catch the absolute top or the absolute bottom. It on
 
 Over hundreds of cycles across multiple assets, this produces consistent, compounding returns with defined, limited capital exposure per strategy.
 
+The Mixed Strategy extends this to bear markets: when regime detection confirms a downtrend, the engine flips to short DCA — accumulating short exposure on rallies and taking profit as the price resumes falling. The Entry Indicator layer further filters entries to candles where EMA structure, RSI momentum, and volume all agree, reducing false-entry trades during choppy or transitional periods.
+
 ---
 
-## 16. Planned / Possible Extensions
+## 17. Planned / Possible Extensions
 
 - **Telegram / email alerts** on buy/sell events
 - **Multiple exchange support** (OKX, Bybit)
@@ -488,6 +717,7 @@ Over hundreds of cycles across multiple assets, this produces consistent, compou
 - **Risk controls** — max drawdown limits, daily loss caps
 - **Multi-account portfolio view** — aggregate P&L across all accounts
 - **Strategy optimizer** — auto-tune DCA levels based on backtest results
+- **Live mixed strategy engine** — port the regime detector and entry indicator to the live `DCAEngine` for fully autonomous bull/bear switching
 
 ---
 
