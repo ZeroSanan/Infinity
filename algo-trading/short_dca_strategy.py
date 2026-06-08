@@ -122,10 +122,8 @@ class ShortDCAStrategy:
     def calculate_stop_loss_threshold(self) -> Optional[float]:
         if self.stop_loss_percent <= 0 or not self._filled():
             return None
-        avg = self._avg_short()
-        if avg is None:
-            return None
-        return avg * (1 + self.stop_loss_percent / 100)
+        deepest = self._deepest()
+        return deepest.fill_price * (1 + self.stop_loss_percent / 100)
 
     # ── Fill / exit checks ────────────────────────────────────────────────────
 
