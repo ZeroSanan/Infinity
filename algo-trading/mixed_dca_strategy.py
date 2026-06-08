@@ -367,11 +367,11 @@ class MixedDCABacktest:
         def _tp_short(lvls):
             a = _avg_px(lvls); return (a * (1 - bear_tp / 100)) if a else None
 
-        def _sl_long(anch):
-            return (anch * (1 - bull_sl / 100)) if bull_sl > 0 else None
+        def _sl_long(lvls):
+            a = _avg_px(lvls); return (a * (1 - bull_sl / 100)) if (a and bull_sl > 0) else None
 
-        def _sl_short(anch):
-            return (anch * (1 + bear_sl / 100)) if bear_sl > 0 else None
+        def _sl_short(lvls):
+            a = _avg_px(lvls); return (a * (1 + bear_sl / 100)) if (a and bear_sl > 0) else None
 
         def _close_trade(ci: int, px: float, reason: str):
             nonlocal budget, in_trade, ttype, anchor, t_start, act_lvls, entry_triggered_by
@@ -681,7 +681,7 @@ class MixedDCABacktest:
             else:  # In trade
                 if ttype == "LONG":
                     _fill_long(act_lvls, lo)
-                    sl = _sl_long(anchor)
+                    sl = _sl_long(act_lvls)
                     if sl and lo <= sl:
                         _close_trade(i, sl, "stop_loss"); anchor = hi; continue
                     tp = _tp_long(act_lvls)
@@ -690,7 +690,7 @@ class MixedDCABacktest:
 
                 else:  # SHORT
                     _fill_short(act_lvls, hi)
-                    sl = _sl_short(anchor)
+                    sl = _sl_short(act_lvls)
                     if sl and hi >= sl:
                         _close_trade(i, sl, "stop_loss"); anchor = lo; continue
                     tp = _tp_short(act_lvls)

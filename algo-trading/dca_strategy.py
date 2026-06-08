@@ -353,13 +353,15 @@ class DCAStrategy:
         """
         if self.stop_loss_percent <= 0:
             return None
-        
+
         filled_levels = [lvl for lvl in self.active_dca_levels if lvl.filled]
         if not filled_levels:
             return None
-        
-        threshold = self.anchor_price * (1 - self.stop_loss_percent / 100)
-        return threshold
+
+        total_invested = sum(lvl.budget_allocation for lvl in filled_levels)
+        total_coins    = sum(lvl.budget_allocation / lvl.fill_price for lvl in filled_levels)
+        avg_entry      = total_invested / total_coins
+        return avg_entry * (1 - self.stop_loss_percent / 100)
     
     def check_stop_loss_hit(self, candle_low: float) -> bool:
         """
