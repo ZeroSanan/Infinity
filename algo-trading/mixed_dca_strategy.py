@@ -368,11 +368,13 @@ class MixedDCABacktest:
             a = _avg_px(lvls); return (a * (1 - bear_tp / 100)) if a else None
 
         def _sl_long(lvls):
-            if not bull_sl or len(_filled(lvls)) < len(lvls): return None
+            f = _filled(lvls)
+            if not bull_sl or not f: return None
             return anchor * (1 - bull_sl / 100)
 
         def _sl_short(lvls):
-            if not bear_sl or len(_filled(lvls)) < len(lvls): return None
+            f = _filled(lvls)
+            if not bear_sl or not f: return None
             return anchor * (1 + bear_sl / 100)
 
         def _close_trade(ci: int, px: float, reason: str):

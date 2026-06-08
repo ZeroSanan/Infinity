@@ -354,8 +354,8 @@ class DCAStrategy:
         if self.stop_loss_percent <= 0:
             return None
 
-        # SL only activates after ALL configured levels are filled
-        if not all(lvl.filled for lvl in self.active_dca_levels):
+        filled_levels = [lvl for lvl in self.active_dca_levels if lvl.filled]
+        if not filled_levels:
             return None
 
         return self.anchor_price * (1 - self.stop_loss_percent / 100)

@@ -86,10 +86,10 @@ class DCAEngine:
                 self._execute_take_profit(price, tp_price)
                 return
 
-            # SL activates only after ALL levels are filled
+            # SL activates from the first fill onward
             if (
                 self.cfg.stop_loss_percent > 0
-                and state.steps_done >= self.cfg.step_count
+                and state.steps_done >= 1
             ):
                 sl_price = calc_stop_loss_price(
                     state.reference_price, self.cfg.stop_loss_percent
