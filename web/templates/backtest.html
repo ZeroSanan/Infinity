@@ -879,13 +879,13 @@ let currentMode     = 'long';   // 'long' | 'short' | 'mixed'
 
 // ── Default DCA levels ──────────────────────────────────────────────────────
 const DEFAULT_LEVELS = [
-  { dump: -10, alloc: 50 },
-  { dump: -15, alloc: 70 },
-  { dump: -20, alloc: 100 },
-  { dump: -25, alloc: 130 },
-  { dump: -30, alloc: 180 },
-  { dump: -35, alloc: 220 },
-  { dump: -45, alloc: 250 },
+  { dump: 10, alloc: 50 },
+  { dump: 15, alloc: 70 },
+  { dump: 20, alloc: 100 },
+  { dump: 25, alloc: 130 },
+  { dump: 30, alloc: 180 },
+  { dump: 35, alloc: 220 },
+  { dump: 45, alloc: 250 },
 ];
 
 const SHORT_DEFAULT_LEVELS = [
@@ -956,18 +956,22 @@ function setMode(mode) {
 }
 
 // ── DCA Level rows ──────────────────────────────────────────────────────────
-function addLevel(dump = -6, alloc = 100) {
+function addLevel(dump = 6, alloc = 100) {
   const container = document.getElementById('levels-container');
   const idx       = container.children.length + 1;
   const isShort   = currentMode === 'short';
-  const attrs     = isShort
-    ? `min="0.1" step="0.5" placeholder="e.g. 10"`
-    : `max="-0.1" step="0.5" placeholder="e.g. -10"`;
+  // Always accept positive magnitudes; long mode shows "-" prefix visually
+  const val       = Math.abs(dump);
+  const attrs     = `min="0.1" step="0.5" placeholder="e.g. 10"`;
+  const prefix    = isShort ? '' : `<span style="font-size:14px;color:var(--muted);padding-right:2px">−</span>`;
   const row = document.createElement('div');
   row.className = 'level-row';
   row.innerHTML = `
     <div class="level-num">${idx}</div>
-    <input class="level-input" type="number" value="${dump}" ${attrs}>
+    <div style="display:flex;align-items:center;border:1.5px solid var(--border2);border-radius:7px;background:var(--surface);overflow:hidden;min-width:0">
+      ${prefix}
+      <input class="level-input dump-input" type="number" value="${val}" ${attrs} style="border:none;background:transparent;padding:7px 8px 7px ${isShort ? '10px' : '4px'}">
+    </div>
     <input class="level-input" type="number" value="${alloc}" min="1" step="10" placeholder="$">
     <button class="remove-level" onclick="removeLevel(this)">&#8722;</button>
   `;
@@ -993,23 +997,31 @@ function renumberLevels() {
 function getLevels() {
   const rows = document.querySelectorAll('#levels-container .level-row');
   const levels = [], allocs = [];
+  const isShort = currentMode === 'short';
   rows.forEach(row => {
     const inputs = row.querySelectorAll('input');
-    levels.push(parseFloat(inputs[0].value));
+    const raw = parseFloat(inputs[0].value);
+    // Long: user enters positive magnitude → convert to negative
+    // Short: user enters positive magnitude → keep positive
+    levels.push(isShort ? Math.abs(raw) : -Math.abs(raw));
     allocs.push(parseFloat(inputs[1].value));
   });
   return { levels, allocs };
 }
 
 // ── Mixed mode level management ──────────────────────────────────────────────
-function addBullLevel(dump = -10, alloc = 100) {
+function addBullLevel(dump = 10, alloc = 100) {
   const container = document.getElementById('bull-levels-container');
   const idx = container.children.length + 1;
+  const val = Math.abs(dump);
   const row = document.createElement('div');
   row.className = 'level-row';
   row.innerHTML = `
     <div class="level-num">${idx}</div>
-    <input class="level-input" type="number" value="${dump}" max="-0.1" step="0.5" placeholder="e.g. -10">
+    <div style="display:flex;align-items:center;border:1.5px solid var(--border2);border-radius:7px;background:var(--surface);overflow:hidden;min-width:0">
+      <span style="font-size:14px;color:var(--muted);padding-right:2px">−</span>
+      <input class="level-input dump-input" type="number" value="${val}" min="0.1" step="0.5" placeholder="e.g. 10" style="border:none;background:transparent;padding:7px 8px 7px 4px">
+    </div>
     <input class="level-input" type="number" value="${alloc}" min="1" step="10" placeholder="$">
     <button class="remove-level" onclick="removeLevel(this)">&#8722;</button>
   `;
@@ -1035,7 +1047,7 @@ function getBullConfig() {
   const levels = [], sizes = [];
   rows.forEach(row => {
     const inputs = row.querySelectorAll('input');
-    levels.push(parseFloat(inputs[0].value));
+    levels.push(-Math.abs(parseFloat(inputs[0].value)));  // always negative
     sizes.push(parseFloat(inputs[1].value));
   });
   return {
@@ -1179,11 +1191,6 @@ async function runBacktest() {
 
   const { levels, allocs } = getLevels();
   if (!levels.length) { showError('Add at least one DCA level.'); return; }
-
-  if (currentMode === 'long'  && levels.some(l => l >= 0))
-    { showError('Long mode: all DCA levels must be negative (e.g. -10).'); return; }
-  if (currentMode === 'short' && levels.some(l => l <= 0))
-    { showError('Short mode: all pump levels must be positive (e.g. 10).'); return; }
 
   const params = {
     mode:                currentMode,
@@ -1970,7 +1977,7 @@ function renderPresetCards(mode) {
 
   scroll.innerHTML = filtered.map(p => {
     const idx     = _presets.indexOf(p);
-    const lvlStr  = p.dca_levels.join(', ');
+    const lvlStr  = p.dca_levels.map(l => Math.abs(l) + '%').join(', ');
     const slTag   = p.stop_loss_percent > 0
       ? `<span style="font-size:10px;font-weight:600;color:var(--orange);margin-left:5px">SL${p.stop_loss_percent}%</span>`
       : '';

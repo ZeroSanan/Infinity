@@ -732,7 +732,12 @@ def api_backtest_run():
 
         mode                = params.get("mode", "long")
         initial_budget      = float(params.get("initial_budget", 1000))
-        dca_levels          = [float(x) for x in params.get("dca_levels", [-6, -9, -12, -16, -20, -24])]
+        _raw_levels         = [float(x) for x in params.get("dca_levels", [-6, -9, -12, -16, -20, -24])]
+        # Normalize sign: long needs negative, short needs positive
+        if mode == "short":
+            dca_levels = [abs(l) for l in _raw_levels]
+        else:
+            dca_levels = [-abs(l) for l in _raw_levels]
         dca_allocations_raw = params.get("dca_allocations")
         dca_allocations     = [float(x) for x in dca_allocations_raw] if dca_allocations_raw else None
         take_profit_percent = float(params.get("take_profit_percent", 5.0))
@@ -874,6 +879,11 @@ def api_backtest_mixed():
         initial_budget       = float(params.get("initial_budget", 10000))
         bull_config          = params.get("bull_config", {})
         bear_config          = params.get("bear_config", {})
+        # Normalize level signs (user may enter positive magnitudes)
+        if "dump_levels" in bull_config:
+            bull_config["dump_levels"] = [-abs(l) for l in bull_config["dump_levels"]]
+        if "dump_levels" in bear_config:
+            bear_config["dump_levels"] = [abs(l) for l in bear_config["dump_levels"]]
         start_date           = params.get("date_from") or params.get("start_date") or None
         end_date             = params.get("date_to")   or params.get("end_date")   or None
         dataset_name         = params.get("dataset")
