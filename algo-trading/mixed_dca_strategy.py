@@ -699,8 +699,8 @@ class MixedDCABacktest:
 
         # ── Aggregate results ─────────────────────────────────────────────────
         total   = len(trades_out)
-        winners = [t for t in trades_out if t["profit"] > 0]
-        losers  = [t for t in trades_out if t["profit"] <= 0]
+        losers  = [t for t in trades_out if t["stop_loss"] and t["profit"] < 0]
+        winners = [t for t in trades_out if not (t["stop_loss"] and t["profit"] < 0)]
         bull_t  = [t for t in trades_out if t["type"] == "LONG"]
         bear_t  = [t for t in trades_out if t["type"] == "SHORT"]
         net_pnl = sum(t["profit"] for t in trades_out)
@@ -728,14 +728,14 @@ class MixedDCABacktest:
             "final_budget":            round(budget, 2),
             "total_roi":               round((budget - initial_budget) / initial_budget * 100, 2),
             "net_pnl":                 round(net_pnl, 2),
-            "total_profit":            round(sum(t["profit"] for t in winners), 2),
+            "total_profit":            round(sum(t["profit"] for t in winners if t["profit"] > 0), 2),
             "total_loss":              round(abs(sum(t["profit"] for t in losers)), 2),
             "win_rate":                round(len(winners) / total * 100, 1) if total else 0.0,
             "total_trades":            total,
             "winning_trades":          len(winners),
             "losing_trades":           len(losers),
-            "stopped_out_trades":      sum(1 for t in trades_out if t["stop_loss"]),
-            "stop_loss_rate":          round(sum(1 for t in trades_out if t["stop_loss"]) / total * 100, 1) if total else 0.0,
+            "stopped_out_trades":      len(losers),
+            "stop_loss_rate":          round(len(losers) / total * 100, 1) if total else 0.0,
             "bull_trades":             len(bull_t),
             "bear_trades":             len(bear_t),
             "regime_switches":         regime_sw,

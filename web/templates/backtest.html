@@ -1533,12 +1533,12 @@ function renderMixedStats(r) {
     <div class="stat-card ${pnlColor}">
       <div class="stat-label">Net P&amp;L</div>
       <div class="stat-val ${pnlColor}">${pnlSign}$${fmt(r.net_pnl)}</div>
-      <div class="stat-sub">+$${fmt(r.total_profit)} / -$${fmt(r.total_loss)}</div>
+      <div class="stat-sub">+$${fmt(r.total_profit)} TP / -$${fmt(r.total_loss)} SL</div>
     </div>
     <div class="stat-card blue">
       <div class="stat-label">Win Rate</div>
       <div class="stat-val blue">${r.win_rate.toFixed(1)}%</div>
-      <div class="stat-sub">${r.winning_trades}W / ${r.losing_trades}L</div>
+      <div class="stat-sub">${r.winning_trades} TP / ${r.stopped_out_trades} SL</div>
     </div>
     <div class="stat-card blue">
       <div class="stat-label">Bull / Bear Trades</div>
@@ -1628,12 +1628,12 @@ function renderStats(r, dr) {
     <div class="stat-card ${pnlColor}">
       <div class="stat-label">Net P&amp;L</div>
       <div class="stat-val ${pnlColor}">${pnlSign}$${fmt(r.net_pnl)}</div>
-      <div class="stat-sub">+$${fmt(r.total_profit)} / -$${fmt(r.total_loss)}</div>
+      <div class="stat-sub">+$${fmt(r.total_profit)} TP / -$${fmt(r.total_loss)} SL</div>
     </div>
     <div class="stat-card blue">
       <div class="stat-label">Win Rate</div>
       <div class="stat-val blue">${r.win_rate.toFixed(1)}%</div>
-      <div class="stat-sub">${r.winning_trades}W / ${r.losing_trades}L / ${r.stopped_out_trades}SL</div>
+      <div class="stat-sub">${r.winning_trades} TP / ${r.stopped_out_trades} SL</div>
     </div>
     <div class="stat-card blue">
       <div class="stat-label">Total Trades</div>
