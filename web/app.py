@@ -42,6 +42,21 @@ COINS_PATH    = os.path.join(ROOT, "config", "coins.json")
 app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app)
 
+# ── Deploy timestamp (captured once at startup) ───────────────────────────────
+def _get_deploy_time() -> str:
+    try:
+        import subprocess
+        ts = subprocess.check_output(
+            ["git", "log", "-1", "--format=%ci"],
+            cwd=ROOT, stderr=subprocess.DEVNULL
+        ).decode().strip()
+        return ts
+    except Exception:
+        import datetime
+        return datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S +0000")
+
+_DEPLOY_TIME = _get_deploy_time()
+
 # ── In-memory state ───────────────────────────────────────────────────────────
 _clients: dict = {}        # account_id -> BinanceSpotClient
 _engines: dict = {}        # account_id -> { strategy_id -> DCAEngine }
@@ -265,6 +280,7 @@ def api_status():
         "usdt_totals": usdt_totals,
         "coins": coins,
         "account_count": len(_accounts),
+        "deploy_time": _DEPLOY_TIME,
     })
 
 
@@ -823,6 +839,13 @@ def api_backtest_run():
                 "end":     df["datetime"].iloc[-1].isoformat(),
                 "candles": len(df),
             },
+            "trade_extremes": ({
+                "longest":  max(trades_data, key=lambda t: t["duration_days"],  default=None),
+                "shortest": min(trades_data, key=lambda t: t["duration_days"],  default=None),
+                "best":     max(trades_data, key=lambda t: t["profit_loss"],    default=None),
+                "worst":    min(trades_data, key=lambda t: t["profit_loss"],    default=None),
+            } if trades_data else None),
+            "deploy_time": _DEPLOY_TIME,
         })
 
     except Exception as e:
@@ -890,6 +913,19 @@ def api_backtest_mixed():
             "end":     df["datetime"].iloc[-1].isoformat(),
             "candles": len(df),
         }
+        trades = result.get("trades", [])
+        if trades:
+            longest  = max(trades, key=lambda t: t["duration_days"])
+            shortest = min(trades, key=lambda t: t["duration_days"])
+            best     = max(trades, key=lambda t: t["profit_loss"])
+            worst    = min(trades, key=lambda t: t["profit_loss"])
+            result["trade_extremes"] = {
+                "longest":  {"num": longest["num"],  "duration_days": longest["duration_days"],  "start": longest["start"]},
+                "shortest": {"num": shortest["num"], "duration_days": shortest["duration_days"], "start": shortest["start"]},
+                "best":     {"num": best["num"],     "profit_loss": best["profit_loss"],         "start": best["start"]},
+                "worst":    {"num": worst["num"],    "profit_loss": worst["profit_loss"],        "start": worst["start"]},
+            }
+        result["deploy_time"] = _DEPLOY_TIME
         return jsonify(result)
 
     except Exception as e:

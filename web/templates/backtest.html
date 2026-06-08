@@ -549,6 +549,9 @@
         <div class="page-sub">Upload data &amp; test any DCA strategy on historical candles</div>
       </div>
     </div>
+    <div id="deploy-chip" style="display:none;font-size:11px;color:var(--muted);text-align:right;line-height:1.5">
+      Last deploy<br><strong id="deploy-chip-val" style="color:var(--text2)"></strong>
+    </div>
   </header>
 
   <!-- ══ PRESETS ROW ══ -->
@@ -783,6 +786,12 @@
         <!-- Stat Cards -->
         <div class="stats-grid" id="stats-grid"></div>
 
+        <!-- Trade Extremes -->
+        <div class="panel" id="extremes-panel" style="display:none">
+          <div class="panel-head">Notable Trades</div>
+          <div class="panel-body" id="extremes-body"></div>
+        </div>
+
         <!-- Equity Curve -->
         <div class="panel">
           <div class="panel-head">Equity Curve</div>
@@ -942,6 +951,8 @@ function setMode(mode) {
   document.getElementById('regime-timeline-panel').style.display = 'none';
   document.getElementById('warnings-box').style.display      = 'none';
   document.getElementById('comparison-panel').style.display  = 'none';
+  document.getElementById('extremes-panel').style.display    = 'none';
+  document.getElementById('deploy-chip').style.display       = 'none';
   document.getElementById('compare-btn').style.display       = isMixed ? 'flex' : 'none';
 }
 
@@ -1446,6 +1457,7 @@ function renderResults(data) {
   document.getElementById('warnings-box').style.display = 'none';
 
   renderStats(results, data_range);
+  renderExtremes(data.trade_extremes, data.deploy_time);
   renderChart(equity_curve, trades, results.initial_budget);
   renderTradeChart(trades);
 
@@ -1474,6 +1486,7 @@ function renderMixedResults(data) {
   if (legSig) legSig.style.display = (data.entry_signals && data.entry_signals.length) ? 'flex' : 'none';
 
   renderMixedStats(data);
+  renderExtremes(data.trade_extremes, data.deploy_time);
   renderChart(data.equity_curve, data.trades, data.initial_budget, data.regime_timeline, data.entry_signals);
   renderRegimeTimeline(data.regime_timeline);
   renderTradeChart(data.trades);
@@ -1637,6 +1650,48 @@ function renderStats(r, dr) {
       <div class="stat-label">Extremes</div>
       <div class="stat-val" style="font-size:18px">▲$${fmt(r.largest_profit)}</div>
       <div class="stat-sub">▼$${fmt(Math.abs(r.largest_loss))}</div>
+    </div>
+  `;
+}
+
+function renderExtremes(extremes, deployTime) {
+  // Update deploy chip in header
+  const chip = document.getElementById('deploy-chip');
+  if (deployTime) {
+    document.getElementById('deploy-chip-val').textContent = deployTime.substring(0, 16);
+    chip.style.display = 'block';
+  }
+
+  const panel = document.getElementById('extremes-panel');
+  if (!extremes) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  const fmtDate = iso => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const fmtDur  = d   => d >= 1 ? d.toFixed(1) + 'd' : Math.round(d * 24) + 'h';
+  const sign    = n   => n >= 0 ? '+' : '';
+
+  document.getElementById('extremes-body').innerHTML = `
+    <div class="stats-grid" style="margin-bottom:0">
+      <div class="stat-card blue">
+        <div class="stat-label">Longest Trade</div>
+        <div class="stat-val blue">${fmtDur(extremes.longest.duration_days)}</div>
+        <div class="stat-sub">Trade #${extremes.longest.num} &middot; ${fmtDate(extremes.longest.start)}</div>
+      </div>
+      <div class="stat-card blue">
+        <div class="stat-label">Shortest Trade</div>
+        <div class="stat-val blue">${fmtDur(extremes.shortest.duration_days)}</div>
+        <div class="stat-sub">Trade #${extremes.shortest.num} &middot; ${fmtDate(extremes.shortest.start)}</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-label">Best Trade</div>
+        <div class="stat-val green">${sign(extremes.best.profit_loss)}$${fmt(extremes.best.profit_loss)}</div>
+        <div class="stat-sub">Trade #${extremes.best.num} &middot; ${fmtDate(extremes.best.start)}</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-label">Worst Trade</div>
+        <div class="stat-val red">${sign(extremes.worst.profit_loss)}$${fmt(extremes.worst.profit_loss)}</div>
+        <div class="stat-sub">Trade #${extremes.worst.num} &middot; ${fmtDate(extremes.worst.start)}</div>
+      </div>
     </div>
   `;
 }
