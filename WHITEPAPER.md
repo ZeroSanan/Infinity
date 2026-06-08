@@ -487,7 +487,79 @@ The mixed engine returns all standard backtest metrics plus:
 
 ---
 
-## 9. Web Dashboard
+## 9. Backtested Top Strategies
+
+The following strategies were discovered by the optimizer running exhaustive grid search over BTC/USDT 1-hour candles from **2018 to 2025** (7 years, ~61,000 candles). All results use a starting budget of **$1,000 USDT** with equal capital split across DCA levels. Strategies are ranked by **ROI/day** — total return divided by the number of calendar days in the test window — to normalize for how quickly capital compounds.
+
+> **Note:** Past backtest performance does not guarantee future results. These configurations represent historically optimal parameters on BTC 1H data and should be validated against other assets and timeframes before deployment.
+
+---
+
+### 9.1 Top 10 Long Strategies (Buy the Dip)
+
+Long strategies profit when the asset dips and then recovers. Lower stop-loss or no stop-loss configurations show higher total ROI but require capital to remain locked longer in losing trades.
+
+| Rank | Name | DCA Levels | Allocation / Level | TP | SL | ROI | ROI/Day | Trades | Win Rate | Avg Duration |
+|------|------|-----------|-------------------|-----|-----|-----|---------|--------|----------|-------------|
+| 1 | Fast #1 | −5%, −9%, −13% | $333 × 3 | 3% | 30% | **138%** | 44.4 | 317 | 96.5% | 3.1 days |
+| 2 | Fast #2 | −5%, −10%, −15% | $333 × 3 | 3% | 30% | 97% | 30.3 | 311 | 96.5% | 3.2 days |
+| 3 | Fast #3 | −5%, −8%, −11%, −14% | $250 × 4 | 3% | 30% | 89% | 29.8 | 326 | 96.6% | 3.0 days |
+| 4 | Fast #4 | −7%, −11%, −15% | $333 × 3 | 3% | None | **225%** | 29.5 | 147 | 100% | 7.6 days |
+| 5 | Fast #5 | −5%, −8%, −11% | $333 × 3 | 3% | 30% | 111% | 29.2 | 281 | 96.1% | 3.8 days |
+| 6 | Fast #6 | −5%, −9%, −13%, −17% | $250 × 4 | 3% | 30% | 73% | 26.8 | 345 | 96.8% | 2.7 days |
+| 7 | Fast #7 | −7%, −11%, −15% | $333 × 3 | 3% | 30% | 70% | 25.1 | 241 | 96.3% | 2.8 days |
+| 8 | Fast #8 | −7%, −11%, −15%, −19% | $250 × 4 | 3% | None | **178%** | 23.6 | 148 | 100% | 7.5 days |
+| 9 | Fast #9 | −5%, −9%, −13% | $333 × 3 | 3% | None | **223%** | 22.5 | 141 | 100% | 9.9 days |
+| 10 | Fast #10 | −5%, −8%, −11% | $333 × 3 | 4% | 30% | 117% | 21.8 | 230 | 94.4% | 5.4 days |
+
+**Best overall ROI (no SL):** Fast #4 — 225% total return, 100% win rate, 147 trades.
+**Best ROI/day (with SL):** Fast #1 — 138% total return, 317 trades, 3.5% stopped out.
+
+**Key pattern:** Tight first entry (−5% to −7%), narrow step spacing (3–4%), low take profit (3%), and shallow stop-loss (30%) consistently outperforms on BTC. The −5%/−9%/−13% shape is the most recurring optimal structure.
+
+---
+
+### 9.2 Top 10 Short Strategies (Sell the Rally)
+
+Short strategies profit when the asset pumps and then resumes falling. Short entries are inherently riskier in a long-term bull market — higher stop-loss rates are expected and priced in. The optimizer found these configurations to be net-positive even accounting for frequent stops.
+
+| Rank | Name | DCA Levels | Allocation / Level | TP | SL | ROI | ROI/Day | Trades | Win Rate | Avg Duration |
+|------|------|-----------|-------------------|-----|-----|-----|---------|--------|----------|-------------|
+| 1 | Short Fast #1 | +8%, +11%, +14% | $333 × 3 | 3% | 10% | 43% | 87.5 | 359 | 41.5% | 0.49 days |
+| 2 | Short Fast #2 | +8%, +11%, +14%, +17% | $250 × 4 | 3% | 10% | 40% | 80.9 | 359 | 41.5% | 0.49 days |
+| 3 | Short Fast #3 | +8%, +12%, +16% | $333 × 3 | 3% | 10% | 37% | 76.1 | 359 | 39.6% | 0.49 days |
+| 4 | Short Fast #4 | +8%, +11%, +14%, +17%, +20% | $200 × 5 | 3% | 10% | 37% | 74.9 | 359 | 41.5% | 0.49 days |
+| 5 | Short Fast #5 | +8%, +11%, +14% | $333 × 3 | 4% | 10% | **51%** | 71.2 | 351 | 36.2% | 0.72 days |
+| 6 | Short Fast #6 | +8%, +12%, +16%, +20% | $250 × 4 | 3% | 10% | 34% | 69.9 | 359 | 39.6% | 0.49 days |
+| 7 | Short Fast #7 | +8%, +11%, +14%, +17%, +20%, +23% | $167 × 6 | 3% | 10% | 34% | 69.6 | 359 | 41.5% | 0.49 days |
+| 8 | Short Fast #8 | +8%, +12%, +16%, +20%, +24% | $200 × 5 | 3% | 10% | 32% | 65.1 | 359 | 39.6% | 0.49 days |
+| 9 | Short Fast #9 | +8%, +11%, +14%, +17% | $250 × 4 | 4% | 10% | 46% | 63.8 | 351 | 36.2% | 0.72 days |
+| 10 | Short Fast #10 | +8%, +11%, +14% | $333 × 3 | 5% | 10% | **53%** | 59.7 | 343 | 31.8% | 0.88 days |
+
+**Best overall ROI:** Short Fast #10 — 53% return, highest TP (5%), trades close quickly.
+**Best ROI/day:** Short Fast #1 — 87.5 ROI/day, fastest average duration (0.49 days ≈ 12 hours).
+
+**Key pattern:** Short trades are high-frequency and short-lived. The +8% first entry is optimal — tight enough to catch most rallies, far enough to avoid noise. A 10% stop-loss is essential; without it, a sustained uptrend would leave capital locked indefinitely. Win rates of 30–42% are acceptable because winning trades close quickly at 3–5% TP while losses are capped at 10%.
+
+---
+
+### 9.3 Long vs Short Comparison
+
+| Dimension | Long (Buy Dips) | Short (Sell Rallies) |
+|-----------|----------------|---------------------|
+| Dataset bias | Strongly favoured (7-year BTC bull trend) | Works against the trend |
+| Typical win rate | 94–100% | 32–42% |
+| Typical trade duration | 3–10 days | 0.5–1 day |
+| Stop-loss necessity | Optional (30% or none) | Essential (10%) |
+| Best ROI/day | 44.4 (Fast #1) | 87.5 (Short Fast #1) |
+| Best total ROI | 225% (Fast #4) | 53% (Short Fast #10) |
+| Capital efficiency | Lower frequency, higher per-trade gain | High frequency, small gains add up |
+
+Short strategies generate more ROI/day in absolute terms despite lower win rates, because each trade closes in hours rather than days. In a bear market or during the short-sell phase of the Mixed Strategy, short DCA outperforms the long mode on a per-day basis.
+
+---
+
+## 10. Web Dashboard
 
 The Flask dashboard (port 5050) provides full visibility and control over live strategies.
 
@@ -530,7 +602,7 @@ The Flask dashboard (port 5050) provides full visibility and control over live s
 
 ---
 
-## 10. Data Persistence
+## 11. Data Persistence
 
 Position state is stored as JSON files in the `data/` directory. Each file corresponds to one strategy:
 
@@ -562,7 +634,7 @@ State survives process restarts and VPS reboots. The engine resumes exactly wher
 
 ---
 
-## 11. Exchange Integration
+## 12. Exchange Integration
 
 - **Exchange:** Binance (spot markets only)
 - **Order types:** Market buy, market sell
@@ -571,7 +643,7 @@ State survives process restarts and VPS reboots. The engine resumes exactly wher
 
 ---
 
-## 12. Configuration
+## 13. Configuration
 
 Strategies are defined in `config/coins.json`. Each entry includes:
 
@@ -590,7 +662,7 @@ Strategies are defined in `config/coins.json`. Each entry includes:
 
 ---
 
-## 13. CLI Usage
+## 14. CLI Usage
 
 ```bash
 python main.py                        # Run all enabled strategies
@@ -602,7 +674,7 @@ python main.py --status               # Print position status and exit
 
 ---
 
-## 14. Infrastructure & Deployment
+## 15. Infrastructure & Deployment
 
 | Component | Details |
 |-----------|---------|
@@ -617,7 +689,7 @@ python main.py --status               # Print position status and exit
 
 ---
 
-## 15. What the System Aims to Achieve
+## 16. What the System Aims to Achieve
 
 The core thesis: **crypto markets are volatile and mean-reverting over medium time horizons**. Assets regularly dump 10–40% from local tops and then recover. Infinity is built to exploit this pattern mechanically, without needing to predict when or how deep each dump will be.
 
@@ -636,7 +708,7 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 
 ---
 
-## 16. Planned / Possible Extensions
+## 17. Planned / Possible Extensions
 
 - **Telegram / email alerts** on buy/sell events
 - **Multiple exchange support** (OKX, Bybit)
