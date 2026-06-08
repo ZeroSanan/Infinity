@@ -404,20 +404,16 @@ class DCAStrategy:
         """
         filled_levels = [lvl for lvl in self.active_dca_levels if lvl.filled]
         deepest_level = self.get_deepest_filled_level()
-        
-        # Calculate total invested capital
+
         total_invested = sum(lvl.budget_allocation for lvl in filled_levels)
-        
-        # Calculate unrealized loss percentage at stop price
-        loss_pct = ((loss_price - self.anchor_price) / self.anchor_price) * 100
-        
-        # Calculate actual capital loss amount
-        capital_loss = abs(loss_pct / 100) * total_invested
-        
-        # Update available budget
-        updated_budget = available_budget - capital_loss
-        
-        # Create trade record
+        Q              = sum(lvl.budget_allocation / lvl.fill_price for lvl in filled_levels)
+        total_return   = loss_price * Q
+        actual_pnl     = total_return - total_invested
+        actual_pnl_pct = (actual_pnl / total_invested * 100) if total_invested else 0.0
+        is_real_loss   = actual_pnl < 0
+
+        updated_budget = available_budget + actual_pnl
+
         trade = Trade(
             start_time=self.trade_start_time,
             end_time=exit_time,
@@ -426,14 +422,13 @@ class DCAStrategy:
             deepest_price=deepest_level.fill_price,
             exit_price=loss_price,
             total_invested=total_invested,
-            total_return=loss_price * sum(lvl.budget_allocation / lvl.fill_price 
-                                          for lvl in filled_levels),
-            profit_loss=-capital_loss,
-            profit_percent=loss_pct,
+            total_return=total_return,
+            profit_loss=actual_pnl,
+            profit_percent=actual_pnl_pct,
             dca_levels_filled=[lvl.level_num for lvl in filled_levels],
-            stop_loss_triggered=True,
+            stop_loss_triggered=is_real_loss,
             stop_loss_price=loss_price,
-            stop_loss_loss=capital_loss,
+            stop_loss_loss=abs(actual_pnl) if is_real_loss else 0.0,
             completion_reason="stop_loss"
         )
         

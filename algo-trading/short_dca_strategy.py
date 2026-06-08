@@ -170,8 +170,10 @@ class ShortDCAStrategy:
         A = sum(l.budget_allocation for l in f)
         Q = sum(l.budget_allocation / l.fill_price for l in f)
         buyback      = Q * sl_price
-        capital_loss = buyback - A          # positive = real loss
-        loss_pct     = (sl_price - self.anchor_price) / self.anchor_price * 100
+        capital_loss = buyback - A          # positive = real loss, negative = profit
+        actual_pnl   = -capital_loss        # positive if profit
+        actual_pct   = (actual_pnl / A * 100) if A else 0.0
+        is_real_loss = capital_loss > 0
 
         trade = Trade(
             start_time=self.trade_start_time, end_time=ts,
@@ -179,10 +181,11 @@ class ShortDCAStrategy:
             deepest_level=deepest.level_num, deepest_price=deepest.fill_price,
             exit_price=sl_price,
             total_invested=A, total_return=buyback,
-            profit_loss=-capital_loss, profit_percent=-loss_pct,
+            profit_loss=actual_pnl, profit_percent=actual_pct,
             dca_levels_filled=[l.level_num for l in f],
-            stop_loss_triggered=True, stop_loss_price=sl_price,
-            stop_loss_loss=capital_loss, completion_reason="stop_loss",
+            stop_loss_triggered=is_real_loss, stop_loss_price=sl_price,
+            stop_loss_loss=capital_loss if is_real_loss else 0.0,
+            completion_reason="stop_loss",
         )
         self.completed_trades.append(trade)
         return trade, budget - capital_loss
