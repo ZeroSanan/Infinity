@@ -396,7 +396,7 @@ class MixedDCABacktest:
                 "profit_loss":        round(pnl, 2),
                 "profit_percent":     round(pct, 2),
                 "anchor_price":       round(anchor, 2),
-                "stop_loss":          reason == "stop_loss",
+                "stop_loss":          reason == "stop_loss" and pnl < 0,
                 "reason":             reason,
             })
             budget += pnl
