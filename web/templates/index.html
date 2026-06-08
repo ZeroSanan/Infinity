@@ -50,6 +50,69 @@
     padding: 28px 20px 80px;
   }
 
+  /* ── MARKET SIGNALS ── */
+  .signals-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 860px) { .signals-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .signals-grid { grid-template-columns: 1fr; } }
+
+  .sig-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    border: 1.5px solid var(--border);
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.06));
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .sig-card.bull  { border-color: rgba(52,199,89,0.35); }
+  .sig-card.bear  { border-color: rgba(255,59,48,0.30); }
+
+  .sig-top { display: flex; align-items: baseline; justify-content: space-between; }
+  .sig-coin { font-size: 16px; font-weight: 700; color: var(--text); }
+  .sig-price { font-size: 13px; color: var(--muted); }
+
+  .sig-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 700;
+    letter-spacing: .4px;
+  }
+  .sig-badge.bull { background: rgba(52,199,89,0.12); color: #1d8a3b; }
+  .sig-badge.bear { background: rgba(255,59,48,0.10); color: #cc2222; }
+  .sig-badge.neutral { background: rgba(142,142,147,0.12); color: var(--muted); }
+  .sig-badge.unknown { background: rgba(142,142,147,0.10); color: var(--muted); }
+
+  .sig-signals { display: flex; flex-direction: column; gap: 5px; }
+  .sig-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); }
+  .sig-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .sig-dot.on  { background: var(--green); }
+  .sig-dot.off { background: var(--red); }
+
+  .sig-rec {
+    padding: 6px 10px; border-radius: 7px;
+    font-size: 12px; font-weight: 600; text-align: center;
+  }
+  .sig-rec.bull    { background: rgba(52,199,89,0.12);  color: #1d8a3b; }
+  .sig-rec.bear    { background: rgba(255,59,48,0.10);  color: #cc2222; }
+  .sig-rec.neutral { background: rgba(255,149,0,0.10);  color: #b36a00; }
+  .sig-rec.unknown { background: rgba(142,142,147,0.08); color: var(--muted); }
+
+  .signals-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+  }
+  .signals-refresh-btn {
+    padding: 4px 10px; border-radius: 7px;
+    background: var(--blue-bg, rgba(0,122,255,.08)); color: var(--blue);
+    border: none; cursor: pointer; font-size: 11px; font-weight: 600;
+    font-family: inherit; transition: opacity .15s;
+  }
+  .signals-refresh-btn:hover { opacity: .75; }
+
   /* ── HEADER ─────────────────────────────────────────────────── */
   header {
     display: flex;
@@ -920,6 +983,20 @@
   ═══════════════════════════════════════════════════════════════ -->
   <div id="page-dashboard" class="page active">
 
+    <!-- ── Market Signals ── -->
+    <div class="card card-padded" style="margin-bottom:20px">
+      <div class="signals-header">
+        <div class="section-label" style="margin:0">Market Signals</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="signals-ts" style="font-size:11px;color:var(--muted)"></span>
+          <button class="signals-refresh-btn" onclick="loadMarketSignals(true)">↺ Refresh</button>
+        </div>
+      </div>
+      <div class="signals-grid" id="signals-grid">
+        <div style="color:var(--muted);font-size:13px;grid-column:1/-1">Loading market signals…</div>
+      </div>
+    </div>
+
     <!-- Strategy tabs -->
     <div class="strat-tabs" id="coin-tabs"></div>
 
@@ -1491,6 +1568,65 @@ function setFeedback(id, msg, type='ok'){
   } else {
     el.textContent = msg;
   }
+}
+
+// ── Market Signals ───────────────────────────────────────────────────────────
+async function loadMarketSignals(force) {
+  try {
+    const url = force ? '/api/market/signals?bust=' + Date.now() : '/api/market/signals';
+    const data = await api(url);
+    if (data.error) { renderSignalsError(data.error); return; }
+    renderSignals(data.signals);
+    const ts = document.getElementById('signals-ts');
+    if (ts) ts.textContent = data.timestamp || '';
+  } catch(e) {
+    renderSignalsError(e.message);
+  }
+}
+
+function renderSignalsError(msg) {
+  document.getElementById('signals-grid').innerHTML =
+    `<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Unable to load signals: ${msg}</div>`;
+}
+
+function renderSignals(signals) {
+  const grid = document.getElementById('signals-grid');
+  if (!signals || !signals.length) { renderSignalsError('No data'); return; }
+
+  const regimeCls = r => r === 'BULL' ? 'bull' : r === 'BEAR' ? 'bear' : r === 'NEUTRAL' ? 'neutral' : 'unknown';
+  const regimeLbl = r => r === 'BULL' ? '▲ Bullish' : r === 'BEAR' ? '▼ Bearish' : r === 'NEUTRAL' ? '● Neutral' : '? Unknown';
+  const dot = ok => `<span class="sig-dot ${ok ? 'on' : 'off'}"></span>`;
+  const fmtP = (coin, price) => {
+    if (price == null) return '—';
+    return '$' + price.toLocaleString('en-US', { minimumFractionDigits: coin === 'XRP' ? 4 : 2, maximumFractionDigits: coin === 'XRP' ? 4 : 2 });
+  };
+
+  grid.innerHTML = signals.map(s => {
+    const cls = regimeCls(s.regime);
+    if (s.error) return `
+      <div class="sig-card unknown">
+        <div class="sig-top"><span class="sig-coin">${s.coin}</span></div>
+        <div class="sig-badge unknown">? Unknown</div>
+        <div style="font-size:11px;color:var(--muted)">${s.error}</div>
+      </div>`;
+
+    const recCls = s.rec === 'Long DCA' ? 'bull' : s.rec === 'Short DCA' ? 'bear' : 'neutral';
+    return `
+      <div class="sig-card ${cls}">
+        <div class="sig-top">
+          <span class="sig-coin">${s.coin}</span>
+          <span class="sig-price">${fmtP(s.coin, s.price)}</span>
+        </div>
+        <div class="sig-badge ${cls}">${regimeLbl(s.regime)} &nbsp;${s.score}/4</div>
+        <div class="sig-signals">
+          <div class="sig-row">${dot(s.s1)}<span>Price ${s.s1 ? '>' : '<'} EMA50</span></div>
+          <div class="sig-row">${dot(s.s2)}<span>${s.s2 ? 'Golden Cross' : 'Death Cross'} (EMA50/200)</span></div>
+          <div class="sig-row">${dot(s.s3)}<span>RSI ${s.rsi}</span></div>
+          <div class="sig-row">${dot(s.s4)}<span>7-day ${s.week_ret >= 0 ? '+' : ''}${s.week_ret}%</span></div>
+        </div>
+        <div class="sig-rec ${recCls}">${s.rec === 'Long DCA' ? '▲' : s.rec === 'Short DCA' ? '▼' : '●'} ${s.rec}</div>
+      </div>`;
+  }).join('');
 }
 
 // ── Page tabs ─────────────────────────────────────────────────────────────────
@@ -2474,9 +2610,11 @@ async function loadRegimeState(){
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 refresh();
+loadMarketSignals();
 refreshRunning();
 setInterval(refresh, 5000);
 setInterval(refreshRunning, 5000);
+setInterval(() => loadMarketSignals(), 900000);  // re-fetch every 15 min
 </script>
 </body>
 </html>

@@ -263,12 +263,12 @@ class ShortDCAStrategy:
                 avg_trade_duration_days=0.0, total_test_days=0.0,
             )
 
-        winning = [t for t in trades if t.profit_loss > 0]
-        losing  = [t for t in trades if t.profit_loss < 0]
         stopped = [t for t in trades if t.stop_loss_triggered]
+        winning = [t for t in trades if not t.stop_loss_triggered]
+        losing  = stopped  # every loss is a stop-loss
 
-        total_profit = sum(t.profit_loss for t in winning)
-        total_loss   = abs(sum(t.profit_loss for t in losing))
+        total_profit = sum(t.profit_loss for t in winning if t.profit_loss > 0)
+        total_loss   = abs(sum(t.profit_loss for t in losing if t.profit_loss < 0))
         net_pnl      = sum(t.profit_loss for t in trades)
         final_budget = self.initial_budget + net_pnl
         total_roi    = net_pnl / self.initial_budget * 100 if self.initial_budget else 0.0

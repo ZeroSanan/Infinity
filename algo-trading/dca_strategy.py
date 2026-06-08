@@ -475,31 +475,31 @@ class DCAStrategy:
                 total_test_days=0.0
             )
         
-        # Separate trades by outcome
-        winning_trades = [t for t in trades if t.profit_loss > 0]
-        losing_trades = [t for t in trades if t.profit_loss < 0]
+        # Separate trades by outcome — losses are defined by SL trigger only
         stopped_out_trades = [t for t in trades if t.stop_loss_triggered]
-        
+        winning_trades     = [t for t in trades if not t.stop_loss_triggered]
+        losing_trades      = stopped_out_trades  # alias: every loss is a stop-loss
+
         # Profit/Loss totals
-        total_profit = sum(t.profit_loss for t in winning_trades)
-        total_loss = abs(sum(t.profit_loss for t in losing_trades))
-        net_pnl = sum(t.profit_loss for t in trades)
-        
+        total_profit = sum(t.profit_loss for t in winning_trades if t.profit_loss > 0)
+        total_loss   = abs(sum(t.profit_loss for t in losing_trades if t.profit_loss < 0))
+        net_pnl      = sum(t.profit_loss for t in trades)
+
         # Final budget = initial + all P&L
         final_budget = self.initial_budget + net_pnl
-        
+
         # ROI = (final - initial) / initial * 100
         total_roi = ((final_budget - self.initial_budget) / self.initial_budget * 100) \
             if self.initial_budget > 0 else 0.0
-        
+
         # Counts and rates
-        total_trades = len(trades)
-        win_rate = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0.0
+        total_trades   = len(trades)
+        win_rate       = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0.0
         stop_loss_rate = (len(stopped_out_trades) / total_trades * 100) if total_trades > 0 else 0.0
-        
+
         # Averages
-        avg_trade_pnl = net_pnl / total_trades if total_trades > 0 else 0.0
-        avg_loss_magnitude = total_loss / len(losing_trades) if losing_trades else 0.0
+        avg_trade_pnl        = net_pnl / total_trades if total_trades > 0 else 0.0
+        avg_loss_magnitude   = total_loss / len(losing_trades) if losing_trades else 0.0
         avg_profit_magnitude = total_profit / len(winning_trades) if winning_trades else 0.0
         
         # Extremes
