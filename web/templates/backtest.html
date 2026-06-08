@@ -1982,7 +1982,7 @@ function renderTradesTable() {
   document.getElementById('trade-count-badge').textContent = `(${allTrades.length} trades)`;
 
   const mixedCols = isMixed ? `<th>Type</th><th>Regime</th><th>Entry</th>` : '';
-  const colspan   = isMixed ? 12 : 9;
+  const colspan   = isMixed ? 13 : 9;
   document.querySelector('thead tr').innerHTML = `
     <th onclick="sortTable('num')">#<span class="sort-icon">↕</span></th>
     <th onclick="sortTable('start')">Date<span class="sort-icon">↕</span></th>
@@ -1990,6 +1990,7 @@ function renderTradesTable() {
     ${mixedCols}
     <th>Levels</th>
     <th onclick="sortTable('invested')">Invested<span class="sort-icon">↕</span></th>
+    <th onclick="sortTable('avg_entry')">Avg Entry<span class="sort-icon">↕</span></th>
     <th onclick="sortTable('exit_price')">Exit<span class="sort-icon">↕</span></th>
     <th onclick="sortTable('profit_loss')">P&amp;L $<span class="sort-icon">↕</span></th>
     <th onclick="sortTable('profit_percent')">P&amp;L %<span class="sort-icon">↕</span></th>
@@ -2076,6 +2077,10 @@ function renderTradesTable() {
         </td>
       </tr>`;
 
+    const avgEntryCell = isMixed
+      ? `<td style="color:var(--muted)">$${fmt(t.avg_entry)}</td>`
+      : '';
+
     return `<tr class="${rowClass}${indRowClass}" data-expandable onclick="toggleDetail(${idx})">
       <td class="num">${t.num}</td>
       <td>${startFmt}</td>
@@ -2083,6 +2088,7 @@ function renderTradesTable() {
       ${mixedCells}
       <td style="color:var(--muted)">${Array.isArray(t.levels_filled) ? '[' + levels + ']' : levels}</td>
       <td>$${fmt(invested)}</td>
+      ${avgEntryCell}
       <td>$${fmt(t.exit_price)}</td>
       <td class="${pnlClass}">${pnlSign}$${fmt(t.profit_loss)}</td>
       <td class="${pnlClass}">${pctSign}${t.profit_percent.toFixed(2)}%</td>
