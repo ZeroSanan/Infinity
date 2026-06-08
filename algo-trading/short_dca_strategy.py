@@ -120,10 +120,14 @@ class ShortDCAStrategy:
         return avg * (1 - self.take_profit_percent / 100)
 
     def calculate_stop_loss_threshold(self) -> Optional[float]:
-        if self.stop_loss_percent <= 0 or not self._filled():
+        if self.stop_loss_percent <= 0:
             return None
-        deepest = self._deepest()
-        return deepest.fill_price * (1 + self.stop_loss_percent / 100)
+
+        # SL only activates after ALL configured levels are filled
+        if not all(lv.filled for lv in self.active_dca_levels):
+            return None
+
+        return self.anchor_price * (1 + self.stop_loss_percent / 100)
 
     # ── Fill / exit checks ────────────────────────────────────────────────────
 

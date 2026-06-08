@@ -354,12 +354,11 @@ class DCAStrategy:
         if self.stop_loss_percent <= 0:
             return None
 
-        filled_levels = [lvl for lvl in self.active_dca_levels if lvl.filled]
-        if not filled_levels:
+        # SL only activates after ALL configured levels are filled
+        if not all(lvl.filled for lvl in self.active_dca_levels):
             return None
 
-        deepest = max(filled_levels, key=lambda lvl: lvl.level_num)
-        return deepest.fill_price * (1 - self.stop_loss_percent / 100)
+        return self.anchor_price * (1 - self.stop_loss_percent / 100)
     
     def check_stop_loss_hit(self, candle_low: float) -> bool:
         """
