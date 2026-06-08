@@ -262,9 +262,10 @@
     display: inline-block; padding: 2px 7px; border-radius: 99px;
     font-size: 10px; font-weight: 600; letter-spacing: .3px;
   }
-  .badge-green { background: var(--green-bg); color: var(--green); }
-  .badge-red   { background: var(--red-bg);   color: var(--red); }
-  .badge-orange { background: var(--orange-bg); color: var(--orange); }
+  .badge-green    { background: var(--green-bg);  color: var(--green); }
+  .badge-red      { background: var(--red-bg);    color: var(--red); }
+  .badge-orange   { background: var(--orange-bg); color: var(--orange); }
+  .badge-override { background: #2d2250; color: #b48eff; }
 
   /* ── ERROR BANNER ── */
   .error-banner {
@@ -1662,8 +1663,9 @@ function moveTip(evt) {
 function hideTip() { document.getElementById('chart-tooltip').style.display = 'none'; }
 
 function tradeTooltipHTML(t) {
+  const isOverride = t.reason === 'oversold_override' || t.reason === 'overbought_override';
   const cls  = t.stop_loss ? 'sl' : (t.profit_loss >= 0 ? 'win' : 'loss');
-  const label = t.stop_loss ? 'Stop-Loss' : (t.profit_loss >= 0 ? 'Take Profit' : 'Loss');
+  const label = t.stop_loss ? 'Stop-Loss' : isOverride ? 'Override Exit' : (t.profit_loss >= 0 ? 'Take Profit' : 'Loss');
   const sign  = t.profit_loss >= 0 ? '+' : '';
   return `
     <div class="tip-title">Trade #${t.num} — <span class="tip-${cls}">${label}</span></div>
@@ -2011,9 +2013,12 @@ function renderTradesTable() {
     const invested = t.invested ?? t.total_invested;
     const levels   = Array.isArray(t.levels_filled) ? t.levels_filled.join(', ') : t.levels_filled;
     const startFmt = new Date(t.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+    const isOverride = t.reason === 'oversold_override' || t.reason === 'overbought_override';
     const badge    = t.stop_loss
       ? '<span class="badge badge-orange">SL</span>'
-      : (t.profit_loss >= 0 ? '<span class="badge badge-green">TP</span>' : '<span class="badge badge-red">LOSS</span>');
+      : isOverride
+        ? `<span class="badge badge-override">${t.profit_loss >= 0 ? '↺ OVR+' : '↺ OVR'}</span>`
+        : (t.profit_loss >= 0 ? '<span class="badge badge-green">TP</span>' : '<span class="badge badge-red">LOSS</span>');
 
     const typeBadge = t.type === 'LONG'
       ? '<span class="badge badge-long">LONG</span>'
