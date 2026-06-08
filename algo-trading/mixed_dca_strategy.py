@@ -419,7 +419,7 @@ class MixedDCABacktest:
                 "dca_levels": [
                     {
                         "step":       lv.level_num,
-                        "pct":        lv.level_percent,
+                        "pct":        lv.dump_percent,
                         "price":      round(lv.entry_price, 2),
                         "filled":     lv.filled,
                         "fill_price": round(lv.fill_price, 2) if lv.fill_price else None,
