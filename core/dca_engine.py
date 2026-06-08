@@ -14,9 +14,11 @@ from core.logger import get_logger, log_order, log_position
 from utils.calculations import (
     calc_dump_percent,
     calc_take_profit_price,
+    calc_stop_loss_price,
     calc_pnl,
     should_buy,
     should_take_profit,
+    should_stop_loss,
 )
 
 POLL_INTERVAL = 10  # seconds between price checks
@@ -75,7 +77,7 @@ class DCAEngine:
             f"ref={state.reference_price:.4f} | dump={dump_pct:.2f}%"
         )
 
-        # ── Check TP first (highest priority) ────────────────────────────────
+        # ── Check TP and SL (only when position is active) ───────────────────
         if state.status == "ACTIVE":
             tp_price = calc_take_profit_price(
                 state.average_entry, self.cfg.take_profit_percent
@@ -83,16 +85,28 @@ class DCAEngine:
             if should_take_profit(price, tp_price):
                 self._execute_take_profit(price, tp_price)
                 return
-            else:
-                log_position(
-                    self.logger,
-                    self.cfg.name,
-                    state.average_entry,
-                    state.total_quantity,
-                    state.total_invested,
-                    tp_price,
-                    state.steps_done,
+
+            # SL activates only after ALL levels are filled
+            if (
+                self.cfg.stop_loss_percent > 0
+                and state.steps_done >= self.cfg.step_count
+            ):
+                sl_price = calc_stop_loss_price(
+                    state.reference_price, self.cfg.stop_loss_percent
                 )
+                if should_stop_loss(price, sl_price):
+                    self._execute_stop_loss(price, sl_price)
+                    return
+
+            log_position(
+                self.logger,
+                self.cfg.name,
+                state.average_entry,
+                state.total_quantity,
+                state.total_invested,
+                tp_price,
+                state.steps_done,
+            )
 
         # ── Check for next DCA buy step ──────────────────────────────────────
         next_idx = state.next_step_index
@@ -186,6 +200,45 @@ class DCAEngine:
         )
         self.logger.info(
             f"PROFIT [{self.cfg.name}] "
+            f"PnL={pnl_usdt:+.2f} USDT ({pnl_pct:+.2f}%) | "
+            f"avg_entry={state.average_entry:.4f} | exit={exit_price:.4f} | "
+            f"steps_done={state.steps_done}"
+        )
+
+        state.status = "EXITED"
+        save_state(state)
+        reset_state(state)
+
+    def _execute_stop_loss(self, current_price: float, sl_price: float):
+        state = self.state
+
+        self.logger.warning(
+            f"STOP-LOSS [{self.cfg.name}] triggered | "
+            f"price={current_price:.4f} <= sl={sl_price:.4f} | "
+            f"ref={state.reference_price:.4f} | sl%={self.cfg.stop_loss_percent}%"
+        )
+
+        step_size = self._step_size
+        try:
+            order = self.client.place_market_sell(
+                self.cfg.symbol, state.total_quantity, step_size
+            )
+        except Exception as e:
+            self.logger.error(f"[{self.cfg.name}] Stop-loss sell failed: {e}")
+            return
+
+        exit_price = BinanceSpotClient.parse_fill_price(order)
+        exit_qty   = BinanceSpotClient.parse_fill_quantity(order)
+        order_id   = str(order["orderId"])
+
+        pnl_usdt, pnl_pct = calc_pnl(state.average_entry, exit_price, exit_qty)
+
+        log_order(
+            self.logger, "SELL(SL)", self.cfg.symbol,
+            exit_price, exit_qty * exit_price, exit_qty, order_id
+        )
+        self.logger.warning(
+            f"STOP-LOSS [{self.cfg.name}] closed | "
             f"PnL={pnl_usdt:+.2f} USDT ({pnl_pct:+.2f}%) | "
             f"avg_entry={state.average_entry:.4f} | exit={exit_price:.4f} | "
             f"steps_done={state.steps_done}"

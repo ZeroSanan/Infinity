@@ -14,6 +14,7 @@ class CoinConfig:
     dump_levels: List[float]
     order_sizes: List[float]
     take_profit_percent: float
+    stop_loss_percent: float = 0.0
     reference_price: Optional[float] = None
 
     def validate(self):

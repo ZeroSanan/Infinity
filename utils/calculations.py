@@ -85,3 +85,16 @@ def should_buy(
 def should_take_profit(current_price: float, tp_price: float) -> bool:
     """Returns True when price has hit the take-profit target."""
     return current_price >= tp_price
+
+
+def calc_stop_loss_price(reference_price: float, sl_percent: float) -> float:
+    """
+    SL threshold = reference_price × (1 - sl_percent / 100)
+    Fixed price — does not change as levels fill.
+    """
+    return reference_price * (1 - sl_percent / 100)
+
+
+def should_stop_loss(current_price: float, sl_price: float) -> bool:
+    """Returns True when price has hit or passed the stop-loss threshold."""
+    return current_price <= sl_price

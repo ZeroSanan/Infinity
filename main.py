@@ -45,6 +45,7 @@ def load_configs() -> list[CoinConfig]:
             dump_levels=item["dump_levels"],
             order_sizes=item["order_sizes"],
             take_profit_percent=item["take_profit_percent"],
+            stop_loss_percent=item.get("stop_loss_percent", 0.0),
             reference_price=item.get("reference_price"),
         )
         cfg.validate()
