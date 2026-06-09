@@ -71,6 +71,20 @@
   .sig-card.bull  { border-color: rgba(52,199,89,0.35); }
   .sig-card.bear  { border-color: rgba(255,59,48,0.30); }
 
+  /* Action banner */
+  .sig-action {
+    border-radius: 8px; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .sig-action-ready-long    { background: rgba(52,199,89,0.14);  border: 1px solid rgba(52,199,89,0.35); }
+  .sig-action-ready-short   { background: rgba(255,59,48,0.10);  border: 1px solid rgba(255,59,48,0.30); }
+  .sig-action-watch         { background: rgba(255,149,0,0.10);  border: 1px solid rgba(255,149,0,0.30); }
+  .sig-action-wait          { background: rgba(142,142,147,0.08);border: 1px solid var(--border); }
+  .sig-action-title {
+    font-size: 15px; font-weight: 800; letter-spacing: -.2px; line-height: 1;
+  }
+  .sig-action-cond  { font-size: 11px; font-weight: 400; opacity: .75; margin-top: 1px; line-height: 1.4; }
+
   .sig-top { display: flex; align-items: baseline; justify-content: space-between; }
   .sig-coin { font-size: 16px; font-weight: 700; color: var(--text); }
   .sig-price { font-size: 13px; color: var(--muted); }
@@ -1219,6 +1233,7 @@
               <th style="text-align:center;padding:6px 8px;color:var(--muted);font-weight:600">Regime</th>
               <th style="text-align:center;padding:6px 8px;color:var(--muted);font-weight:600">Score</th>
               <th style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600">RSI</th>
+              <th style="text-align:center;padding:6px 8px;color:var(--muted);font-weight:600">Action</th>
               <th style="text-align:center;padding:6px 8px;color:var(--muted);font-weight:600">ML Dir</th>
               <th style="text-align:center;padding:6px 8px;color:var(--muted);font-weight:600">Entry</th>
             </tr>
@@ -1774,11 +1789,26 @@ function renderSignals(signals) {
       return `<div class="sig-factor"><span class="sig-factor-dot" style="background:${color}"></span><span style="flex:1">${label}</span><span style="color:${color};font-weight:600">${delta}</span></div>`;
     }).join('');
 
+    // Action banner
+    const actionCls = s.action === 'LONG NOW'  ? 'ready-long'  :
+                      s.action === 'SHORT NOW' ? 'ready-short' :
+                      s.action === 'WATCH'     ? 'watch'       : 'wait';
+    const actionIcon = s.action === 'LONG NOW'  ? '▲ LONG NOW'  :
+                       s.action === 'SHORT NOW' ? '▼ SHORT NOW' :
+                       s.action === 'WATCH'     ? '👀 WATCH'    : '⏳ WAIT';
+    const actionCol  = s.action === 'LONG NOW'  ? '#1a7a35' :
+                       s.action === 'SHORT NOW' ? '#c41f1f' :
+                       s.action === 'WATCH'     ? '#a05c00' : 'var(--muted)';
+
     return `
       <div class="sig-card ${cls}">
         <div class="sig-top">
           <span class="sig-coin">${s.coin}</span>
           <span class="sig-price">${fmtP(s.coin, s.price)}</span>
+        </div>
+        <div class="sig-action sig-action-${actionCls}">
+          <div class="sig-action-title" style="color:${actionCol}">${actionIcon}</div>
+          <div class="sig-action-cond">${s.condition || ''}</div>
         </div>
         <div class="sig-badge ${cls}">${regimeLbl(s.regime)} &nbsp;${s.score}/4</div>
         <div class="sig-signals">
@@ -2855,6 +2885,7 @@ function renderHistoryTable(rows) {
         ${'●'.repeat(r.score)}${'○'.repeat(4-r.score)}
       </td>
       <td style="padding:7px 8px;text-align:right;color:${r.rsi>60?'var(--green)':r.rsi<40?'var(--red)':'var(--text)'}">${r.rsi}</td>
+      <td style="padding:7px 8px;text-align:center;font-weight:700;font-size:11px;color:${r.action==='LONG NOW'?'var(--green)':r.action==='SHORT NOW'?'var(--red)':r.action==='WATCH'?'var(--orange)':'var(--muted)'}">${r.action||'—'}</td>
       <td style="padding:7px 8px;text-align:center;font-weight:700;color:${dirCol(r.ml_direction)}">${r.ml_direction === 'UP' ? '▲' : r.ml_direction === 'DOWN' ? '▼' : '?'} <span style="font-size:10px;font-weight:400;opacity:.7">${r.ml_direction_conf ? r.ml_direction_conf+'%' : ''}</span></td>
       <td style="padding:7px 8px;text-align:center;font-weight:700;color:${gradeCol(r.entry_grade)}">${r.entry_grade ?? '—'} <span style="font-size:10px;font-weight:400;opacity:.7">${r.entry_score ?? ''}</span></td>
     </tr>`).join('');

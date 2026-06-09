@@ -39,7 +39,9 @@ def init_db():
                 ml_regime_conf      REAL,
                 ml_agrees           INTEGER,
                 entry_score         INTEGER,
-                entry_grade         TEXT
+                entry_grade         TEXT,
+                action              TEXT,
+                entry_ready         INTEGER
             )
         """)
         c.execute("""
@@ -74,6 +76,8 @@ def save_signals(signals: list):
             int(bool(ml_reg.get("agrees_with_rules", True))),
             ml_ent.get("score"),
             ml_ent.get("grade"),
+            s.get("action"),
+            int(bool(s.get("entry_ready", False))),
         ))
     if not rows:
         return
@@ -82,8 +86,8 @@ def save_signals(signals: list):
             INSERT INTO signal_history
             (ts, coin, price, regime, score, rsi, week_ret, rec,
              ml_direction, ml_direction_conf, ml_regime, ml_regime_conf,
-             ml_agrees, entry_score, entry_grade)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             ml_agrees, entry_score, entry_grade, action, entry_ready)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, rows)
 
 
