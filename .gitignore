@@ -15,6 +15,9 @@ config/accounts.json
 # Data files (large CSVs — upload separately to VPS)
 algo-trading/data/
 
+# Runtime database (signal history — generated on VPS)
+data/signal_history.db
+
 # Reports & outputs
 algo-trading/reports/
 algo-trading/backtest/
