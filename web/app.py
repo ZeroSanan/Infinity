@@ -472,7 +472,26 @@ def api_market_signals():
         "timestamp": _dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
     }
     _market_signals_cache = {"data": result, "ts": now}
+
+    # Persist to history DB (only on fresh computes, not cache hits)
+    try:
+        from core.signal_history import save_signals
+        save_signals(signals)
+    except Exception:
+        pass
+
     return jsonify(result)
+
+
+@app.route("/api/signals/history")
+def api_signals_history():
+    """Return persisted signal history for charting and analysis."""
+    from core.signal_history import get_history, get_summary
+    coin = request.args.get("coin")          # optional filter
+    days = int(request.args.get("days", 7))
+    rows = get_history(coin=coin, days=days)
+    summary = get_summary(days=days)
+    return jsonify({"rows": rows, "summary": summary, "days": days})
 
 
 @app.route("/api/running")

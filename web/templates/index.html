@@ -1188,6 +1188,48 @@
       </div>
     </div>
 
+    <!-- Signal History panel -->
+    <div class="card card-padded" style="margin-top:14px" id="sig-history-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <div class="section-label" style="margin:0">Signal History</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <select id="hist-coin-sel" class="field-select" style="width:100px;padding:5px 10px;font-size:12px" onchange="loadHistory()">
+            <option value="">All coins</option>
+            <option value="BTC">BTC</option>
+            <option value="ETH">ETH</option>
+            <option value="XRP">XRP</option>
+            <option value="SOL">SOL</option>
+          </select>
+          <select id="hist-days-sel" class="field-select" style="width:90px;padding:5px 10px;font-size:12px" onchange="loadHistory()">
+            <option value="1">Last 24h</option>
+            <option value="3">Last 3 days</option>
+            <option value="7" selected>Last 7 days</option>
+            <option value="30">Last 30 days</option>
+          </select>
+        </div>
+      </div>
+      <div id="hist-summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px"></div>
+      <div style="overflow-x:auto">
+        <table id="hist-table" style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600">Time</th>
+              <th style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600">Coin</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600">Price</th>
+              <th style="text-align:center;padding:6px 8px;color:var(--muted);font-weight:600">Regime</th>
+              <th style="text-align:center;padding:6px 8px;color:var(--muted);font-weight:600">Score</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600">RSI</th>
+              <th style="text-align:center;padding:6px 8px;color:var(--muted);font-weight:600">ML Dir</th>
+              <th style="text-align:center;padding:6px 8px;color:var(--muted);font-weight:600">Entry</th>
+            </tr>
+          </thead>
+          <tbody id="hist-body">
+            <tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div><!-- /page-dashboard -->
 
 
@@ -2758,13 +2800,75 @@ async function loadRegimeState(){
   } catch(e){ /* silently ignore */ }
 }
 
+// ── Signal History ────────────────────────────────────────────────────────────
+async function loadHistory() {
+  const coin = document.getElementById('hist-coin-sel').value;
+  const days = document.getElementById('hist-days-sel').value;
+  const url  = `/api/signals/history?days=${days}${coin ? '&coin='+coin : ''}`;
+  try {
+    const data = await api(url);
+    renderHistorySummary(data.summary || []);
+    renderHistoryTable(data.rows || []);
+  } catch(e) {
+    document.getElementById('hist-body').innerHTML =
+      `<tr><td colspan="8" style="padding:16px;text-align:center;color:var(--muted)">Error loading history</td></tr>`;
+  }
+}
+
+function renderHistorySummary(summary) {
+  const el = document.getElementById('hist-summary');
+  if (!summary.length) { el.innerHTML = ''; return; }
+  // group by coin, pick dominant regime
+  const byCoim = {};
+  summary.forEach(r => {
+    if (!byCoim[r.coin] || r.cnt > byCoim[r.coin].cnt) byCoim[r.coin] = r;
+  });
+  el.innerHTML = Object.values(byCoim).map(r => {
+    const cls = r.regime === 'BULL' ? 'bull' : r.regime === 'BEAR' ? 'bear' : 'neutral';
+    const col = r.regime === 'BULL' ? 'var(--green)' : r.regime === 'BEAR' ? 'var(--red)' : 'var(--orange)';
+    return `<div style="background:var(--surface2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)">
+      <div style="font-size:11px;font-weight:700;color:var(--muted)">${r.coin}</div>
+      <div style="font-size:14px;font-weight:700;color:${col};margin:2px 0">${r.regime}</div>
+      <div style="font-size:11px;color:var(--muted)">${r.cnt} readings · avg RSI ${r.avg_rsi}</div>
+      <div style="font-size:11px;color:var(--muted)">Entry avg: ${r.avg_entry_score ?? '—'}/100</div>
+    </div>`;
+  }).join('');
+}
+
+function renderHistoryTable(rows) {
+  const tb = document.getElementById('hist-body');
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted)">No data yet — signals are recorded every 15 minutes.</td></tr>';
+    return;
+  }
+  const regCol = r => r === 'BULL' ? 'var(--green)' : r === 'BEAR' ? 'var(--red)' : 'var(--orange)';
+  const dirCol = d => d === 'UP' ? 'var(--green)' : d === 'DOWN' ? 'var(--red)' : 'var(--muted)';
+  const gradeCol = g => g === 'A' || g === 'B' ? 'var(--green)' : g === 'D' || g === 'F' ? 'var(--red)' : 'var(--orange)';
+
+  tb.innerHTML = rows.map(r => `
+    <tr style="border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <td style="padding:7px 8px;color:var(--muted)">${r.ts.substring(5,16)}</td>
+      <td style="padding:7px 8px;font-weight:700">${r.coin}</td>
+      <td style="padding:7px 8px;text-align:right">$${Number(r.price).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="padding:7px 8px;text-align:center;font-weight:700;color:${regCol(r.regime)}">${r.regime} <span style="font-weight:400;font-size:11px;opacity:.7">${r.score}/4</span></td>
+      <td style="padding:7px 8px;text-align:center">
+        ${'●'.repeat(r.score)}${'○'.repeat(4-r.score)}
+      </td>
+      <td style="padding:7px 8px;text-align:right;color:${r.rsi>60?'var(--green)':r.rsi<40?'var(--red)':'var(--text)'}">${r.rsi}</td>
+      <td style="padding:7px 8px;text-align:center;font-weight:700;color:${dirCol(r.ml_direction)}">${r.ml_direction === 'UP' ? '▲' : r.ml_direction === 'DOWN' ? '▼' : '?'} <span style="font-size:10px;font-weight:400;opacity:.7">${r.ml_direction_conf ? r.ml_direction_conf+'%' : ''}</span></td>
+      <td style="padding:7px 8px;text-align:center;font-weight:700;color:${gradeCol(r.entry_grade)}">${r.entry_grade ?? '—'} <span style="font-size:10px;font-weight:400;opacity:.7">${r.entry_score ?? ''}</span></td>
+    </tr>`).join('');
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 refresh();
 loadMarketSignals();
+loadHistory();
 refreshRunning();
 setInterval(refresh, 5000);
 setInterval(refreshRunning, 5000);
-setInterval(() => loadMarketSignals(), 900000);  // re-fetch every 15 min
+setInterval(() => loadMarketSignals(), 900000);
+setInterval(() => loadHistory(), 900000);
 </script>
 </body>
 </html>
