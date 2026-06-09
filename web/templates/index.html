@@ -137,6 +137,39 @@
   .sig-strat-neutral { background: rgba(255,149,0,0.08);  color: #a05c00; border-color: rgba(255,149,0,0.22); }
   .sig-strat-unknown { background: rgba(142,142,147,0.07);color: var(--muted); border-color: var(--border); }
 
+  /* ML panel */
+  .sig-ml {
+    background: rgba(88,86,214,0.06);
+    border: 1px solid rgba(88,86,214,0.18);
+    border-radius: 8px;
+    padding: 9px 12px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .sig-ml-label {
+    font-size: 9px; font-weight: 700; letter-spacing: .8px;
+    text-transform: uppercase; color: var(--purple); opacity: .7;
+    margin-bottom: 1px;
+  }
+  .sig-ml-row {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px;
+  }
+  .sig-ml-key { color: var(--muted); font-weight: 400; }
+  .sig-ml-val { font-weight: 700; color: var(--text); }
+  .sig-ml-conf { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .sig-grade {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 6px;
+    font-size: 12px; font-weight: 800;
+  }
+  .grade-A { background: rgba(52,199,89,.15);  color: #1a7a35; }
+  .grade-B { background: rgba(52,199,89,.10);  color: #2d9e50; }
+  .grade-C { background: rgba(255,149,0,.12);  color: #a05c00; }
+  .grade-D { background: rgba(255,59,48,.10);  color: #c41f1f; }
+  .grade-F { background: rgba(255,59,48,.16);  color: #aa1111; }
+  .sig-factor { font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 5px; }
+  .sig-factor-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
   .signals-header {
     display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
   }
@@ -1686,6 +1719,19 @@ function renderSignals(signals) {
         <div class="sig-strat-levels">${freshChips}</div>
       </div>` : '';
 
+    // ML panel
+    const mlDir   = s.ml_direction || {};
+    const mlReg   = s.ml_regime    || {};
+    const mlEnt   = s.ml_entry     || {};
+    const dirIcon = mlDir.direction === 'UP' ? '▲' : mlDir.direction === 'DOWN' ? '▼' : '?';
+    const dirCol  = mlDir.direction === 'UP' ? 'var(--green)' : mlDir.direction === 'DOWN' ? 'var(--red)' : 'var(--muted)';
+    const regAgree = mlReg.agrees_with_rules !== false;
+    const gradeEl = mlEnt.grade ? `<span class="sig-grade grade-${mlEnt.grade}">${mlEnt.grade}</span>` : '';
+    const factorsHtml = (mlEnt.factors || []).slice(0,3).map(([label, delta, good]) => {
+      const color = good === true ? 'var(--green)' : good === false ? 'var(--red)' : 'var(--muted)';
+      return `<div class="sig-factor"><span class="sig-factor-dot" style="background:${color}"></span><span style="flex:1">${label}</span><span style="color:${color};font-weight:600">${delta}</span></div>`;
+    }).join('');
+
     return `
       <div class="sig-card ${cls}">
         <div class="sig-top">
@@ -1710,6 +1756,24 @@ function renderSignals(signals) {
           <div class="sig-strat-levels">${levelChips}</div>
           <div class="sig-strat-tp">Take Profit: +${s.strat_tp}%</div>
           ${freshSection}
+        </div>
+        <div class="sig-ml">
+          <div class="sig-ml-label">ML Analysis</div>
+          <div class="sig-ml-row">
+            <span class="sig-ml-key">Next candle</span>
+            <span class="sig-ml-val" style="color:${dirCol}">${dirIcon} ${mlDir.direction || '—'} <span class="sig-ml-conf">${mlDir.confidence ? mlDir.confidence + '%' : ''}</span></span>
+          </div>
+          <div class="sig-ml-row">
+            <span class="sig-ml-key">ML Regime</span>
+            <span class="sig-ml-val">${mlReg.regime || '—'} <span class="sig-ml-conf">${mlReg.confidence ? mlReg.confidence + '%' : ''}${!regAgree ? ' ⚠ differs from rules' : ''}</span></span>
+          </div>
+          <div class="sig-ml-row" style="align-items:flex-start;gap:8px">
+            <span class="sig-ml-key" style="padding-top:2px">Entry score</span>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:1">
+              <div style="display:flex;align-items:center;gap:6px">${gradeEl}<span class="sig-ml-val">${mlEnt.score ?? '—'}/100</span></div>
+              <div style="width:100%;display:flex;flex-direction:column;gap:2px">${factorsHtml}</div>
+            </div>
+          </div>
         </div>
       </div>`;
   }).join('');
