@@ -353,7 +353,7 @@ def api_market_signals():
             score = int(s1) + int(s2) + int(s3) + int(s4)
             if   score >= 3: regime, rec = "BULL",    "Long DCA"
             elif score <= 1: regime, rec = "BEAR",    "Short DCA"
-            else:            regime, rec = "NEUTRAL", "Stand By"
+            else:            regime, rec = "NEUTRAL", "Mixed DCA"
 
             dec = 4 if price < 10 else (2 if price < 1000 else 0)
             signals.append({
