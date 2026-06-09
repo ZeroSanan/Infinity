@@ -124,6 +124,11 @@
     background: rgba(0,0,0,0.06);
     white-space: nowrap;
   }
+  .sig-level-passed {
+    opacity: .4;
+    text-decoration: line-through;
+    background: rgba(0,0,0,0.03);
+  }
   .sig-strat-tp {
     font-size: 11px; font-weight: 500; opacity: 0.7; margin-top: 1px;
   }
@@ -1648,13 +1653,39 @@ function renderSignals(signals) {
 
     const st = stratInfo(s.rec);
     const sign = s.rec === 'Short DCA' ? '+' : '−';
+
+    // Original anchor levels — mark passed ones
     const levelChips = (s.strat_levels || []).map((l, i) => {
       const tp = (s.trigger_prices || [])[i];
-      const tpStr = tp != null ? `<span style="opacity:.6;font-weight:400"> ${fmtP(s.coin, tp)}</span>` : '';
-      return `<span class="sig-level-chip">${sign}${l}%${tpStr}</span>`;
+      const passed = tp != null && tp > s.price;
+      const tpStr = tp != null ? ` ${fmtP(s.coin, tp)}` : '';
+      if (passed) {
+        return `<span class="sig-level-chip sig-level-passed" title="Already passed">${sign}${l}%<span style="font-weight:400;opacity:.6"> ${fmtP(s.coin, tp)}</span> ✓</span>`;
+      }
+      return `<span class="sig-level-chip">${sign}${l}%<span style="font-weight:400;opacity:.6">${tpStr}</span></span>`;
     }).join('');
-    const sourceLbl = s.strat_source === 'saved' ? 'Saved' : 'Suggested';
-    const anchorStr = s.anchor ? fmtP(s.coin, s.anchor) : '—';
+
+    // Fresh-start levels from current price
+    const freshChips = (s.strat_levels || []).map((l, i) => {
+      const tp = (s.fresh_triggers || [])[i];
+      const tpStr = tp != null ? ` ${fmtP(s.coin, tp)}` : '';
+      return `<span class="sig-level-chip">${sign}${l}%<span style="font-weight:400;opacity:.6">${tpStr}</span></span>`;
+    }).join('');
+
+    const sourceLbl  = s.strat_source === 'saved' ? 'Saved' : 'Suggested';
+    const anchorStr  = s.anchor ? fmtP(s.coin, s.anchor) : '—';
+    const passedWarn = s.levels_passed > 0
+      ? `<div style="font-size:11px;color:#b36a00;background:rgba(255,149,0,.10);border-radius:5px;padding:4px 8px;margin-bottom:5px">
+           ⚠ ${s.levels_passed} level${s.levels_passed>1?'s':''} already passed — consider fresh start
+         </div>` : '';
+
+    const freshSection = s.levels_passed > 0 ? `
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,.08)">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;opacity:.5;margin-bottom:4px">Fresh start from now</div>
+        <div style="font-size:11px;opacity:.6;margin-bottom:4px">Anchor: <strong>${fmtP(s.coin, s.fresh_anchor)}</strong> <span style="opacity:.7">(current price)</span></div>
+        <div class="sig-strat-levels">${freshChips}</div>
+      </div>` : '';
+
     return `
       <div class="sig-card ${cls}">
         <div class="sig-top">
@@ -1675,8 +1706,10 @@ function renderSignals(signals) {
           </div>
           <div class="sig-strat-name">${st.icon} ${s.rec} &nbsp;·&nbsp; ${s.strat_name || ''}</div>
           <div style="font-size:11px;opacity:.6;margin:1px 0 4px">Anchor: <strong>${anchorStr}</strong> <span style="opacity:.7">(14-day high)</span></div>
+          ${passedWarn}
           <div class="sig-strat-levels">${levelChips}</div>
           <div class="sig-strat-tp">Take Profit: +${s.strat_tp}%</div>
+          ${freshSection}
         </div>
       </div>`;
   }).join('');
