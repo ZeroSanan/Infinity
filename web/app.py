@@ -388,6 +388,38 @@ def api_market_signals():
             elif score <= 1: regime, rec = "BEAR",    "Short DCA"
             else:            regime, rec = "NEUTRAL", "Mixed DCA"
 
+            # ── Entry readiness ───────────────────────────────────────
+            # Trend alone is not enough — RSI timing determines readiness
+            if regime == "BULL":
+                if rsi < 40:
+                    action, entry_ready = "LONG NOW",  True
+                    condition = f"RSI oversold at {rsi:.0f} — strong dip entry"
+                elif rsi < 50:
+                    action, entry_ready = "LONG NOW",  True
+                    condition = f"RSI {rsi:.0f} — decent dip, good entry"
+                elif rsi < 60:
+                    action, entry_ready = "WATCH",     False
+                    condition = f"Wait for RSI to dip below 50 (now {rsi:.0f})"
+                else:
+                    action, entry_ready = "WAIT",      False
+                    condition = f"RSI too high for long entry — wait for pullback to RSI 50 (now {rsi:.0f})"
+            elif regime == "BEAR":
+                if rsi > 65:
+                    action, entry_ready = "SHORT NOW", True
+                    condition = f"RSI overbought at {rsi:.0f} — strong pump to short into"
+                elif rsi > 55:
+                    action, entry_ready = "SHORT NOW", True
+                    condition = f"RSI {rsi:.0f} — elevated, decent short entry"
+                elif rsi > 45:
+                    action, entry_ready = "WATCH",     False
+                    condition = f"Wait for RSI to rise above 55 (now {rsi:.0f})"
+                else:
+                    action, entry_ready = "WAIT",      False
+                    condition = f"RSI too low for short — wait for bounce to RSI 55+ (now {rsi:.0f})"
+            else:  # NEUTRAL
+                action, entry_ready = "WATCH",     False
+                condition = "No clear trend — wait for BULL or BEAR confirmation"
+
             # Strategy recommendation: prefer saved, fall back to preset
             saved = _best_saved(coin, regime)
             if saved:
@@ -460,6 +492,9 @@ def api_market_signals():
                 "ml_direction":   ml_dir,
                 "ml_regime":      ml_regime,
                 "ml_entry":       ml_entry,
+                "action":         action,
+                "entry_ready":    entry_ready,
+                "condition":      condition,
             })
         except Exception as exc:
             signals.append({
