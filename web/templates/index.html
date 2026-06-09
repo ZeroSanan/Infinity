@@ -96,18 +96,35 @@
   .sig-strat-box {
     border-radius: 8px;
     padding: 9px 12px;
-    display: flex; flex-direction: column; gap: 2px;
+    display: flex; flex-direction: column; gap: 4px;
     border-width: 1px; border-style: solid;
+  }
+  .sig-strat-header {
+    display: flex; align-items: center; justify-content: space-between;
   }
   .sig-strat-label {
     font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
-    text-transform: uppercase; opacity: 0.6;
+    text-transform: uppercase; opacity: 0.55;
   }
+  .sig-strat-source {
+    font-size: 9px; font-weight: 600; letter-spacing: 0.4px;
+    text-transform: uppercase; opacity: 0.5;
+    padding: 1px 5px; border-radius: 4px; background: currentColor;
+  }
+  .sig-strat-source span { mix-blend-mode: screen; color: #fff; }
   .sig-strat-name {
-    font-size: 14px; font-weight: 700; line-height: 1.2;
+    font-size: 13px; font-weight: 700; line-height: 1.2;
   }
-  .sig-strat-desc {
-    font-size: 11px; font-weight: 400; opacity: 0.75; margin-top: 1px;
+  .sig-strat-levels {
+    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;
+  }
+  .sig-level-chip {
+    font-size: 11px; font-weight: 600;
+    padding: 2px 7px; border-radius: 5px;
+    background: rgba(0,0,0,0.06);
+  }
+  .sig-strat-tp {
+    font-size: 11px; font-weight: 500; opacity: 0.7; margin-top: 1px;
   }
   .sig-strat-bull    { background: rgba(52,199,89,0.10);  color: #1a7a35; border-color: rgba(52,199,89,0.25); }
   .sig-strat-bear    { background: rgba(255,59,48,0.08);  color: #c41f1f; border-color: rgba(255,59,48,0.22); }
@@ -1613,10 +1630,10 @@ function renderSignals(signals) {
     return '$' + price.toLocaleString('en-US', { minimumFractionDigits: coin === 'XRP' ? 4 : 2, maximumFractionDigits: coin === 'XRP' ? 4 : 2 });
   };
   const stratInfo = rec => {
-    if (rec === 'Long DCA')  return { cls: 'bull',    icon: '▲', desc: 'Buy the dips · average down' };
-    if (rec === 'Short DCA') return { cls: 'bear',    icon: '▼', desc: 'Sell the pumps · average up' };
-    if (rec === 'Mixed DCA') return { cls: 'neutral', icon: '⇅', desc: 'Hedge both sides · use caution' };
-    return                          { cls: 'unknown', icon: '?', desc: 'Insufficient data' };
+    if (rec === 'Long DCA')  return { cls: 'bull',    icon: '▲' };
+    if (rec === 'Short DCA') return { cls: 'bear',    icon: '▼' };
+    if (rec === 'Mixed DCA') return { cls: 'neutral', icon: '⇅' };
+    return                          { cls: 'unknown', icon: '?' };
   };
 
   grid.innerHTML = signals.map(s => {
@@ -1629,6 +1646,10 @@ function renderSignals(signals) {
       </div>`;
 
     const st = stratInfo(s.rec);
+    const sign = s.rec === 'Short DCA' ? '+' : '−';
+    const levelChips = (s.strat_levels || []).map(l =>
+      `<span class="sig-level-chip">${sign}${l}%</span>`).join('');
+    const sourceLbl = s.strat_source === 'saved' ? 'Saved' : 'Suggested';
     return `
       <div class="sig-card ${cls}">
         <div class="sig-top">
@@ -1643,9 +1664,13 @@ function renderSignals(signals) {
           <div class="sig-row">${dot(s.s4)}<span>7-day ${s.week_ret >= 0 ? '+' : ''}${s.week_ret}%</span></div>
         </div>
         <div class="sig-strat-box sig-strat-${st.cls}">
-          <div class="sig-strat-label">Best Strategy</div>
-          <div class="sig-strat-name">${st.icon} ${s.rec}</div>
-          <div class="sig-strat-desc">${st.desc}</div>
+          <div class="sig-strat-header">
+            <div class="sig-strat-label">Best Strategy</div>
+            <div style="font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.5">${sourceLbl}</div>
+          </div>
+          <div class="sig-strat-name">${st.icon} ${s.rec} &nbsp;·&nbsp; ${s.strat_name || ''}</div>
+          <div class="sig-strat-levels">${levelChips}</div>
+          <div class="sig-strat-tp">Take Profit: +${s.strat_tp}%</div>
         </div>
       </div>`;
   }).join('');
