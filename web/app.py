@@ -303,6 +303,37 @@ def api_market_signals():
     except ImportError:
         return jsonify({"error": "requests not installed"}), 500
 
+    # Preset level suggestions keyed by (regime, score).
+    # Levels are stored as positive magnitudes; direction depends on regime.
+    _PRESETS = {
+        ("BULL", 4): {"name": "Conservative",  "levels": [6, 10, 15],          "tp": 5.0},
+        ("BULL", 3): {"name": "Standard",       "levels": [8, 12, 18, 24],      "tp": 8.0},
+        ("NEUTRAL",2):{"name": "Cautious",      "levels": [8, 12, 18],          "tp": 6.0},
+        ("BEAR", 1): {"name": "Standard Short", "levels": [6, 10, 15],          "tp": 5.0},
+        ("BEAR", 0): {"name": "Aggressive Short","levels": [8, 12, 18, 24],     "tp": 8.0},
+    }
+
+    # Load user-saved strategies from coins.json
+    try:
+        with open(COINS_PATH) as _f:
+            _raw = json.load(_f).get("coins", [])
+    except Exception:
+        _raw = []
+
+    def _best_saved(coin_name: str, regime: str):
+        """Return the best matching saved strategy dict, or None."""
+        matches = [s for s in _raw if s.get("coin", "").upper() == coin_name.upper()]
+        if not matches:
+            return None
+        for s in matches:
+            lvls = s.get("dump_levels", [])
+            is_long  = lvls and all(l < 0 for l in lvls)
+            is_short = lvls and all(l > 0 for l in lvls)
+            if regime == "BULL"    and is_long:  return s
+            if regime == "BEAR"    and is_short: return s
+            if regime == "NEUTRAL":              return s
+        return matches[0]
+
     coins = [
         ("BTC", "BTCUSDT"),
         ("ETH", "ETHUSDT"),
@@ -355,18 +386,37 @@ def api_market_signals():
             elif score <= 1: regime, rec = "BEAR",    "Short DCA"
             else:            regime, rec = "NEUTRAL", "Mixed DCA"
 
+            # Strategy recommendation: prefer saved, fall back to preset
+            saved = _best_saved(coin, regime)
+            if saved:
+                strat_name   = saved.get("name", coin + " Strategy")
+                strat_levels = [abs(l) for l in saved.get("dump_levels", [])]
+                strat_tp     = saved.get("take_profit_percent", 5.0)
+                strat_source = "saved"
+            else:
+                preset_key   = (regime, score)
+                preset       = _PRESETS.get(preset_key, _PRESETS.get(("BULL" if regime == "BULL" else "BEAR", 3 if regime == "BULL" else 1)))
+                strat_name   = preset["name"]
+                strat_levels = preset["levels"]
+                strat_tp     = preset["tp"]
+                strat_source = "suggested"
+
             dec = 4 if price < 10 else (2 if price < 1000 else 0)
             signals.append({
-                "coin":       coin,
-                "price":      round(price, dec),
-                "ema50":      round(e50,  2),
-                "ema200":     round(e200, 2),
-                "rsi":        round(rsi,  1),
-                "week_ret":   round(week_ret, 2),
-                "score":      score,
-                "regime":     regime,
-                "rec":        rec,
+                "coin":         coin,
+                "price":        round(price, dec),
+                "ema50":        round(e50,  2),
+                "ema200":       round(e200, 2),
+                "rsi":          round(rsi,  1),
+                "week_ret":     round(week_ret, 2),
+                "score":        score,
+                "regime":       regime,
+                "rec":          rec,
                 "s1": s1, "s2": s2, "s3": s3, "s4": s4,
+                "strat_name":   strat_name,
+                "strat_levels": strat_levels,
+                "strat_tp":     strat_tp,
+                "strat_source": strat_source,
             })
         except Exception as exc:
             signals.append({
