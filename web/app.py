@@ -369,6 +369,8 @@ def api_market_signals():
                 raise ValueError("insufficient data")
 
             closes  = [float(k[4]) for k in klines]
+            highs   = [float(k[2]) for k in klines]
+            lows    = [float(k[3]) for k in klines]
             price   = closes[-1]
             e50     = _ema(closes, 50)[-1]
             e200    = _ema(closes, 200)[-1]
@@ -402,7 +404,6 @@ def api_market_signals():
                 strat_source = "suggested"
 
             # Suggested anchor = highest HIGH of last 14 days (84 × 4h candles)
-            highs = [float(k[2]) for k in klines]
             anchor = max(highs[-min(84, len(highs)):])
 
             dec = 4 if price < 10 else (2 if price < 1000 else 0)
@@ -425,6 +426,17 @@ def api_market_signals():
                 for lvl in strat_levels
             ]
 
+            # ── ML models ────────────────────────────────────────────
+            try:
+                from core.ml_signals import predict_direction, classify_regime, score_entry
+                ml_dir    = predict_direction(closes, highs, lows)
+                ml_regime = classify_regime(closes, highs, lows, score, regime)
+                ml_entry  = score_entry(closes, highs, lows, rec)
+            except Exception:
+                ml_dir    = {"direction": "UNKNOWN", "confidence": 0.0}
+                ml_regime = {"regime": regime, "confidence": 50.0, "agrees_with_rules": True}
+                ml_entry  = {"score": 50, "grade": "C", "factors": []}
+
             signals.append({
                 "coin":           coin,
                 "price":          round(price, dec),
@@ -445,6 +457,9 @@ def api_market_signals():
                 "levels_passed":  levels_passed,
                 "fresh_anchor":   fresh_anchor,
                 "fresh_triggers": fresh_triggers,
+                "ml_direction":   ml_dir,
+                "ml_regime":      ml_regime,
+                "ml_entry":       ml_entry,
             })
         except Exception as exc:
             signals.append({
