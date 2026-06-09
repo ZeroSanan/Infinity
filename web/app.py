@@ -413,6 +413,18 @@ def api_market_signals():
                 for lvl in strat_levels
             ]
 
+            # Levels already passed = trigger price is above current price
+            # (price has already fallen through them)
+            levels_passed = sum(1 for tp in trigger_prices if tp > price)
+
+            # If any levels are passed, offer a fresh-start anchor (current price)
+            # so user can still deploy remaining capital from here
+            fresh_anchor = round(price, dec)
+            fresh_triggers = [
+                round(price * (1 - lvl / 100), dec)
+                for lvl in strat_levels
+            ]
+
             signals.append({
                 "coin":           coin,
                 "price":          round(price, dec),
@@ -430,6 +442,9 @@ def api_market_signals():
                 "strat_source":   strat_source,
                 "anchor":         round(anchor, dec),
                 "trigger_prices": trigger_prices,
+                "levels_passed":  levels_passed,
+                "fresh_anchor":   fresh_anchor,
+                "fresh_triggers": fresh_triggers,
             })
         except Exception as exc:
             signals.append({
