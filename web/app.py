@@ -401,22 +401,35 @@ def api_market_signals():
                 strat_tp     = preset["tp"]
                 strat_source = "suggested"
 
+            # Suggested anchor = highest HIGH of last 14 days (84 × 4h candles)
+            highs = [float(k[2]) for k in klines]
+            anchor = max(highs[-min(84, len(highs)):])
+
             dec = 4 if price < 10 else (2 if price < 1000 else 0)
+
+            # DCA trigger prices based on anchor + recommended levels
+            trigger_prices = [
+                round(anchor * (1 - lvl / 100), dec)
+                for lvl in strat_levels
+            ]
+
             signals.append({
-                "coin":         coin,
-                "price":        round(price, dec),
-                "ema50":        round(e50,  2),
-                "ema200":       round(e200, 2),
-                "rsi":          round(rsi,  1),
-                "week_ret":     round(week_ret, 2),
-                "score":        score,
-                "regime":       regime,
-                "rec":          rec,
+                "coin":           coin,
+                "price":          round(price, dec),
+                "ema50":          round(e50,  2),
+                "ema200":         round(e200, 2),
+                "rsi":            round(rsi,  1),
+                "week_ret":       round(week_ret, 2),
+                "score":          score,
+                "regime":         regime,
+                "rec":            rec,
                 "s1": s1, "s2": s2, "s3": s3, "s4": s4,
-                "strat_name":   strat_name,
-                "strat_levels": strat_levels,
-                "strat_tp":     strat_tp,
-                "strat_source": strat_source,
+                "strat_name":     strat_name,
+                "strat_levels":   strat_levels,
+                "strat_tp":       strat_tp,
+                "strat_source":   strat_source,
+                "anchor":         round(anchor, dec),
+                "trigger_prices": trigger_prices,
             })
         except Exception as exc:
             signals.append({

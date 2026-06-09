@@ -120,8 +120,9 @@
   }
   .sig-level-chip {
     font-size: 11px; font-weight: 600;
-    padding: 2px 7px; border-radius: 5px;
+    padding: 3px 8px; border-radius: 5px;
     background: rgba(0,0,0,0.06);
+    white-space: nowrap;
   }
   .sig-strat-tp {
     font-size: 11px; font-weight: 500; opacity: 0.7; margin-top: 1px;
@@ -1647,9 +1648,13 @@ function renderSignals(signals) {
 
     const st = stratInfo(s.rec);
     const sign = s.rec === 'Short DCA' ? '+' : '−';
-    const levelChips = (s.strat_levels || []).map(l =>
-      `<span class="sig-level-chip">${sign}${l}%</span>`).join('');
+    const levelChips = (s.strat_levels || []).map((l, i) => {
+      const tp = (s.trigger_prices || [])[i];
+      const tpStr = tp != null ? `<span style="opacity:.6;font-weight:400"> ${fmtP(s.coin, tp)}</span>` : '';
+      return `<span class="sig-level-chip">${sign}${l}%${tpStr}</span>`;
+    }).join('');
     const sourceLbl = s.strat_source === 'saved' ? 'Saved' : 'Suggested';
+    const anchorStr = s.anchor ? fmtP(s.coin, s.anchor) : '—';
     return `
       <div class="sig-card ${cls}">
         <div class="sig-top">
@@ -1669,6 +1674,7 @@ function renderSignals(signals) {
             <div style="font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.5">${sourceLbl}</div>
           </div>
           <div class="sig-strat-name">${st.icon} ${s.rec} &nbsp;·&nbsp; ${s.strat_name || ''}</div>
+          <div style="font-size:11px;opacity:.6;margin:1px 0 4px">Anchor: <strong>${anchorStr}</strong> <span style="opacity:.7">(14-day high)</span></div>
           <div class="sig-strat-levels">${levelChips}</div>
           <div class="sig-strat-tp">Take Profit: +${s.strat_tp}%</div>
         </div>
