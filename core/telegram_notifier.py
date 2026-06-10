@@ -7,6 +7,7 @@ Setup:
      https://api.telegram.org/bot<TOKEN>/getUpdates
      to find your numeric chat id.
   3. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env
+     (TELEGRAM_CHAT_ID accepts a comma-separated list to notify multiple chats)
 """
 
 from __future__ import annotations
@@ -30,27 +31,35 @@ def _bot_token() -> str:
     return os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 
-def _chat_id() -> str:
-    return os.environ.get("TELEGRAM_CHAT_ID", "")
+def _chat_ids() -> list[str]:
+    raw = os.environ.get("TELEGRAM_CHAT_ID", "")
+    return [c.strip() for c in raw.split(",") if c.strip()]
 
 
 def is_configured() -> bool:
-    return bool(_bot_token() and _chat_id())
+    return bool(_bot_token() and _chat_ids())
 
 
 def send_message(text: str) -> bool:
-    """Send an HTML-formatted message to the configured Telegram chat."""
-    if not is_configured():
+    """Send an HTML-formatted message to every configured Telegram chat.
+
+    Returns True if it was delivered to at least one chat.
+    """
+    token, chat_ids = _bot_token(), _chat_ids()
+    if not (token and chat_ids):
         return False
-    try:
-        resp = requests.post(
-            f"https://api.telegram.org/bot{_bot_token()}/sendMessage",
-            json={"chat_id": _chat_id(), "text": text, "parse_mode": "HTML"},
-            timeout=8,
-        )
-        return resp.ok
-    except Exception:
-        return False
+    ok = False
+    for chat_id in chat_ids:
+        try:
+            resp = requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                timeout=8,
+            )
+            ok = ok or resp.ok
+        except Exception:
+            pass
+    return ok
 
 
 def _load_state() -> dict:
