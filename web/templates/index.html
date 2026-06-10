@@ -195,6 +195,27 @@
   }
   .signals-refresh-btn:hover { opacity: .75; }
 
+  /* ── FIBONACCI LEVELS ── */
+  .fib-meta {
+    font-size: 11px; color: var(--muted); margin-bottom: 10px;
+  }
+  .fib-ladder { display: flex; flex-direction: column; gap: 4px; }
+  .fib-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 12px; border-radius: 7px; font-size: 12px;
+  }
+  .fib-label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+  .fib-price { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fib-tag {
+    font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    opacity: .55; padding: 1px 5px; border-radius: 4px; background: rgba(0,0,0,.06);
+  }
+  .fib-row-resistance { background: rgba(255,59,48,0.08); color: #c41f1f; }
+  .fib-row-support    { background: rgba(52,199,89,0.08); color: #1a7a35; }
+  .fib-row-at-price   { background: rgba(0,122,255,0.10); color: var(--blue); border: 1px solid rgba(0,122,255,.3); }
+  .fib-row-swing      { background: rgba(142,142,147,0.08); color: var(--muted); font-weight: 700; }
+  .fib-row-current    { background: var(--text); color: var(--surface); font-weight: 800; }
+
   /* ── HEADER ─────────────────────────────────────────────────── */
   header {
     display: flex;
@@ -1079,6 +1100,30 @@
       </div>
     </div>
 
+    <!-- ── Fibonacci Levels ── -->
+    <div class="card card-padded" style="margin-bottom:20px" id="fib-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <div class="section-label" style="margin:0">Fibonacci Levels</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <select id="fib-coin-sel" class="field-select" style="width:90px;padding:5px 10px;font-size:12px" onchange="loadFibonacci()">
+            <option value="BTC">BTC</option>
+            <option value="ETH">ETH</option>
+            <option value="XRP">XRP</option>
+            <option value="SOL">SOL</option>
+          </select>
+          <select id="fib-window-sel" class="field-select" style="width:110px;padding:5px 10px;font-size:12px" onchange="loadFibonacci()">
+            <option value="50">50 candles</option>
+            <option value="100" selected>100 candles</option>
+            <option value="200">200 candles</option>
+          </select>
+          <button class="signals-refresh-btn" onclick="loadFibonacci(true)">↺ Refresh</button>
+        </div>
+      </div>
+      <div id="fib-body">
+        <div style="color:var(--muted);font-size:13px">Loading Fibonacci levels…</div>
+      </div>
+    </div>
+
     <!-- Strategy tabs -->
     <div class="strat-tabs" id="coin-tabs"></div>
 
@@ -1712,6 +1757,78 @@ async function loadMarketSignals(force) {
 function renderSignalsError(msg) {
   document.getElementById('signals-grid').innerHTML =
     `<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Unable to load signals: ${msg}</div>`;
+}
+
+// ── Fibonacci Levels ────────────────────────────────────────────────────────
+async function loadFibonacci(force) {
+  const body  = document.getElementById('fib-body');
+  const coin  = document.getElementById('fib-coin-sel').value;
+  const win   = document.getElementById('fib-window-sel').value;
+  try {
+    let url = `/api/fibonacci?coin=${coin}&window=${win}`;
+    if (force) url += '&bust=' + Date.now();
+    const data = await api(url);
+    if (data.error) { body.innerHTML = `<div style="color:var(--muted);font-size:13px">Unable to load Fibonacci levels: ${data.error}</div>`; return; }
+    renderFibonacci(data);
+  } catch (e) {
+    body.innerHTML = `<div style="color:var(--muted);font-size:13px">Unable to load Fibonacci levels: ${e.message}</div>`;
+  }
+}
+
+function renderFibonacci(data) {
+  const body = document.getElementById('fib-body');
+  const dec  = data.current_price < 10 ? 4 : (data.current_price < 1000 ? 2 : 0);
+  const fmt  = p => '$' + Number(p).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+
+  const rows = [
+    { kind: 'swing', label: 'Swing High', price: data.swing_high },
+    ...(data.levels || []),
+    { kind: 'swing', label: 'Swing Low', price: data.swing_low },
+  ].sort((a, b) => b.price - a.price);
+
+  const dirCol = data.direction === 'UP' ? 'var(--green)' : 'var(--red)';
+  const dirLbl = data.direction === 'UP' ? '▲ UP' : '▼ DOWN';
+
+  let html = `<div class="fib-meta">
+    Trend: <strong style="color:${dirCol}">${dirLbl}</strong>
+    &nbsp;·&nbsp; Swing High: <strong>${fmt(data.swing_high)}</strong>
+    &nbsp;·&nbsp; Swing Low: <strong>${fmt(data.swing_low)}</strong>
+    &nbsp;·&nbsp; Current: <strong>${fmt(data.current_price)}</strong>
+  </div><div class="fib-ladder">`;
+
+  const currentRow = `
+    <div class="fib-row fib-row-current">
+      <span class="fib-label">→ Current Price</span>
+      <span class="fib-price">${fmt(data.current_price)}</span>
+    </div>`;
+
+  let placed = false;
+  rows.forEach(r => {
+    if (!placed && r.price < data.current_price) {
+      html += currentRow;
+      placed = true;
+    }
+    if (r.kind === 'swing') {
+      html += `
+        <div class="fib-row fib-row-swing">
+          <span class="fib-label">${r.label}</span>
+          <span class="fib-price">${fmt(r.price)}</span>
+        </div>`;
+    } else {
+      const posCls = r.position === 'above_price' ? 'fib-row-resistance'
+                    : r.position === 'below_price' ? 'fib-row-support'
+                    : 'fib-row-at-price';
+      html += `
+        <div class="fib-row ${posCls}">
+          <span class="fib-label">${r.label}<span class="fib-tag">${r.kind}</span></span>
+          <span class="fib-price">${fmt(r.price)}</span>
+        </div>`;
+    }
+  });
+  if (!placed) html += currentRow;
+
+  html += `</div>`;
+  body.innerHTML = html;
 }
 
 function renderSignals(signals) {
@@ -2894,11 +3011,13 @@ function renderHistoryTable(rows) {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 refresh();
 loadMarketSignals();
+loadFibonacci();
 loadHistory();
 refreshRunning();
 setInterval(refresh, 5000);
 setInterval(refreshRunning, 5000);
 setInterval(() => loadMarketSignals(), 900000);
+setInterval(() => loadFibonacci(), 900000);
 setInterval(() => loadHistory(), 900000);
 </script>
 </body>
