@@ -884,6 +884,23 @@ Indexed on `(ts, coin)` for fast time-range queries.
 
 Signal computation calls Binance four times and trains three ML models per coin — too expensive to run on every page load. Results are cached server-side for **15 minutes** (`_SIGNALS_TTL = 900` seconds); a request with `?bust` forces a fresh computation. The dashboard auto-refreshes the Market Signals and Signal History panels on the same 15-minute interval.
 
+### 11.9 Telegram Alerts on Actionable Signals
+
+Whenever a coin's `action` transitions into **LONG NOW** (buy) or **SHORT NOW** (sell), `core/telegram_notifier.py` pushes an alert to a configured Telegram chat via the Bot API:
+
+```
+🟢 BUY SIGNAL — ETH
+Price: $2,456.78
+Regime: BULL (4/4) | RSI: 38.5
+Entry grade: B (78/100)
+RSI oversold at 38 — strong dip entry
+```
+
+- **Configuration** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`. If either is unset, alerting is silently disabled.
+- **Transition-based** — the last-notified action per coin is persisted to `data/telegram_notify_state.json`, so an alert fires only when a coin *enters* an actionable state, not on every 15-minute poll while it remains there.
+- **Triggered from `_compute_market_signals`** — runs on every fresh computation (background poller or `?bust`), alongside the Signal History write.
+- **`POST /api/telegram/test`** — sends a one-off confirmation message to verify the bot token and chat id are wired up correctly.
+
 ---
 
 ## 12. Data Persistence
@@ -1012,7 +1029,7 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 
 ## 18. Planned / Possible Extensions
 
-- **Telegram / email alerts** on buy/sell events
+- **Email alerts** on buy/sell events (Telegram alerts already implemented — Section 11.9)
 - **Multiple exchange support** (OKX, Bybit)
 - **Dynamic position sizing** based on portfolio value
 - **Trailing take profit** to capture extended uptrends
