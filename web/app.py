@@ -518,6 +518,13 @@ def _compute_market_signals(force: bool = False) -> dict:
     except Exception:
         pass
 
+    # Telegram alert on newly actionable (LONG NOW / SHORT NOW) signals
+    try:
+        from core.telegram_notifier import notify_actionable_signals
+        notify_actionable_signals(signals)
+    except Exception:
+        pass
+
     return result
 
 
@@ -528,6 +535,18 @@ def api_market_signals():
     if "signals" not in result:
         return jsonify(result), 500
     return jsonify(result)
+
+
+@app.route("/api/telegram/test", methods=["POST"])
+def api_telegram_test():
+    """Send a test message to verify TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID."""
+    from core.telegram_notifier import is_configured, send_message
+    if not is_configured():
+        return jsonify({"ok": False, "error": "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set"}), 400
+    ok = send_message("✅ Infinity dashboard is connected to this chat.")
+    if not ok:
+        return jsonify({"ok": False, "error": "Telegram API request failed"}), 502
+    return jsonify({"ok": True})
 
 
 _FIB_SYMBOLS = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "XRP": "XRPUSDT", "SOL": "SOLUSDT"}
