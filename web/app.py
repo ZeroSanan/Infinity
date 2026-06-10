@@ -530,6 +530,44 @@ def api_market_signals():
     return jsonify(result)
 
 
+_FIB_SYMBOLS = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "XRP": "XRPUSDT", "SOL": "SOLUSDT"}
+
+
+@app.route("/api/fibonacci")
+def api_fibonacci():
+    """Fibonacci retracement/extension levels for a coin, from recent 4h klines."""
+    coin = request.args.get("coin", "BTC").upper()
+    symbol = _FIB_SYMBOLS.get(coin)
+    if not symbol:
+        return jsonify({"error": f"unknown coin '{coin}'"}), 400
+
+    try:
+        window = int(request.args.get("window", 100))
+    except ValueError:
+        return jsonify({"error": "window must be an integer"}), 400
+
+    try:
+        import requests as _req
+        from core.fibonacci import compute_fibonacci, from_binance_klines
+
+        resp = _req.get(
+            "https://api.binance.com/api/v3/klines",
+            params={"symbol": symbol, "interval": "4h", "limit": 200},
+            timeout=8,
+        )
+        klines = resp.json()
+        if not isinstance(klines, list) or len(klines) < 2:
+            raise ValueError("insufficient kline data")
+
+        candles  = from_binance_klines(klines)
+        analysis = compute_fibonacci(candles, lookback=window)
+        result = analysis.to_dict()
+        result["coin"] = coin
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 def _signal_poller():
     """Background thread: recompute & persist market signals roughly every
     _SIGNALS_TTL seconds, independent of dashboard activity."""
