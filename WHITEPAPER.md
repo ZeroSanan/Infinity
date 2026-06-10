@@ -5,9 +5,18 @@
 
 ## 1. Overview
 
-**Infinity** is an automated cryptocurrency trading system built around a **Dynamic Dollar-Cost Averaging (DCA)** strategy. It monitors live market prices, executes tiered buy orders when an asset drops to predefined levels, and automatically takes profit once the portfolio reaches a target return. The system is designed for spot markets (no leverage), running continuously on a VPS with a web-based dashboard for monitoring and control.
+**Infinity** is an automated cryptocurrency trading system built around a **Dynamic Dollar-Cost Averaging (DCA)** strategy. It monitors live market prices, executes tiered buy orders when an asset drops to predefined levels, and automatically takes profit once the portfolio reaches a target return. The default strategy type operates on spot markets (no leverage), running continuously on a VPS with a web-based dashboard for monitoring and control.
 
 **Core idea:** Instead of trying to time the market, Infinity places increasingly larger buy orders as an asset falls. As the price recovers, the blended average entry price is much lower than the initial reference price, making it easier to profit even on a partial recovery.
+
+**Strategy types:**
+
+| Strategy type | Market | Leverage | Risk profile |
+|---|---|---|---|
+| **Spot DCA** (default) | Spot | None | Capital-bounded — a 100% drop cannot lose more than the capital allocated to that strategy. No liquidation risk. |
+| **Leveraged Long/Short DCA** (planned, opt-in) | Margin/Futures | User-selected | Same dip-buying DCA logic applied with leverage on either the long or short side. Liquidation risk applies — leverage amplifies both gains and losses. |
+
+Every account and coin defaults to **Spot DCA**. The Leveraged Long/Short DCA strategy type is a planned, separate addition that a user must explicitly enable per coin/strategy — it does not change the leverage-free behavior of existing or default strategies.
 
 ---
 
@@ -17,15 +26,17 @@ This is **not** a maximum-profit strategy. The goal is not to catch tops or bott
 
 | Principle | Meaning |
 |-----------|---------|
-| **Survivability** | The system never uses leverage or futures. A 100% drop cannot wipe out more than the capital allocated to that strategy. |
+| **Survivability** | The default Spot DCA strategy never uses leverage or futures. A 100% drop cannot wipe out more than the capital allocated to that strategy. |
 | **Mechanical execution** | Every decision is rule-based. There is no discretion, no panic selling, no FOMO buying outside the configured levels. |
 | **Volatility harvesting** | Crypto markets are highly volatile. Infinity turns that volatility into an asset — each dip is an opportunity to accumulate at a lower average cost. |
 | **Stable compounding** | Small, consistent profits (5–10% per cycle) accumulate over time. A 5% gain repeated 20 times grows capital by 165%. |
 | **Long-term capital growth** | The system is designed to run indefinitely, cycling through bull and bear periods without human intervention. |
 
-**What it is not:**
+> **A note on leverage:** The Survivability guarantee above describes the default **Spot DCA** strategy type, which remains leverage-free. A separate **Leveraged Long/Short DCA** strategy type is planned (see §1) for users who explicitly opt in per coin/strategy. That strategy type carries leverage and liquidation risk by design and does not share the capital-bounded guarantee — it is an isolated, user-selected choice that does not affect the leverage-free default.
+
+**What it is not (default Spot DCA strategies):**
 - Not a high-frequency trader
-- Not a leverage or futures system
+- Not a leverage or futures system — leverage exists only in the separate, opt-in Leveraged Long/Short DCA strategy type
 - Not a market-timing system
 - Not a maximum-profit chaser
 - Not emotionally driven
@@ -1011,6 +1022,7 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 - **Live mixed strategy engine** — port the regime detector and entry indicator to the live `DCAEngine` for fully autonomous bull/bear switching
 - **Direction-aware strategy matching** — restrict saved strategies suggested for Short DCA to those whose levels were originally designed for short entries, rather than mirroring long-only level sets
 - **Charting for Signal History** — equity-style charts of regime, RSI, and entry score over time per coin
+- **Leveraged Long/Short DCA strategy type** — a separate, opt-in strategy type (per §1) applying the same dip-buying DCA logic with user-selected leverage on the long or short side; isolated from the default leverage-free Spot DCA strategies and carries liquidation risk
 
 ---
 
