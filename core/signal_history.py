@@ -49,6 +49,14 @@ def init_db():
             ON signal_history (ts, coin)
         """)
 
+        # Migrate older databases (pre-dating the action/entry_ready columns):
+        # CREATE TABLE IF NOT EXISTS is a no-op on an existing table, so add
+        # any missing columns explicitly.
+        existing_cols = {row["name"] for row in c.execute("PRAGMA table_info(signal_history)")}
+        for col, col_type in (("action", "TEXT"), ("entry_ready", "INTEGER")):
+            if col not in existing_cols:
+                c.execute(f"ALTER TABLE signal_history ADD COLUMN {col} {col_type}")
+
 
 def save_signals(signals: list):
     """Persist a list of signal dicts to the database."""
