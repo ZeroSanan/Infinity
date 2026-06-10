@@ -288,20 +288,23 @@ def api_status():
     })
 
 
-@app.route("/api/market/signals")
-def api_market_signals():
-    """Bull/bear regime signals for BTC, ETH, XRP, SOL via public Binance klines."""
+def _compute_market_signals(force: bool = False) -> dict:
+    """Bull/bear regime signals for BTC, ETH, XRP, SOL via public Binance klines.
+
+    Cached for _SIGNALS_TTL seconds. Called both by the /api/market/signals
+    route and by the background _signal_poller, so Signal History keeps
+    accumulating even when nobody has the dashboard open.
+    """
     import datetime as _dt
     global _market_signals_cache
     now = time.time()
-    force = "bust" in request.args
     if not force and _market_signals_cache["data"] and now - _market_signals_cache["ts"] < _SIGNALS_TTL:
-        return jsonify(_market_signals_cache["data"])
+        return _market_signals_cache["data"]
 
     try:
         import requests as _req
     except ImportError:
-        return jsonify({"error": "requests not installed"}), 500
+        return {"error": "requests not installed"}
 
     # Preset level suggestions keyed by (regime, score).
     # Levels are stored as positive magnitudes; direction depends on regime.
@@ -515,7 +518,27 @@ def api_market_signals():
     except Exception:
         pass
 
+    return result
+
+
+@app.route("/api/market/signals")
+def api_market_signals():
+    force = "bust" in request.args
+    result = _compute_market_signals(force=force)
+    if "signals" not in result:
+        return jsonify(result), 500
     return jsonify(result)
+
+
+def _signal_poller():
+    """Background thread: recompute & persist market signals roughly every
+    _SIGNALS_TTL seconds, independent of dashboard activity."""
+    while True:
+        try:
+            _compute_market_signals()
+        except Exception:
+            pass
+        time.sleep(_SIGNALS_TTL)
 
 
 @app.route("/api/signals/history")
@@ -1333,6 +1356,9 @@ def start():
     # Start price poller
     threading.Thread(target=_price_poller, daemon=True).start()
 
+    # Start market signals poller (keeps Signal History updated continuously)
+    threading.Thread(target=_signal_poller, daemon=True).start()
+
     # Pre-warm price cache
     for cfg in _coin_configs:
         if cfg.symbol in _price_cache:
@@ -1363,6 +1389,7 @@ for _acct in _accounts:
     except Exception:
         pass
 threading.Thread(target=_price_poller, daemon=True).start()
+threading.Thread(target=_signal_poller, daemon=True).start()
 
 
 if __name__ == "__main__":
