@@ -914,6 +914,24 @@ State survives process restarts and VPS reboots. The engine resumes exactly wher
 - **Supported:** Testnet mode for safe testing
 - **Safety:** `binance_client.py` verifies fills, handles lot size precision (step size), and prevents zero-quantity orders
 
+### 13.1 Data Sources & Timeframes
+
+Different parts of the system pull different kinds of Binance data, on different timeframes, chosen to match what each component needs to decide.
+
+| Data | Source | Timeframe | Used by | Frequency |
+|------|--------|-----------|---------|-----------|
+| Ticker price | `GET /api/v3/ticker/price` | — (instantaneous) | Live dashboard price display, `DCAEngine.tick()` dump%/TP checks | Every 5s (dashboard poller), every 10s (engine tick) |
+| 4h klines (200 candles ≈ 33 days) | `GET /api/v3/klines` | 4h | Market Signals (Section 11.2), Fibonacci levels (Section 11.4), ML models (Section 11.6) | Recomputed every 15 min (`_SIGNALS_TTL`) by the background signal poller |
+| Daily klines (200 candles ≈ 6.5 months) | `GET /api/v3/klines` | 1d | Weekly Regime tab (`core/regime_detector.py`) — EMA50/200, ATR, Bollinger Bands, volume trend, higher-highs | On-demand when the tab is opened |
+| 1h historical OHLCV (CSV, ~61,000 candles, 2018–2025) | Pre-downloaded dataset | 1h | Backtesting & strategy optimization (Sections 8–9) | Static — loaded once per backtest run |
+
+**Why these timeframes:**
+
+- **Ticker price (no aggregation):** trading decisions for a multi-day DCA strategy don't need sub-second data, but polling too slowly risks missing a brief wick through a trigger level. 5–10s balances responsiveness against Binance's public rate limits.
+- **4h klines:** EMA200 needs 200 periods, and 200 × 4h ≈ 33 days gives EMA50/EMA200 crossovers real meaning without requiring thousands of candles. 4h is also a natural "swing" timeframe — long enough to filter 1h/15m noise, short enough to react to the multi-day trend shifts that matter for positions typically held 0.5–10 days (Section 9.3). A 15-minute refresh on a 4h candle mostly just updates the still-forming current candle, so the dashboard feels live without re-fetching on every price tick.
+- **Daily klines:** the Weekly Regime tab answers a different question — "what's the macro cycle right now" rather than "should I enter a level this week". Daily candles over ~6 months are the standard window for that read, and pairing them with Fear & Greed Index and BTC dominance (both meaningless on a 4h chart) adds macro context.
+- **1h historical data:** the optimizer's best configurations use tight DCA levels (e.g. -5%/-9%/-13%, 3% TP) that only show up at 1h granularity. ~61,000 1h candles over 7 years is large enough for statistically meaningful backtests while staying practical to grid-search — daily data would miss the tight-level fills, and minute data would be ~60× larger for no added benefit at this strategy's scale.
+
 ---
 
 ## 14. Configuration
