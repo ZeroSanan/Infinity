@@ -42,12 +42,15 @@ Infinity/
 │   ├── binance_client.py    # Binance API wrapper (spot orders, price feed)
 │   ├── regime_detector.py   # Live regime analysis (EMA, volume, AI narrative)
 │   ├── state_manager.py     # Persists position state to JSON files
+│   ├── ml_signals.py        # ML models: direction, regime & entry-quality scoring
+│   ├── signal_history.py    # SQLite persistence for market signals + ML outputs
 │   └── logger.py            # Structured logging
 ├── models/
 │   └── dca_config.py        # Data models: CoinConfig, PositionState, ExecutedStep
 ├── config/
 │   └── coins.json           # Strategy definitions (coins, levels, sizes, TP)
 ├── data/                    # Live position state files (one JSON per strategy)
+│                             # + signal_history.db (Market Signals history)
 ├── utils/
 │   └── calculations.py      # Pure math functions (no side effects)
 ├── algo-trading/
@@ -600,9 +603,279 @@ The Flask dashboard (port 5050) provides full visibility and control over live s
 - Test connectivity and view USDT balance
 - Supports both live and testnet accounts
 
+### Market Signals Tab
+- Live regime read for BTC, ETH, XRP and SOL on the 4-hour timeframe, refreshed every 15 minutes
+- Per-coin card: regime badge, 4-signal checklist, recommended strategy (saved or suggested) with DCA trigger-price chips, anchor price, and fresh-start levels
+- Action banner — **LONG NOW / SHORT NOW / WATCH / WAIT** — with a one-line plain-English condition
+- ML Analysis panel — next-candle direction, ML regime confidence, and entry-quality score/grade with top contributing factors
+- Signal History panel — per-coin summary cards plus a searchable table of every past signal computation
+
+See Section 11 for the full signal computation, strategy-matching, and ML methodology behind this tab.
+
 ---
 
-## 11. Data Persistence
+## 11. Market Signals & ML Analysis System
+
+### 11.1 Overview
+
+In addition to the DCA trading engines, Infinity runs a real-time **Market Signals** system (`/api/market/signals`) that continuously evaluates BTC, ETH, XRP and SOL on the 4-hour timeframe. For each coin it produces:
+
+- A rule-based **regime score** (BULL / NEUTRAL / BEAR)
+- A **strategy recommendation** — the best matching saved strategy from `config/coins.json`, or a sensible preset
+- **Anchor and DCA trigger prices** so the user knows exactly where to place orders
+- An **entry-readiness verdict** (LONG NOW / SHORT NOW / WATCH / WAIT) combining regime with RSI timing
+- Three **machine-learning models** (`core/ml_signals.py`) that independently predict direction, regime, and entry quality
+- Persistence of every fresh computation to a SQLite **Signal History** database (`core/signal_history.py`)
+
+All of this is rendered live on the dashboard's Market Signals and Signal History panels (Section 10).
+
+### 11.2 Regime Detection — The 4-Signal Score
+
+For each coin, the last 200 four-hour candles are pulled from Binance public klines (`GET /api/v3/klines`, `interval=4h`, `limit=200`). From the closing prices the system derives:
+
+| Variable | Formula |
+|----------|---------|
+| EMA50 | 50-period exponential moving average of closes |
+| EMA200 | 200-period exponential moving average of closes |
+| RSI(14) | 14-period relative strength index |
+| 7-day return | `(price - close[-43]) / close[-43] × 100` (42 candles ≈ 7 days at 4h) |
+
+Four boolean signals are scored:
+
+| Signal | Description | Bullish if... |
+|--------|-------------|----------------|
+| s1 | Price vs EMA50 | price > EMA50 |
+| s2 | EMA50 vs EMA200 (Golden / Death Cross) | EMA50 > EMA200 |
+| s3 | RSI momentum | RSI(14) > 55 |
+| s4 | Weekly trend | 7-day return > 0 |
+
+```
+score = s1 + s2 + s3 + s4   (range 0–4)
+```
+
+| Score | Regime | Base Recommendation (`rec`) |
+|-------|--------|------------------------------|
+| 3–4 | BULL | Long DCA |
+| 2 | NEUTRAL | Mixed DCA |
+| 0–1 | BEAR | Short DCA |
+
+### 11.3 Strategy Recommendation Engine
+
+Knowing the regime is not enough — the dashboard also tells the user **which specific strategy and levels** to use.
+
+**Step 1 — Match a saved strategy.** `_best_saved(coin, regime)` scans `config/coins.json` for strategies on that coin:
+- Regime BULL + a saved strategy whose `dump_levels` are all negative (a long strategy) → use it
+- Regime BEAR + a saved strategy whose `dump_levels` are all positive (a short strategy) → use it
+- Regime NEUTRAL → use the first saved strategy for that coin
+- Otherwise → fall back to the first saved strategy for that coin (if any exists)
+
+**Step 2 — Fall back to a preset.** If no saved strategy matches, `_PRESETS` supplies a level set keyed by `(regime, score)`:
+
+| Regime / Score | Name | Levels | Take Profit |
+|-----------------|------|--------|-------------|
+| BULL / 4 | Conservative | 6%, 10%, 15% | 5% |
+| BULL / 3 | Standard | 8%, 12%, 18%, 24% | 8% |
+| NEUTRAL / 2 | Cautious | 8%, 12%, 18% | 6% |
+| BEAR / 1 | Standard Short | 6%, 10%, 15% | 5% |
+| BEAR / 0 | Aggressive Short | 8%, 12%, 18%, 24% | 8% |
+
+Each card shows whether its recommendation came from a **saved** strategy (`strat_source: "saved"`) or a **suggested** preset (`strat_source: "suggested"`).
+
+### 11.4 Anchor & DCA Trigger Prices
+
+To turn a level list into actionable order prices, the system computes an **anchor**:
+
+```
+anchor = max(high) over the last 84 four-hour candles   (≈ 14 days)
+```
+
+DCA entry trigger prices are the anchor pulled back by each recommended level:
+
+```
+trigger_price[i] = anchor × (1 − level[i] / 100)
+```
+
+**Levels already passed.** If price has already fallen through a trigger (`trigger_price > current_price`), that level is marked **passed** — shown with a strikethrough on the dashboard, since placing that order now would fill instantly at a worse price than originally intended.
+
+```
+levels_passed = count(trigger_price[i] > current_price)
+```
+
+**Fresh-start anchor.** When one or more levels have been passed, the dashboard also computes a fresh set of trigger prices anchored to the **current price**, so the same level spacing can be deployed starting from where the market is right now:
+
+```
+fresh_anchor     = current_price
+fresh_trigger[i] = fresh_anchor × (1 − level[i] / 100)
+```
+
+### 11.5 Entry Readiness — Action & Timing
+
+Regime alone tells you *direction*; it doesn't tell you *when*. The action engine combines regime with RSI to produce one of four verdicts, shown as a banner at the top of each coin's card:
+
+| Verdict | Meaning |
+|---------|---------|
+| **LONG NOW** | Conditions favour opening/adding to a long DCA position immediately |
+| **SHORT NOW** | Conditions favour opening/adding to a short DCA position immediately |
+| **WATCH** | Direction is known but timing isn't right yet — keep an eye on it |
+| **WAIT** | Neither direction nor timing currently favour an entry |
+
+**BULL regime:**
+
+| RSI | Action | Condition message |
+|-----|--------|--------------------|
+| < 40 | LONG NOW | "RSI oversold at X — strong dip entry" |
+| 40–49 | LONG NOW | "RSI X — decent dip, good entry" |
+| 50–59 | WATCH | "Wait for RSI to dip below 50 (now X)" |
+| ≥ 60 | WAIT | "RSI too high for long entry — wait for pullback to RSI 50 (now X)" |
+
+**BEAR regime:**
+
+| RSI | Action | Condition message |
+|-----|--------|--------------------|
+| > 65 | SHORT NOW | "RSI overbought at X — strong pump to short into" |
+| 56–65 | SHORT NOW | "RSI X — elevated, decent short entry" |
+| 46–55 | WATCH | "Wait for RSI to rise above 55 (now X)" |
+| ≤ 45 | WAIT | "RSI too low for short — wait for bounce to RSI 55+ (now X)" |
+
+**NEUTRAL regime:** always **WATCH** — "No clear trend — wait for BULL or BEAR confirmation"
+
+### 11.6 ML Analysis — Three On-the-Fly Models
+
+`core/ml_signals.py` trains three lightweight scikit-learn models **on the fly**, directly from the same 200 four-hour candles, every time signals are computed.
+
+#### 11.6.1 Shared Feature Vector
+
+All ML models draw from the same 10-feature vector, computed at candle index `i` (requires ≥52 candles of history):
+
+| # | Feature | Description |
+|---|---------|-------------|
+| 1 | `rsi14 / 100` | Normalized RSI |
+| 2 | `r1` | 1-candle return (≈4h) |
+| 3 | `r3` | 3-candle return (≈12h) |
+| 4 | `r7` | 7-candle return (≈28h) |
+| 5 | `r14` | 14-candle return (≈56h) |
+| 6 | `vol` | Std-dev of returns over the last 21 candles |
+| 7 | `price_pos` | Position within the 20-candle high/low range (0 = at low, 1 = at high) |
+| 8 | `price/ema20 − 1` | Distance from the 20-EMA |
+| 9 | `price/ema50 − 1` | Distance from the 50-EMA |
+| 10 | `ema20/ema50 − 1` | EMA alignment (trend strength) |
+
+#### 11.6.2 Model 1 — Next-Candle Direction
+
+`predict_direction(closes, highs, lows)` — **RandomForestClassifier** (60 trees, max depth 4).
+
+- Trains on every historical candle from index 60 onward, labelling each `1` (next candle closed higher) or `0` (lower)
+- The most recent 5 samples are held out from training
+- Predicts the direction of the **next 4h candle** from the current feature vector
+
+```json
+{"direction": "UP" | "DOWN", "confidence": 55.1}
+```
+
+`confidence` is the model's predicted probability for the winning class — 50% is a coin flip, 100% is certain. Returns `"UNKNOWN"` if fewer than 80 candles are available or the training labels lack variance (e.g. price only ever moved one direction).
+
+#### 11.6.3 Model 2 — ML Regime Classifier
+
+`classify_regime(closes, highs, lows, rule_score, rule_regime)` — **GradientBoostingClassifier** (60 estimators, max depth 3).
+
+- Pseudo-labels are generated for every historical candle using the same 4-signal scoring as Section 11.2 (price vs EMA50, EMA50 vs EMA200, RSI > 55, 7-day return > 0): score ≥ 3 → BULL, score ≤ 1 → BEAR, else NEUTRAL
+- The model learns to reproduce these labels from the feature vector, then predicts the regime for the *current* candle
+- Final confidence blends the model's own probability with the rule-based score:
+
+```
+confidence = ml_probability × 0.65 + (rule_score / 4 × 100) × 0.35
+```
+
+```json
+{"regime": "BULL" | "NEUTRAL" | "BEAR", "confidence": 71.4, "agrees_with_rules": true}
+```
+
+`agrees_with_rules` is `true` when the ML regime matches the rule-based regime from Section 11.2 — a quick cross-check between the two independent methods.
+
+#### 11.6.4 Model 3 — Entry Quality Score
+
+`score_entry(closes, highs, lows, rec)` — a **rule-weighted composite score**, not a trained model. Starts at 50 and adjusts based on how favourable current conditions are for the recommended direction (`rec`).
+
+- **Long DCA:** points are added for oversold RSI, price near the bottom of its 20-day range, and a recent weekly decline (better dip-buying conditions); points are subtracted for overbought RSI or a price that has already risen this week.
+- **Short / Mixed DCA:** the logic mirrors this — overbought RSI, price near the top of its range, and a recent rally add points.
+- **Both directions** receive a volatility adjustment: very high volatility (std-dev of returns > 5%) subtracts points, low volatility (< 1.2%) adds points.
+
+```json
+{
+  "score": 78,
+  "grade": "B",
+  "factors": [
+    ["RSI oversold", "+15", true],
+    ["Price in lower range", "+10", true],
+    ["Weekly decline", "+8", true],
+    ["Low volatility — stable", "+5", true]
+  ]
+}
+```
+
+| Score | Grade |
+|-------|-------|
+| 80–100 | A |
+| 65–79 | B |
+| 50–64 | C |
+| 35–49 | D |
+| 0–34 | F |
+
+The dashboard shows the grade badge plus the top 4 contributing factors, each marked with a coloured dot (green = favourable, red = unfavourable, grey = neutral).
+
+### 11.7 Signal History — Persistence Layer
+
+Every fresh signal computation (i.e. not served from the 15-minute cache) is written to a local SQLite database at `data/signal_history.db` via `core/signal_history.py`.
+
+**Schema (`signal_history` table):**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Auto-increment row ID |
+| `ts` | TEXT | UTC timestamp of computation |
+| `coin` | TEXT | BTC / ETH / XRP / SOL |
+| `price` | REAL | Price at computation time |
+| `regime` | TEXT | BULL / NEUTRAL / BEAR |
+| `score` | INTEGER | 0–4 regime score |
+| `rsi` | REAL | RSI(14) |
+| `week_ret` | REAL | 7-day return % |
+| `rec` | TEXT | Long DCA / Short DCA / Mixed DCA |
+| `ml_direction` | TEXT | UP / DOWN / UNKNOWN |
+| `ml_direction_conf` | REAL | Model 1 confidence % |
+| `ml_regime` | TEXT | Model 2 regime |
+| `ml_regime_conf` | REAL | Model 2 confidence % |
+| `ml_agrees` | INTEGER | 1 if Model 2 agrees with the rule-based regime |
+| `entry_score` | INTEGER | Model 3 score (0–100) |
+| `entry_grade` | TEXT | Model 3 grade (A–F) |
+| `action` | TEXT | LONG NOW / SHORT NOW / WATCH / WAIT |
+| `entry_ready` | INTEGER | 1 if action is a "NOW" verdict |
+
+Indexed on `(ts, coin)` for fast time-range queries.
+
+**API:** `GET /api/signals/history?coin=BTC&days=7`
+
+```json
+{
+  "rows":    [ { "ts": "...", "coin": "BTC", "price": 68500.0, "regime": "BEAR", "...": "..." } ],
+  "summary": [ { "coin": "BTC", "regime": "BEAR", "cnt": 12, "avg_entry_score": 64.2, "avg_rsi": 58.3, "avg_price": 67890.5 } ],
+  "days": 7
+}
+```
+
+- `rows` — raw history, most recent first, optionally filtered by coin
+- `summary` — per-coin/per-regime aggregates (count, average entry score, average RSI, average price) over the window
+
+**Dashboard panel.** The Signal History panel offers a coin filter and a time-range filter (1 / 3 / 7 / 30 days), and shows:
+- Per-coin summary cards (regime distribution, average entry score, average RSI/price)
+- A table of every persisted computation: time, coin, price, regime (as filled/empty score dots), RSI, action, ML direction, and entry grade
+
+### 11.8 Refresh Cadence & Caching
+
+Signal computation calls Binance four times and trains three ML models per coin — too expensive to run on every page load. Results are cached server-side for **15 minutes** (`_SIGNALS_TTL = 900` seconds); a request with `?bust` forces a fresh computation. The dashboard auto-refreshes the Market Signals and Signal History panels on the same 15-minute interval.
+
+---
+
+## 12. Data Persistence
 
 Position state is stored as JSON files in the `data/` directory. Each file corresponds to one strategy:
 
@@ -634,7 +907,7 @@ State survives process restarts and VPS reboots. The engine resumes exactly wher
 
 ---
 
-## 12. Exchange Integration
+## 13. Exchange Integration
 
 - **Exchange:** Binance (spot markets only)
 - **Order types:** Market buy, market sell
@@ -643,7 +916,7 @@ State survives process restarts and VPS reboots. The engine resumes exactly wher
 
 ---
 
-## 13. Configuration
+## 14. Configuration
 
 Strategies are defined in `config/coins.json`. Each entry includes:
 
@@ -662,7 +935,7 @@ Strategies are defined in `config/coins.json`. Each entry includes:
 
 ---
 
-## 14. CLI Usage
+## 15. CLI Usage
 
 ```bash
 python main.py                        # Run all enabled strategies
@@ -674,7 +947,7 @@ python main.py --status               # Print position status and exit
 
 ---
 
-## 15. Infrastructure & Deployment
+## 16. Infrastructure & Deployment
 
 | Component | Details |
 |-----------|---------|
@@ -689,7 +962,7 @@ python main.py --status               # Print position status and exit
 
 ---
 
-## 16. What the System Aims to Achieve
+## 17. What the System Aims to Achieve
 
 The core thesis: **crypto markets are volatile and mean-reverting over medium time horizons**. Assets regularly dump 10–40% from local tops and then recover. Infinity is built to exploit this pattern mechanically, without needing to predict when or how deep each dump will be.
 
@@ -708,7 +981,7 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 
 ---
 
-## 17. Planned / Possible Extensions
+## 18. Planned / Possible Extensions
 
 - **Telegram / email alerts** on buy/sell events
 - **Multiple exchange support** (OKX, Bybit)
@@ -718,6 +991,8 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 - **Multi-account portfolio view** — aggregate P&L across all accounts
 - **Strategy optimizer** — auto-tune DCA levels based on backtest results
 - **Live mixed strategy engine** — port the regime detector and entry indicator to the live `DCAEngine` for fully autonomous bull/bear switching
+- **Direction-aware strategy matching** — restrict saved strategies suggested for Short DCA to those whose levels were originally designed for short entries, rather than mirroring long-only level sets
+- **Charting for Signal History** — equity-style charts of regime, RSI, and entry score over time per coin
 
 ---
 
