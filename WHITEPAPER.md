@@ -896,7 +896,7 @@ Entry grade: B (78/100)
 RSI oversold at 38 — strong dip entry
 ```
 
-- **Configuration** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`. If either is unset, alerting is silently disabled.
+- **Configuration** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`. If either is unset, alerting is silently disabled. `TELEGRAM_CHAT_ID` accepts a comma-separated list to notify multiple chats/recipients.
 - **Transition-based** — the last-notified action per coin is persisted to `data/telegram_notify_state.json`, so an alert fires only when a coin *enters* an actionable state, not on every 15-minute poll while it remains there.
 - **Triggered from `_compute_market_signals`** — runs on every fresh computation (background poller or `?bust`), alongside the Signal History write.
 - **`POST /api/telegram/test`** — sends a one-off confirmation message to verify the bot token and chat id are wired up correctly.
