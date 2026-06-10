@@ -63,32 +63,35 @@
   .sig-card {
     background: var(--surface);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 12px;
     border: 1.5px solid var(--border);
     box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.06));
-    display: flex; flex-direction: column; gap: 10px;
+    display: flex; flex-direction: column; gap: 9px;
   }
   .sig-card.bull  { border-color: rgba(52,199,89,0.35); }
   .sig-card.bear  { border-color: rgba(255,59,48,0.30); }
 
-  /* Action banner */
-  .sig-action {
-    border-radius: 8px; padding: 10px 12px;
-    display: flex; flex-direction: column; gap: 3px;
-  }
-  .sig-action-ready-long    { background: rgba(52,199,89,0.14);  border: 1px solid rgba(52,199,89,0.35); }
-  .sig-action-ready-short   { background: rgba(255,59,48,0.10);  border: 1px solid rgba(255,59,48,0.30); }
-  .sig-action-watch         { background: rgba(255,149,0,0.10);  border: 1px solid rgba(255,149,0,0.30); }
-  .sig-action-wait          { background: rgba(142,142,147,0.08);border: 1px solid var(--border); }
-  .sig-action-title {
-    font-size: 15px; font-weight: 800; letter-spacing: -.2px; line-height: 1;
-  }
-  .sig-action-cond  { font-size: 11px; font-weight: 400; opacity: .75; margin-top: 1px; line-height: 1.4; }
-
+  /* ── Card header: coin + price ── */
   .sig-top { display: flex; align-items: baseline; justify-content: space-between; }
-  .sig-coin { font-size: 16px; font-weight: 700; color: var(--text); }
-  .sig-price { font-size: 13px; color: var(--muted); }
+  .sig-coin  { font-size: 16px; font-weight: 500; color: var(--text); }
+  .sig-price { font-size: 16px; font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
 
+  /* ── Zone 1: THE DECISION (hero) ── */
+  .sig-hero {
+    border-radius: var(--radius-sm);
+    padding: 14px 12px;
+    text-align: center;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .sig-hero-verdict { font-size: 24px; font-weight: 800; letter-spacing: -.3px; line-height: 1.1; }
+  .sig-hero-reason  { font-size: 12px; font-weight: 500; opacity: .8; line-height: 1.35; }
+  .sig-hero-long  { background: rgba(52,199,89,0.18);   color: #157a32; }
+  .sig-hero-short { background: rgba(255,59,48,0.14);   color: #c41f1f; }
+  .sig-hero-watch { background: rgba(255,149,0,0.16);   color: #a05c00; }
+  .sig-hero-wait  { background: rgba(142,142,147,0.14); color: #5b5b5e; }
+
+  /* ── Zone 2: WHY ── */
+  .sig-regime-row { display: flex; align-items: center; justify-content: space-between; }
   .sig-badge {
     display: inline-flex; align-items: center; gap: 5px;
     padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 700;
@@ -99,39 +102,61 @@
   .sig-badge.neutral { background: rgba(142,142,147,0.12); color: var(--muted); }
   .sig-badge.unknown { background: rgba(142,142,147,0.10); color: var(--muted); }
 
-  .sig-signals { display: flex; flex-direction: column; gap: 5px; }
-  .sig-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); }
+  .sig-score-dots { display: flex; align-items: center; gap: 4px; }
+  .sig-score-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border2); }
+  .sig-score-dot.filled.bull    { background: var(--green); }
+  .sig-score-dot.filled.bear    { background: var(--red); }
+  .sig-score-dot.filled.neutral { background: var(--orange); }
+
+  .sig-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  .sig-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); }
+  .sig-check-label { color: var(--muted); }
+  .sig-check-val { font-weight: 700; font-variant-numeric: tabular-nums; }
   .sig-dot {
     width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
   }
   .sig-dot.on  { background: var(--green); }
   .sig-dot.off { background: var(--red); }
 
-  .sig-strat-box {
-    border-radius: 8px;
-    padding: 9px 12px;
+  /* ── Zone 3: ML CONFIRMATION (subtle/secondary) ── */
+  .sig-ml-zone {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
     display: flex; flex-direction: column; gap: 4px;
-    border-width: 1px; border-style: solid;
   }
-  .sig-strat-header {
+  .sig-ml-row {
     display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px;
   }
-  .sig-strat-label {
-    font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
-    text-transform: uppercase; opacity: 0.55;
+  .sig-ml-key { color: var(--muted); font-weight: 400; }
+  .sig-ml-val { font-weight: 600; color: var(--text2); display: flex; align-items: center; gap: 5px; }
+  .sig-ml-conf { font-size: 10px; color: var(--muted); font-weight: 400; }
+  .sig-grade {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 6px;
+    font-size: 11px; font-weight: 800;
   }
-  .sig-strat-source {
-    font-size: 9px; font-weight: 600; letter-spacing: 0.4px;
-    text-transform: uppercase; opacity: 0.5;
-    padding: 1px 5px; border-radius: 4px; background: currentColor;
+  .grade-A { background: rgba(52,199,89,.15);  color: #1a7a35; }
+  .grade-B { background: rgba(52,199,89,.10);  color: #2d9e50; }
+  .grade-C { background: rgba(255,149,0,.12);  color: #a05c00; }
+  .grade-D { background: rgba(255,59,48,.10);  color: #c41f1f; }
+  .grade-F { background: rgba(255,59,48,.16);  color: #aa1111; }
+  .sig-ml-pills { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 1px; }
+  .sig-ml-pill {
+    font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 99px;
+    background: rgba(142,142,147,0.10); color: var(--muted);
   }
-  .sig-strat-source span { mix-blend-mode: screen; color: #fff; }
-  .sig-strat-name {
-    font-size: 13px; font-weight: 700; line-height: 1.2;
+  .sig-ml-pill.good { background: rgba(52,199,89,0.10); color: #1d8a3b; }
+  .sig-ml-pill.bad  { background: rgba(255,59,48,0.08); color: #c41f1f; }
+
+  /* ── DCA Trigger Prices (shown only for LONG NOW / SHORT NOW) ── */
+  .sig-triggers {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    display: flex; flex-direction: column; gap: 5px;
   }
-  .sig-strat-levels {
-    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;
-  }
+  .sig-triggers-anchor { font-size: 11px; color: var(--muted); }
+  .sig-levels-row { display: flex; flex-wrap: wrap; gap: 4px; }
   .sig-level-chip {
     font-size: 11px; font-weight: 600;
     padding: 3px 8px; border-radius: 5px;
@@ -143,46 +168,14 @@
     text-decoration: line-through;
     background: rgba(0,0,0,0.03);
   }
-  .sig-strat-tp {
-    font-size: 11px; font-weight: 500; opacity: 0.7; margin-top: 1px;
+  .sig-fresh-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+    text-transform: uppercase; opacity: 0.5; margin-top: 2px;
   }
-  .sig-strat-bull    { background: rgba(52,199,89,0.10);  color: #1a7a35; border-color: rgba(52,199,89,0.25); }
-  .sig-strat-bear    { background: rgba(255,59,48,0.08);  color: #c41f1f; border-color: rgba(255,59,48,0.22); }
-  .sig-strat-neutral { background: rgba(255,149,0,0.08);  color: #a05c00; border-color: rgba(255,149,0,0.22); }
-  .sig-strat-unknown { background: rgba(142,142,147,0.07);color: var(--muted); border-color: var(--border); }
-
-  /* ML panel */
-  .sig-ml {
-    background: rgba(88,86,214,0.06);
-    border: 1px solid rgba(88,86,214,0.18);
-    border-radius: 8px;
-    padding: 9px 12px;
-    display: flex; flex-direction: column; gap: 6px;
+  .sig-passed-warn {
+    font-size: 11px; color: #b36a00; background: rgba(255,149,0,.10);
+    border-radius: 5px; padding: 4px 8px;
   }
-  .sig-ml-label {
-    font-size: 9px; font-weight: 700; letter-spacing: .8px;
-    text-transform: uppercase; color: var(--purple); opacity: .7;
-    margin-bottom: 1px;
-  }
-  .sig-ml-row {
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 12px;
-  }
-  .sig-ml-key { color: var(--muted); font-weight: 400; }
-  .sig-ml-val { font-weight: 700; color: var(--text); }
-  .sig-ml-conf { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 4px; }
-  .sig-grade {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; border-radius: 6px;
-    font-size: 12px; font-weight: 800;
-  }
-  .grade-A { background: rgba(52,199,89,.15);  color: #1a7a35; }
-  .grade-B { background: rgba(52,199,89,.10);  color: #2d9e50; }
-  .grade-C { background: rgba(255,149,0,.12);  color: #a05c00; }
-  .grade-D { background: rgba(255,59,48,.10);  color: #c41f1f; }
-  .grade-F { background: rgba(255,59,48,.16);  color: #aa1111; }
-  .sig-factor { font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 5px; }
-  .sig-factor-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 
   .signals-header {
     display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
@@ -1842,12 +1835,6 @@ function renderSignals(signals) {
     if (price == null) return '—';
     return '$' + price.toLocaleString('en-US', { minimumFractionDigits: coin === 'XRP' ? 4 : 2, maximumFractionDigits: coin === 'XRP' ? 4 : 2 });
   };
-  const stratInfo = rec => {
-    if (rec === 'Long DCA')  return { cls: 'bull',    icon: '▲' };
-    if (rec === 'Short DCA') return { cls: 'bear',    icon: '▼' };
-    if (rec === 'Mixed DCA') return { cls: 'neutral', icon: '⇅' };
-    return                          { cls: 'unknown', icon: '?' };
-  };
 
   grid.innerHTML = signals.map(s => {
     const cls = regimeCls(s.regime);
@@ -1858,42 +1845,22 @@ function renderSignals(signals) {
         <div style="font-size:11px;color:var(--muted)">${s.error}</div>
       </div>`;
 
-    const st = stratInfo(s.rec);
-    const sign = s.rec === 'Short DCA' ? '+' : '−';
+    // ── Zone 1: THE DECISION ──────────────────────────────────────
+    const heroCls = s.action === 'LONG NOW'  ? 'long'  :
+                    s.action === 'SHORT NOW' ? 'short' :
+                    s.action === 'WATCH'     ? 'watch' : 'wait';
+    const heroLabel = s.action === 'LONG NOW'  ? '▲ LONG NOW'  :
+                       s.action === 'SHORT NOW' ? '▼ SHORT NOW' :
+                       s.action === 'WATCH'     ? 'WATCH'       : 'WAIT';
 
-    // Original anchor levels — mark passed ones
-    const levelChips = (s.strat_levels || []).map((l, i) => {
-      const tp = (s.trigger_prices || [])[i];
-      const passed = tp != null && tp > s.price;
-      const tpStr = tp != null ? ` ${fmtP(s.coin, tp)}` : '';
-      if (passed) {
-        return `<span class="sig-level-chip sig-level-passed" title="Already passed">${sign}${l}%<span style="font-weight:400;opacity:.6"> ${fmtP(s.coin, tp)}</span> ✓</span>`;
-      }
-      return `<span class="sig-level-chip">${sign}${l}%<span style="font-weight:400;opacity:.6">${tpStr}</span></span>`;
-    }).join('');
+    // ── Zone 2: WHY ────────────────────────────────────────────────
+    const dots = Array.from({ length: 4 }, (_, i) =>
+      `<span class="sig-score-dot${i < s.score ? ' filled ' + cls : ''}"></span>`).join('');
+    const rsiCol = s.rsi < 40 ? 'var(--red)' : s.rsi > 60 ? 'var(--green)' : 'var(--text2)';
+    const retCol = s.week_ret >= 0 ? 'var(--green)' : 'var(--red)';
+    const retArrow = s.week_ret >= 0 ? '▲' : '▼';
 
-    // Fresh-start levels from current price
-    const freshChips = (s.strat_levels || []).map((l, i) => {
-      const tp = (s.fresh_triggers || [])[i];
-      const tpStr = tp != null ? ` ${fmtP(s.coin, tp)}` : '';
-      return `<span class="sig-level-chip">${sign}${l}%<span style="font-weight:400;opacity:.6">${tpStr}</span></span>`;
-    }).join('');
-
-    const sourceLbl  = s.strat_source === 'saved' ? 'Saved' : 'Suggested';
-    const anchorStr  = s.anchor ? fmtP(s.coin, s.anchor) : '—';
-    const passedWarn = s.levels_passed > 0
-      ? `<div style="font-size:11px;color:#b36a00;background:rgba(255,149,0,.10);border-radius:5px;padding:4px 8px;margin-bottom:5px">
-           ⚠ ${s.levels_passed} level${s.levels_passed>1?'s':''} already passed — consider fresh start
-         </div>` : '';
-
-    const freshSection = s.levels_passed > 0 ? `
-      <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,.08)">
-        <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;opacity:.5;margin-bottom:4px">Fresh start from now</div>
-        <div style="font-size:11px;opacity:.6;margin-bottom:4px">Anchor: <strong>${fmtP(s.coin, s.fresh_anchor)}</strong> <span style="opacity:.7">(current price)</span></div>
-        <div class="sig-strat-levels">${freshChips}</div>
-      </div>` : '';
-
-    // ML panel
+    // ── Zone 3: ML CONFIRMATION ──────────────────────────────────────
     const mlDir   = s.ml_direction || {};
     const mlReg   = s.ml_regime    || {};
     const mlEnt   = s.ml_entry     || {};
@@ -1901,21 +1868,48 @@ function renderSignals(signals) {
     const dirCol  = mlDir.direction === 'UP' ? 'var(--green)' : mlDir.direction === 'DOWN' ? 'var(--red)' : 'var(--muted)';
     const regAgree = mlReg.agrees_with_rules !== false;
     const gradeEl = mlEnt.grade ? `<span class="sig-grade grade-${mlEnt.grade}">${mlEnt.grade}</span>` : '';
-    const factorsHtml = (mlEnt.factors || []).slice(0,3).map(([label, delta, good]) => {
-      const color = good === true ? 'var(--green)' : good === false ? 'var(--red)' : 'var(--muted)';
-      return `<div class="sig-factor"><span class="sig-factor-dot" style="background:${color}"></span><span style="flex:1">${label}</span><span style="color:${color};font-weight:600">${delta}</span></div>`;
+    const pillsHtml = (mlEnt.factors || []).slice(0, 2).map(([label, delta, good]) => {
+      const pillCls = good === true ? 'good' : good === false ? 'bad' : '';
+      return `<span class="sig-ml-pill ${pillCls}">${label} ${delta}</span>`;
     }).join('');
 
-    // Action banner
-    const actionCls = s.action === 'LONG NOW'  ? 'ready-long'  :
-                      s.action === 'SHORT NOW' ? 'ready-short' :
-                      s.action === 'WATCH'     ? 'watch'       : 'wait';
-    const actionIcon = s.action === 'LONG NOW'  ? '▲ LONG NOW'  :
-                       s.action === 'SHORT NOW' ? '▼ SHORT NOW' :
-                       s.action === 'WATCH'     ? '👀 WATCH'    : '⏳ WAIT';
-    const actionCol  = s.action === 'LONG NOW'  ? '#1a7a35' :
-                       s.action === 'SHORT NOW' ? '#c41f1f' :
-                       s.action === 'WATCH'     ? '#a05c00' : 'var(--muted)';
+    // ── DCA Trigger Prices — only when actionable ────────────────────
+    let triggersHtml = '';
+    if (s.action === 'LONG NOW' || s.action === 'SHORT NOW') {
+      const sign = s.rec === 'Short DCA' ? '+' : '−';
+
+      const levelChips = (s.strat_levels || []).map((l, i) => {
+        const tp = (s.trigger_prices || [])[i];
+        const passed = tp != null && tp > s.price;
+        const tpStr = tp != null ? ` ${fmtP(s.coin, tp)}` : '';
+        if (passed) {
+          return `<span class="sig-level-chip sig-level-passed" title="Already passed">${sign}${l}%<span style="font-weight:400;opacity:.6"> ${fmtP(s.coin, tp)}</span> ✓</span>`;
+        }
+        return `<span class="sig-level-chip">${sign}${l}%<span style="font-weight:400;opacity:.6">${tpStr}</span></span>`;
+      }).join('');
+
+      const freshChips = (s.strat_levels || []).map((l, i) => {
+        const tp = (s.fresh_triggers || [])[i];
+        const tpStr = tp != null ? ` ${fmtP(s.coin, tp)}` : '';
+        return `<span class="sig-level-chip">${sign}${l}%<span style="font-weight:400;opacity:.6">${tpStr}</span></span>`;
+      }).join('');
+
+      const passedWarn = s.levels_passed > 0
+        ? `<div class="sig-passed-warn">⚠ ${s.levels_passed} level${s.levels_passed > 1 ? 's' : ''} already passed</div>` : '';
+
+      const freshSection = s.levels_passed > 0 ? `
+        <div class="sig-fresh-label">Fresh start from now</div>
+        <div class="sig-triggers-anchor">Anchor: <strong style="color:var(--text2)">${fmtP(s.coin, s.fresh_anchor)}</strong> (current price)</div>
+        <div class="sig-levels-row">${freshChips}</div>` : '';
+
+      triggersHtml = `
+        <div class="sig-triggers">
+          <div class="sig-triggers-anchor">Anchor: <strong style="color:var(--text2)">${fmtP(s.coin, s.anchor)}</strong> (14-day high)</div>
+          <div class="sig-levels-row">${levelChips}</div>
+          ${passedWarn}
+          ${freshSection}
+        </div>`;
+    }
 
     return `
       <div class="sig-card ${cls}">
@@ -1923,47 +1917,36 @@ function renderSignals(signals) {
           <span class="sig-coin">${s.coin}</span>
           <span class="sig-price">${fmtP(s.coin, s.price)}</span>
         </div>
-        <div class="sig-action sig-action-${actionCls}">
-          <div class="sig-action-title" style="color:${actionCol}">${actionIcon}</div>
-          <div class="sig-action-cond">${s.condition || ''}</div>
+        <div class="sig-hero sig-hero-${heroCls}">
+          <div class="sig-hero-verdict">${heroLabel}</div>
+          <div class="sig-hero-reason">${s.condition || ''}</div>
         </div>
-        <div class="sig-badge ${cls}">${regimeLbl(s.regime)} &nbsp;${s.score}/4</div>
-        <div class="sig-signals">
-          <div class="sig-row">${dot(s.s1)}<span>Price ${s.s1 ? '>' : '<'} EMA50</span></div>
-          <div class="sig-row">${dot(s.s2)}<span>${s.s2 ? 'Golden Cross' : 'Death Cross'} (EMA50/200)</span></div>
-          <div class="sig-row">${dot(s.s3)}<span>RSI ${s.rsi}</span></div>
-          <div class="sig-row">${dot(s.s4)}<span>7-day ${s.week_ret >= 0 ? '+' : ''}${s.week_ret}%</span></div>
+        <div class="sig-regime-row">
+          <span class="sig-badge ${cls}">${regimeLbl(s.regime)}</span>
+          <span class="sig-score-dots">${dots}</span>
         </div>
-        <div class="sig-strat-box sig-strat-${st.cls}">
-          <div class="sig-strat-header">
-            <div class="sig-strat-label">Best Strategy</div>
-            <div style="font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.5">${sourceLbl}</div>
-          </div>
-          <div class="sig-strat-name">${st.icon} ${s.rec} &nbsp;·&nbsp; ${s.strat_name || ''}</div>
-          <div style="font-size:11px;opacity:.6;margin:1px 0 4px">Anchor: <strong>${anchorStr}</strong> <span style="opacity:.7">(14-day high)</span></div>
-          ${passedWarn}
-          <div class="sig-strat-levels">${levelChips}</div>
-          <div class="sig-strat-tp">Take Profit: +${s.strat_tp}%</div>
-          ${freshSection}
+        <div class="sig-checks">
+          <div class="sig-check">${dot(s.s1)}<span>Price ${s.s1 ? '>' : '<'} EMA50</span></div>
+          <div class="sig-check">${dot(s.s2)}<span>${s.s2 ? 'Golden' : 'Death'} Cross</span></div>
+          <div class="sig-check"><span class="sig-check-label">RSI</span><span class="sig-check-val" style="color:${rsiCol}">${s.rsi}</span></div>
+          <div class="sig-check"><span class="sig-check-label">7d</span><span class="sig-check-val" style="color:${retCol}">${retArrow} ${Math.abs(s.week_ret)}%</span></div>
         </div>
-        <div class="sig-ml">
-          <div class="sig-ml-label">ML Analysis</div>
+        <div class="sig-ml-zone">
           <div class="sig-ml-row">
             <span class="sig-ml-key">Next candle</span>
-            <span class="sig-ml-val" style="color:${dirCol}">${dirIcon} ${mlDir.direction || '—'} <span class="sig-ml-conf">${mlDir.confidence ? mlDir.confidence + '%' : ''}</span></span>
+            <span class="sig-ml-val" style="color:${dirCol}">${dirIcon} ${mlDir.direction || '—'}<span class="sig-ml-conf">${mlDir.confidence ? ' ' + mlDir.confidence + '%' : ''}</span></span>
           </div>
           <div class="sig-ml-row">
             <span class="sig-ml-key">ML Regime</span>
-            <span class="sig-ml-val">${mlReg.regime || '—'} <span class="sig-ml-conf">${mlReg.confidence ? mlReg.confidence + '%' : ''}${!regAgree ? ' ⚠ differs from rules' : ''}</span></span>
+            <span class="sig-ml-val">${mlReg.regime || '—'}<span class="sig-ml-conf">${mlReg.confidence ? ' ' + mlReg.confidence + '%' : ''}${!regAgree ? ' ⚠' : ''}</span></span>
           </div>
-          <div class="sig-ml-row" style="align-items:flex-start;gap:8px">
-            <span class="sig-ml-key" style="padding-top:2px">Entry score</span>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:1">
-              <div style="display:flex;align-items:center;gap:6px">${gradeEl}<span class="sig-ml-val">${mlEnt.score ?? '—'}/100</span></div>
-              <div style="width:100%;display:flex;flex-direction:column;gap:2px">${factorsHtml}</div>
-            </div>
+          <div class="sig-ml-row">
+            <span class="sig-ml-key">Entry score</span>
+            <span class="sig-ml-val">${gradeEl}${mlEnt.score ?? '—'}/100</span>
           </div>
+          <div class="sig-ml-pills">${pillsHtml}</div>
         </div>
+        ${triggersHtml}
       </div>`;
   }).join('');
 }
