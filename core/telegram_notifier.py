@@ -79,7 +79,7 @@ def _save_state(state: dict) -> None:
 def _fmt_price(coin: str, price) -> str:
     if price is None:
         return "—"
-    dec = 4 if coin == "XRP" else 2
+    dec = 4 if (coin == "XRP" or price < 10) else 2
     return f"${price:,.{dec}f}"
 
 

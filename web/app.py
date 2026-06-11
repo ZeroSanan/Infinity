@@ -289,8 +289,8 @@ def api_status():
 
 
 def _compute_market_signals(force: bool = False) -> dict:
-    """Bull/bear regime signals for BTC, ETH, XRP, SOL (Binance) plus
-    XAU (gold), NVDA, and WTI crude oil (Twelve Data).
+    """Bull/bear regime signals for BTC, ETH, XRP, SOL, ZEC, SPCX, SUI
+    (Binance) plus XAU (gold) and NVDA (Twelve Data).
 
     Cached for _SIGNALS_TTL seconds. Called both by the /api/market/signals
     route and by the background _signal_poller, so Signal History keeps
@@ -336,13 +336,15 @@ def _compute_market_signals(force: bool = False) -> dict:
         return matches[0]
 
     coins = [
-        ("BTC",  "BTCUSDT", "binance"),
-        ("ETH",  "ETHUSDT", "binance"),
-        ("XRP",  "XRPUSDT", "binance"),
-        ("SOL",  "SOLUSDT", "binance"),
-        ("XAU",  "XAU/USD", "twelvedata"),
-        ("NVDA", "NVDA",    "twelvedata"),
-        ("WTI",  "USO",     "twelvedata"),
+        ("BTC",  "BTCUSDT",  "binance"),
+        ("ETH",  "ETHUSDT",  "binance"),
+        ("XRP",  "XRPUSDT",  "binance"),
+        ("SOL",  "SOLUSDT",  "binance"),
+        ("ZEC",  "ZECUSDT",  "binance"),
+        ("SPCX", "SPCXUSDT", "binance"),
+        ("SUI",  "SUIUSDT",  "binance"),
+        ("XAU",  "XAU/USD",  "twelvedata"),
+        ("NVDA", "NVDA",     "twelvedata"),
     ]
 
     def _ema(data: list, period: int) -> list:
