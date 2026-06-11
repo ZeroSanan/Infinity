@@ -289,7 +289,7 @@ def api_status():
 
 
 def _compute_market_signals(force: bool = False) -> dict:
-    """Bull/bear regime signals for BTC, ETH, XRP, SOL, ZEC, SPCX, SUI
+    """Bull/bear regime signals for BTC, ETH, XRP, SOL, ZEC, SUI
     (Binance) plus XAU (gold) and NVDA (Twelve Data).
 
     Cached for _SIGNALS_TTL seconds. Called both by the /api/market/signals
@@ -341,7 +341,6 @@ def _compute_market_signals(force: bool = False) -> dict:
         ("XRP",  "XRPUSDT",  "binance"),
         ("SOL",  "SOLUSDT",  "binance"),
         ("ZEC",  "ZECUSDT",  "binance"),
-        ("SPCX", "SPCXUSDT", "binance"),
         ("SUI",  "SUIUSDT",  "binance"),
         ("XAU",  "XAU/USD",  "twelvedata"),
         ("NVDA", "NVDA",     "twelvedata"),
