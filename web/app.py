@@ -387,11 +387,24 @@ def _compute_market_signals(force: bool = False) -> dict:
             "direction": direction,
         }
 
+    def _atr(closes: list, highs: list, lows: list, period: int = 14) -> float:
+        """Average True Range over the last `period` candles."""
+        if len(closes) < period + 1:
+            return 0.0
+        trs = [
+            max(highs[i] - lows[i],
+                abs(highs[i] - closes[i - 1]),
+                abs(lows[i]  - closes[i - 1]))
+            for i in range(1, len(closes))
+        ]
+        return sum(trs[-period:]) / period
+
     signals = []
     for coin, symbol, source in coins:
         try:
             closes, highs, lows = fetch_klines(source, symbol)
             price   = closes[-1]
+            dec     = 4 if price < 10 else (2 if price < 1000 else 0)
             e50     = _ema(closes, 50)[-1]
             e200    = _ema(closes, 200)[-1]
             rsi     = _rsi(closes)
@@ -453,14 +466,28 @@ def _compute_market_signals(force: bool = False) -> dict:
             else:
                 pending_action = None
 
-            # Probable target — nearest Fibonacci level in the direction the
+            # Probable targets — prices to wait for in the direction the
             # current (or pending) signal expects price to move.
             if action == "SHORT NOW" or pending_action == "SHORT NOW":
-                fib_target = _fib_target(closes, highs, lows, price, "down")
+                target_dir = "down"
             elif action == "LONG NOW" or pending_action == "LONG NOW":
-                fib_target = _fib_target(closes, highs, lows, price, "up")
+                target_dir = "up"
             else:
-                fib_target = None
+                target_dir = None
+
+            if target_dir:
+                fib_target = _fib_target(closes, highs, lows, price, target_dir)
+
+                atr = _atr(closes, highs, lows)
+                vol_price = price - atr if target_dir == "down" else price + atr
+                vol_target = {"price": round(vol_price, dec), "direction": target_dir} if atr > 0 else None
+
+                profit_pct   = 0.98 if target_dir == "down" else 1.02
+                profit_target = {"price": round(price * profit_pct, dec), "direction": target_dir}
+            else:
+                fib_target    = None
+                vol_target    = None
+                profit_target = None
 
             # Strategy recommendation: prefer saved, fall back to preset
             saved = _best_saved(coin, regime)
@@ -479,8 +506,6 @@ def _compute_market_signals(force: bool = False) -> dict:
 
             # Suggested anchor = highest HIGH of last 14 days (84 × 4h candles)
             anchor = max(highs[-min(84, len(highs)):])
-
-            dec = 4 if price < 10 else (2 if price < 1000 else 0)
 
             # DCA trigger prices based on anchor + recommended levels
             trigger_prices = [
@@ -529,6 +554,8 @@ def _compute_market_signals(force: bool = False) -> dict:
                 "condition":      condition,
                 "pending_action": pending_action,
                 "fib_target":     fib_target,
+                "vol_target":     vol_target,
+                "profit_target":  profit_target,
             })
         except Exception as exc:
             signals.append({
