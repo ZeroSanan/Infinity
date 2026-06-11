@@ -361,6 +361,32 @@ def _compute_market_signals(force: bool = False) -> dict:
         al = sum(losses) / period
         return 100.0 - (100.0 / (1 + ag / al)) if al else 100.0
 
+    def _fib_target(closes, highs, lows, price, direction):
+        """Nearest Fibonacci retracement/extension level in the given
+        direction ('up' or 'down') relative to current price, or None."""
+        try:
+            from core.fibonacci import compute_fibonacci
+            candles = [{"high": h, "low": l, "close": c} for c, h, l in zip(closes, highs, lows)]
+            levels = compute_fibonacci(candles, lookback=100).levels
+        except Exception:
+            return None
+
+        if direction == "down":
+            candidates = [lv for lv in levels if lv.price < price]
+            best = max(candidates, key=lambda lv: lv.price) if candidates else None
+        else:
+            candidates = [lv for lv in levels if lv.price > price]
+            best = min(candidates, key=lambda lv: lv.price) if candidates else None
+
+        if best is None:
+            return None
+        return {
+            "price":     best.price,
+            "pct":       best.label.split(" — ")[0].replace("Fib ", ""),
+            "kind":      best.kind,
+            "direction": direction,
+        }
+
     signals = []
     for coin, symbol, source in coins:
         try:
@@ -426,6 +452,15 @@ def _compute_market_signals(force: bool = False) -> dict:
                 pending_action = "SHORT NOW"
             else:
                 pending_action = None
+
+            # Probable target — nearest Fibonacci level in the direction the
+            # current (or pending) signal expects price to move.
+            if action == "SHORT NOW" or pending_action == "SHORT NOW":
+                fib_target = _fib_target(closes, highs, lows, price, "down")
+            elif action == "LONG NOW" or pending_action == "LONG NOW":
+                fib_target = _fib_target(closes, highs, lows, price, "up")
+            else:
+                fib_target = None
 
             # Strategy recommendation: prefer saved, fall back to preset
             saved = _best_saved(coin, regime)
@@ -503,6 +538,7 @@ def _compute_market_signals(force: bool = False) -> dict:
                 "entry_ready":    entry_ready,
                 "condition":      condition,
                 "pending_action": pending_action,
+                "fib_target":     fib_target,
             })
         except Exception as exc:
             signals.append({
