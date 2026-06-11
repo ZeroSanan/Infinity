@@ -181,10 +181,6 @@
     text-decoration: line-through;
     background: rgba(0,0,0,0.03);
   }
-  .sig-fresh-label {
-    font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
-    text-transform: uppercase; opacity: 0.5; margin-top: 2px;
-  }
   .sig-passed-warn {
     font-size: 11px; color: #b36a00; background: rgba(255,149,0,.10);
     border-radius: 5px; padding: 4px 8px;
@@ -1930,26 +1926,14 @@ function renderSignals(signals) {
         return `<span class="sig-level-chip">${sign}${l}%<span style="font-weight:400;opacity:.6">${tpStr}</span></span>`;
       }).join('');
 
-      const freshChips = (s.strat_levels || []).map((l, i) => {
-        const tp = (s.fresh_triggers || [])[i];
-        const tpStr = tp != null ? ` ${fmtP(s.coin, tp)}` : '';
-        return `<span class="sig-level-chip">${sign}${l}%<span style="font-weight:400;opacity:.6">${tpStr}</span></span>`;
-      }).join('');
-
       const passedWarn = s.levels_passed > 0
         ? `<div class="sig-passed-warn">⚠ ${s.levels_passed} level${s.levels_passed > 1 ? 's' : ''} already passed</div>` : '';
-
-      const freshSection = s.levels_passed > 0 ? `
-        <div class="sig-fresh-label">Fresh start from now</div>
-        <div class="sig-triggers-anchor">Anchor: <strong style="color:var(--text2)">${fmtP(s.coin, s.fresh_anchor)}</strong> (current price)</div>
-        <div class="sig-levels-row">${freshChips}</div>` : '';
 
       triggersHtml = `
         <div class="sig-triggers">
           <div class="sig-triggers-anchor">Anchor: <strong style="color:var(--text2)">${fmtP(s.coin, s.anchor)}</strong> (14-day high)</div>
           <div class="sig-levels-row">${levelChips}</div>
           ${passedWarn}
-          ${freshSection}
         </div>`;
     }
 
