@@ -519,21 +519,10 @@
     padding: 20px;
   }
 
-  .chart-area { height: 260px; position: relative; }
-  svg.chart { width: 100%; height: 100%; overflow: visible; }
-
-  .legend {
-    display: flex; gap: 16px;
-    margin-top: 14px;
-    flex-wrap: wrap;
+  .chart-area { height: 460px; position: relative; }
+  @media (max-width: 640px) {
+    .chart-area { height: 360px; }
   }
-  .legend-item {
-    display: flex; align-items: center; gap: 6px;
-    font-size: 12px;
-    color: var(--muted);
-    font-weight: 500;
-  }
-  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
   /* ── STEPS PANEL ─────────────────────────────────────────────── */
   .steps-wrap {
@@ -989,13 +978,6 @@
     line-height: 1.7;
   }
 
-  /* ── PRICE CHART SVG ─────────────────────────────────────────── */
-  .price-label { font-family: -apple-system, sans-serif; font-size: 10px; fill: var(--muted); }
-  .grid-line   { stroke: var(--border2); stroke-width: 1; stroke-dasharray: 4,4; }
-  .dca-line    { fill: none; stroke: var(--blue); stroke-width: 2; }
-  .path-anim   { stroke-dasharray: 3000; stroke-dashoffset: 3000; animation: drawPath 2s ease .4s forwards; }
-  @keyframes drawPath { to { stroke-dashoffset: 0; } }
-
   /* ── REGIME DETECTOR ────────────────────────────────────────── */
   .signal-row {
     display: flex;
@@ -1206,15 +1188,9 @@
     <div class="main-grid">
       <!-- Chart -->
       <div class="chart-wrap">
-        <div class="section-label">Price Action + DCA Levels</div>
+        <div class="section-label">Price Action (30m · TradingView)</div>
         <div class="chart-area">
-          <svg class="chart" id="main-chart" viewBox="0 0 660 260" preserveAspectRatio="none"></svg>
-        </div>
-        <div class="legend">
-          <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div>Price</div>
-          <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>DCA Levels</div>
-          <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div>Avg Entry</div>
-          <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Take Profit</div>
+          <div id="tv-chart-container" style="width:100%;height:100%"></div>
         </div>
       </div>
 
@@ -1729,6 +1705,7 @@
 
 <div id="toast"></div>
 
+<script src="https://s3.tradingview.com/tv.js"></script>
 <script>
 // ── Global state ──────────────────────────────────────────────────────────────
 let _coins           = [];
@@ -2134,7 +2111,7 @@ function renderCoin(){
     <span class="config-key">Max Capital</span><span class="config-val" style="color:var(--orange)">$${fmt(c.total_capital,0)}</span>
     <span class="config-key">Leverage</span><span class="config-val" style="color:var(--red)">None</span>`;
 
-  renderChart(c);
+  renderTradingViewChart(c.symbol);
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
@@ -2168,78 +2145,36 @@ function renderSteps(c){
   }, 50);
 }
 
-// ── SVG Chart ─────────────────────────────────────────────────────────────────
-function renderChart(c){
-  const svg = document.getElementById('main-chart');
-  const W=660, H=260, PL=56, PR=8, PT=10;
-  const ref = c.reference_price || c.price * 1.15 || 100000;
-  const lowestLevel = c.dump_levels ? Math.min(...c.dump_levels) : -35;
-  const lowest = ref * (1 + lowestLevel / 100);
-  const range  = ref - lowest;
-  const cH = H - PT - 26; const cW = W - PL - PR;
-  const py = p => PT + ((ref - p) / range) * cH;
-  let html = '';
+// ── TradingView Chart ─────────────────────────────────────────────────────────
+let _tvSymbol = null;
+function renderTradingViewChart(symbol){
+  if (!symbol || symbol === _tvSymbol) return;
+  _tvSymbol = symbol;
 
-  // Grid
-  const gridPrices = [ref, ...(c.dump_levels || []).map(d => ref*(1+d/100))].slice(0,7);
-  gridPrices.forEach(p => {
-    const y = py(p);
-    html += `<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" class="grid-line"/>`;
-    html += `<text x="${PL-4}" y="${y+4}" class="price-label" text-anchor="end">$${fmt(p,0)}</text>`;
-  });
+  const container = document.getElementById('tv-chart-container');
+  if (!container) return;
+  container.innerHTML = '';
 
-  // DCA level lines
-  (c.dump_levels || []).forEach((d, i) => {
-    const p = ref*(1+d/100); const y = py(p);
-    const hit   = c.steps[i] && c.steps[i].hit;
-    const color = hit ? 'var(--green)' : 'var(--red)';
-    html += `<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="${color}" stroke-width="1" opacity=".4"/>`;
-    html += `<text x="${PL+6}" y="${y-4}" class="price-label" fill="${color}" opacity=".75">${d}%</text>`;
-  });
-
-  // TP line
-  if(c.tp_price){
-    const y = py(c.tp_price);
-    html += `<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="var(--green)" stroke-width="1.5" stroke-dasharray="5,3" opacity=".8"/>`;
-    html += `<text x="${W-PR-4}" y="${y-4}" class="price-label" fill="var(--green)" text-anchor="end">TP</text>`;
+  if (typeof TradingView === 'undefined') {
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px">Chart unavailable (TradingView script failed to load)</div>';
+    return;
   }
 
-  // Avg entry line
-  if(c.average_entry){
-    const y = py(c.average_entry);
-    html += `<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="6,3" opacity=".8"/>`;
-    html += `<text x="${W-PR-4}" y="${y-4}" class="price-label" fill="var(--orange)" text-anchor="end">AVG</text>`;
-  }
-
-  // Price path
-  const xStep   = cW / (c.step_count + 2);
-  const pts     = [[PL, py(ref)], [PL + xStep*0.5, py(ref)]];
-  const hitSteps = (c.steps || []).filter(s => s.hit);
-  hitSteps.forEach((s, i) => {
-    const x  = PL + xStep * (i + 1.5);
-    const ep = s.entry_price || ref*(1+s.dump_level/100);
-    if(i > 0) pts.push([PL + xStep*(i+0.8), py(ep*1.02)]);
-    pts.push([x, py(ep)]);
-    // Buy dot
-    html += `<circle cx="${x}" cy="${py(ep)}" r="12" fill="rgba(255,59,48,.08)"/>`;
-    html += `<circle cx="${x}" cy="${py(ep)}" r="6"  fill="rgba(255,59,48,.22)"/>`;
-    html += `<circle cx="${x}" cy="${py(ep)}" r="3.5" fill="var(--red)"/>`;
-    html += `<text x="${x}" y="${py(ep)-16}" class="price-label" fill="var(--red)" text-anchor="middle">BUY ${i+1}</text>`;
-    html += `<text x="${x}" y="${py(ep)-7}"  class="price-label" fill="var(--red)" text-anchor="middle" opacity=".6">$${fmt(s.order_size,0)}</text>`;
+  new TradingView.widget({
+    autosize: true,
+    symbol: `BINANCE:${symbol}`,
+    interval: '30',
+    timezone: 'Etc/UTC',
+    theme: 'light',
+    style: '1',
+    locale: 'en',
+    toolbar_bg: '#f1f3f6',
+    enable_publishing: false,
+    allow_symbol_change: true,
+    withdateranges: true,
+    hide_side_toolbar: false,
+    container_id: 'tv-chart-container',
   });
-
-  const curPrice = c.price || ref * 0.85;
-  pts.push([(PL+cW)*0.92, py(curPrice*1.008)], [PL+cW, py(curPrice)]);
-  html += `<path class="dca-line path-anim" d="M${pts.map(p=>p.join(',')).join(' L')}" style="stroke-dasharray:3000;stroke-dashoffset:3000"/>`;
-  // Current price dot
-  html += `<circle cx="${PL+cW}" cy="${py(curPrice)}" r="8"  fill="rgba(0,122,255,.15)"/>`;
-  html += `<circle cx="${PL+cW}" cy="${py(curPrice)}" r="4"  fill="var(--blue)" opacity=".9"/>`;
-
-  svg.innerHTML = html;
-  setTimeout(() => {
-    const path = svg.querySelector('.path-anim');
-    if(path){ path.style.transition = 'stroke-dashoffset 2s ease'; path.style.strokeDashoffset = '0'; }
-  }, 100);
 }
 
 // ── Running bar ───────────────────────────────────────────────────────────────
