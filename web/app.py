@@ -289,7 +289,8 @@ def api_status():
 
 
 def _compute_market_signals(force: bool = False) -> dict:
-    """Bull/bear regime signals for BTC, ETH, XRP, SOL via public Binance klines.
+    """Bull/bear regime signals for BTC, ETH, XRP, SOL (Binance) plus
+    XAU (gold), NVDA, and WTI crude oil (Twelve Data).
 
     Cached for _SIGNALS_TTL seconds. Called both by the /api/market/signals
     route and by the background _signal_poller, so Signal History keeps
@@ -301,10 +302,7 @@ def _compute_market_signals(force: bool = False) -> dict:
     if not force and _market_signals_cache["data"] and now - _market_signals_cache["ts"] < _SIGNALS_TTL:
         return _market_signals_cache["data"]
 
-    try:
-        import requests as _req
-    except ImportError:
-        return {"error": "requests not installed"}
+    from core.market_data import fetch_klines
 
     # Preset level suggestions keyed by (regime, score).
     # Levels are stored as positive magnitudes; direction depends on regime.
@@ -338,10 +336,13 @@ def _compute_market_signals(force: bool = False) -> dict:
         return matches[0]
 
     coins = [
-        ("BTC", "BTCUSDT"),
-        ("ETH", "ETHUSDT"),
-        ("XRP", "XRPUSDT"),
-        ("SOL", "SOLUSDT"),
+        ("BTC",  "BTCUSDT", "binance"),
+        ("ETH",  "ETHUSDT", "binance"),
+        ("XRP",  "XRPUSDT", "binance"),
+        ("SOL",  "SOLUSDT", "binance"),
+        ("XAU",  "XAU/USD", "twelvedata"),
+        ("NVDA", "NVDA",    "twelvedata"),
+        ("WTI",  "WTI/USD", "twelvedata"),
     ]
 
     def _ema(data: list, period: int) -> list:
@@ -360,20 +361,9 @@ def _compute_market_signals(force: bool = False) -> dict:
         return 100.0 - (100.0 / (1 + ag / al)) if al else 100.0
 
     signals = []
-    for coin, symbol in coins:
+    for coin, symbol, source in coins:
         try:
-            resp = _req.get(
-                "https://api.binance.com/api/v3/klines",
-                params={"symbol": symbol, "interval": "4h", "limit": 200},
-                timeout=8,
-            )
-            klines = resp.json()
-            if not isinstance(klines, list) or len(klines) < 55:
-                raise ValueError("insufficient data")
-
-            closes  = [float(k[4]) for k in klines]
-            highs   = [float(k[2]) for k in klines]
-            lows    = [float(k[3]) for k in klines]
+            closes, highs, lows = fetch_klines(source, symbol)
             price   = closes[-1]
             e50     = _ema(closes, 50)[-1]
             e200    = _ema(closes, 200)[-1]
