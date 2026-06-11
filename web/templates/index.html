@@ -1854,7 +1854,8 @@ function renderSignals(signals) {
   const dot = ok => `<span class="sig-dot ${ok ? 'on' : 'off'}"></span>`;
   const fmtP = (coin, price) => {
     if (price == null) return '—';
-    return '$' + price.toLocaleString('en-US', { minimumFractionDigits: coin === 'XRP' ? 4 : 2, maximumFractionDigits: coin === 'XRP' ? 4 : 2 });
+    const dec = (coin === 'XRP' || price < 10) ? 4 : 2;
+    return '$' + price.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
   };
 
   grid.innerHTML = signals.map(s => {
