@@ -94,6 +94,15 @@
   .sig-hero-pending.pending-short { color: #c41f1f; }
   .sig-hero-pending.pending-tbd   { color: #5b5b5e; }
 
+  .sig-hero-target {
+    margin-top: 6px; padding: 6px 10px; border-radius: 8px;
+    background: rgba(255,255,255,.55);
+    font-size: 12px; font-weight: 600; color: var(--text2);
+    display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;
+  }
+  .sig-hero-target strong { font-size: 13px; font-weight: 800; color: var(--text); }
+  .sig-hero-target .sig-target-fib { font-size: 10px; font-weight: 500; color: var(--muted); }
+
   /* ── Zone 2: WHY ── */
   .sig-regime-row { display: flex; align-items: center; justify-content: space-between; }
   .sig-badge {
@@ -1877,6 +1886,15 @@ function renderSignals(signals) {
       }
     }
 
+    // ── Probable target: nearest Fibonacci level in the signal's direction ──
+    let targetHtml = '';
+    if (s.fib_target) {
+      const t = s.fib_target;
+      const arrow = t.direction === 'down' ? '▼' : '▲';
+      const verb  = t.direction === 'down' ? 'Wait for drop to' : 'Wait for rise to';
+      targetHtml = `<div class="sig-hero-target">${arrow} ${verb} <strong>${fmtP(s.coin, t.price)}</strong><span class="sig-target-fib">(Fib ${t.pct} ${t.kind})</span></div>`;
+    }
+
     // ── Zone 2: WHY ────────────────────────────────────────────────
     const dots = Array.from({ length: 4 }, (_, i) =>
       `<span class="sig-score-dot${i < s.score ? ' filled ' + cls : ''}"></span>`).join('');
@@ -1945,6 +1963,7 @@ function renderSignals(signals) {
           <div class="sig-hero-verdict">${heroLabel}</div>
           <div class="sig-hero-reason">${s.condition || ''}</div>
           ${pendingHtml}
+          ${targetHtml}
         </div>
         <div class="sig-regime-row">
           <span class="sig-badge ${cls}">${regimeLbl(s.regime)}</span>
