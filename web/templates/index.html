@@ -89,6 +89,10 @@
   .sig-hero-short { background: rgba(255,59,48,0.14);   color: #c41f1f; }
   .sig-hero-watch { background: rgba(255,149,0,0.16);   color: #a05c00; }
   .sig-hero-wait  { background: rgba(142,142,147,0.14); color: #5b5b5e; }
+  .sig-hero-pending { font-size: 11px; font-weight: 800; letter-spacing: .2px; margin-top: 2px; }
+  .sig-hero-pending.pending-long  { color: #157a32; }
+  .sig-hero-pending.pending-short { color: #c41f1f; }
+  .sig-hero-pending.pending-tbd   { color: #5b5b5e; }
 
   /* ── Zone 2: WHY ── */
   .sig-regime-row { display: flex; align-items: center; justify-content: space-between; }
@@ -243,6 +247,8 @@
     font-weight: 500;
     background: var(--green-bg);
     color: var(--green);
+    min-width: 80px;
+    justify-content: center;
   }
   .status-pill.warn {
     background: var(--red-bg);
@@ -265,6 +271,23 @@
     font-weight: 600;
     color: var(--text);
     box-shadow: var(--shadow-sm);
+    min-width: 90px;
+    text-align: center;
+  }
+
+  /* ── PAGE TABS ROW ──────────────────────────────────────────── */
+  .page-tabs-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px; flex-wrap: wrap; gap: 10px;
+  }
+  .backtest-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 16px; border-radius: 99px;
+    background: var(--blue); color: #fff;
+    font-size: 13px; font-weight: 500; text-decoration: none;
+    box-shadow: 0 2px 8px rgba(0,122,255,.3);
+    transition: opacity .15s;
+    white-space: nowrap;
   }
 
   /* ── SEGMENTED CONTROL (page tabs) ──────────────────────────── */
@@ -1040,6 +1063,27 @@
     .regime-grid-top { grid-template-columns: 1fr; }
     .regime-grid-mid { grid-template-columns: 1fr; }
   }
+
+  @media (max-width: 640px) {
+    .container { padding: 16px 12px 60px; }
+
+    header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .logo-block h1 { font-size: 18px; }
+    .logo-block p  { font-size: 11px; }
+    .header-right  { width: 100%; gap: 6px; }
+    .balance-chip, .status-pill { font-size: 11px; padding: 5px 10px; min-width: 0; }
+    #deploy-info { display: none !important; }
+
+    .page-tabs-row { margin-bottom: 14px; gap: 8px; }
+    .seg-ctrl { width: 100%; flex-wrap: wrap; }
+    .seg-btn  { flex: 1 1 calc(50% - 2px); padding: 6px 8px; font-size: 12px; }
+    .backtest-link { width: 100%; justify-content: center; }
+  }
 </style>
 </head>
 <body>
@@ -1064,14 +1108,14 @@
   </header>
 
   <!-- ══ PAGE TABS ═════════════════════════════════════════════ -->
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:10px">
+  <div class="page-tabs-row">
     <div class="seg-ctrl" style="margin-bottom:0">
       <button class="seg-btn active" onclick="showPage('dashboard',this)">Dashboard</button>
       <button class="seg-btn"        onclick="showPage('account',this)">Accounts</button>
       <button class="seg-btn"        onclick="showPage('strategies',this)">Strategies</button>
       <button class="seg-btn"        onclick="showPage('regime',this)">Weekly Regime</button>
     </div>
-    <a href="/backtest" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:99px;background:var(--blue);color:#fff;font-size:13px;font-weight:500;text-decoration:none;box-shadow:0 2px 8px rgba(0,122,255,.3);transition:opacity .15s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">&#9654; Backtest</a>
+    <a href="/backtest" class="backtest-link" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">&#9654; Backtest</a>
   </div>
 
   <!-- ══════════════════════════════════════════════════════════
@@ -1853,6 +1897,18 @@ function renderSignals(signals) {
                        s.action === 'SHORT NOW' ? '▼ SHORT NOW' :
                        s.action === 'WATCH'     ? 'WATCH'       : 'WAIT';
 
+    // ── Pending: what comes next once a WATCH/WAIT condition resolves ──
+    let pendingHtml = '';
+    if (s.action === 'WATCH' || s.action === 'WAIT') {
+      if (s.pending_action === 'LONG NOW') {
+        pendingHtml = `<div class="sig-hero-pending pending-long">Next signal: ▲ LONG NOW (Buy)</div>`;
+      } else if (s.pending_action === 'SHORT NOW') {
+        pendingHtml = `<div class="sig-hero-pending pending-short">Next signal: ▼ SHORT NOW (Sell)</div>`;
+      } else {
+        pendingHtml = `<div class="sig-hero-pending pending-tbd">Next signal: TBD — needs BULL/BEAR confirmation</div>`;
+      }
+    }
+
     // ── Zone 2: WHY ────────────────────────────────────────────────
     const dots = Array.from({ length: 4 }, (_, i) =>
       `<span class="sig-score-dot${i < s.score ? ' filled ' + cls : ''}"></span>`).join('');
@@ -1920,6 +1976,7 @@ function renderSignals(signals) {
         <div class="sig-hero sig-hero-${heroCls}">
           <div class="sig-hero-verdict">${heroLabel}</div>
           <div class="sig-hero-reason">${s.condition || ''}</div>
+          ${pendingHtml}
         </div>
         <div class="sig-regime-row">
           <span class="sig-badge ${cls}">${regimeLbl(s.regime)}</span>

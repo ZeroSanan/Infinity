@@ -413,6 +413,19 @@ def _compute_market_signals(force: bool = False) -> dict:
                 action, entry_ready = "WATCH",     False
                 condition = "No clear trend — wait for BULL or BEAR confirmation"
 
+            # Pending action — the LONG NOW / SHORT NOW signal that would
+            # follow once a WATCH/WAIT condition resolves. BULL regimes only
+            # ever resolve to a long entry, BEAR regimes to a short entry;
+            # NEUTRAL regimes can break either way, so it's left undetermined.
+            if action in ("LONG NOW", "SHORT NOW"):
+                pending_action = None
+            elif regime == "BULL":
+                pending_action = "LONG NOW"
+            elif regime == "BEAR":
+                pending_action = "SHORT NOW"
+            else:
+                pending_action = None
+
             # Strategy recommendation: prefer saved, fall back to preset
             saved = _best_saved(coin, regime)
             if saved:
@@ -488,6 +501,7 @@ def _compute_market_signals(force: bool = False) -> dict:
                 "action":         action,
                 "entry_ready":    entry_ready,
                 "condition":      condition,
+                "pending_action": pending_action,
             })
         except Exception as exc:
             signals.append({
