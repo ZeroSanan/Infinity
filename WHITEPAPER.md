@@ -615,7 +615,7 @@ The Flask dashboard (port 5050) provides full visibility and control over live s
 - Supports both live and testnet accounts
 
 ### Market Signals Tab
-- Live regime read for BTC, ETH, XRP, SOL, ZEC, SPCX, SUI, XAU (gold), and NVDA on the 4-hour timeframe, refreshed every 15 minutes
+- Live regime read for BTC, ETH, XRP, SOL, ZEC, SUI, XAU (gold), and NVDA on the 4-hour timeframe, refreshed every 15 minutes
 - Per-coin card: regime badge, 4-signal checklist, recommended strategy (saved or suggested) with DCA trigger-price chips, anchor price, and fresh-start levels
 - Action banner — **LONG NOW / SHORT NOW / WATCH / WAIT** — with a one-line plain-English condition
 - ML Analysis panel — next-candle direction, ML regime confidence, and entry-quality score/grade with top contributing factors
@@ -629,7 +629,7 @@ See Section 11 for the full signal computation, strategy-matching, and ML method
 
 ### 11.1 Overview
 
-In addition to the DCA trading engines, Infinity runs a real-time **Market Signals** system (`/api/market/signals`) that continuously evaluates **BTC, ETH, XRP, SOL, ZEC, SPCX, SUI** (crypto, via Binance) plus **XAU (gold) and NVDA** (via Twelve Data) on the 4-hour timeframe. For each asset it produces:
+In addition to the DCA trading engines, Infinity runs a real-time **Market Signals** system (`/api/market/signals`) that continuously evaluates **BTC, ETH, XRP, SOL, ZEC, SUI** (crypto, via Binance) plus **XAU (gold) and NVDA** (via Twelve Data) on the 4-hour timeframe. For each asset it produces:
 
 - A rule-based **regime score** (BULL / NEUTRAL / BEAR)
 - A **strategy recommendation** — the best matching saved strategy from `config/coins.json`, or a sensible preset
@@ -646,7 +646,7 @@ For each asset, the last 200 four-hour candles are fetched via `core/market_data
 
 | Asset | Source | Symbol | Notes |
 |-------|--------|--------|-------|
-| BTC, ETH, XRP, SOL, ZEC, SPCX, SUI | Binance public klines (`GET /api/v3/klines`, `interval=4h`, `limit=200`) | `BTCUSDT`, etc. | No API key required |
+| BTC, ETH, XRP, SOL, ZEC, SUI | Binance public klines (`GET /api/v3/klines`, `interval=4h`, `limit=200`) | `BTCUSDT`, etc. | No API key required |
 | XAU (gold) | Twelve Data `/time_series` (`interval=4h`, `outputsize=200`) | `XAU/USD` | Requires `TWELVE_DATA_API_KEY` |
 | NVDA | Twelve Data `/time_series` | `NVDA` | Requires `TWELVE_DATA_API_KEY` |
 
@@ -957,7 +957,7 @@ Different parts of the system pull different kinds of Binance data, on different
 | Data | Source | Timeframe | Used by | Frequency |
 |------|--------|-----------|---------|-----------|
 | Ticker price | `GET /api/v3/ticker/price` | — (instantaneous) | Live dashboard price display, `DCAEngine.tick()` dump%/TP checks | Every 5s (dashboard poller), every 10s (engine tick) |
-| 4h klines (200 candles ≈ 33 days) | `GET /api/v3/klines` (BTC/ETH/XRP/SOL/ZEC/SPCX/SUI) | 4h | Market Signals (Section 11.2) and ML models (Section 11.6) for all seven; Fibonacci levels (Section 11.4) for BTC/ETH/XRP/SOL only | Recomputed every 15 min (`_SIGNALS_TTL`) by the background signal poller |
+| 4h klines (200 candles ≈ 33 days) | `GET /api/v3/klines` (BTC/ETH/XRP/SOL/ZEC/SUI) | 4h | Market Signals (Section 11.2) and ML models (Section 11.6) for all six; Fibonacci levels (Section 11.4) for BTC/ETH/XRP/SOL only | Recomputed every 15 min (`_SIGNALS_TTL`) by the background signal poller |
 | 4h time series (200 candles) | Twelve Data `/time_series` (XAU, NVDA) | 4h | Market Signals (Section 11.2), ML models (Section 11.6) | Same 15-min cycle as above |
 | Daily klines (200 candles ≈ 6.5 months) | `GET /api/v3/klines` | 1d | Weekly Regime tab (`core/regime_detector.py`) — EMA50/200, ATR, Bollinger Bands, volume trend, higher-highs | On-demand when the tab is opened |
 | 1h historical OHLCV (CSV, ~61,000 candles, 2018–2025) | Pre-downloaded dataset | 1h | Backtesting & strategy optimization (Sections 8–9) | Static — loaded once per backtest run |
