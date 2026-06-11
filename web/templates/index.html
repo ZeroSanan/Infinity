@@ -503,25 +503,18 @@
     font-weight: 400;
   }
 
-  /* ── MAIN GRID ───────────────────────────────────────────────── */
-  .main-grid {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    gap: 14px;
-    margin-bottom: 14px;
-  }
-
   /* ── CHART ───────────────────────────────────────────────────── */
   .chart-wrap {
     background: var(--surface);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
     padding: 20px;
+    margin-bottom: 20px;
   }
 
-  .chart-area { height: 460px; position: relative; }
+  .chart-area { height: 560px; position: relative; }
   @media (max-width: 640px) {
-    .chart-area { height: 360px; }
+    .chart-area { height: 400px; }
   }
 
   /* ── STEPS PANEL ─────────────────────────────────────────────── */
@@ -533,6 +526,7 @@
     display: flex;
     flex-direction: column;
     gap: 0;
+    margin-bottom: 14px;
   }
 
   .step-row {
@@ -1036,7 +1030,6 @@
   /* ── RESPONSIVE ──────────────────────────────────────────────── */
   @media (max-width: 960px) {
     .metrics     { grid-template-columns: 1fr 1fr; }
-    .main-grid   { grid-template-columns: 1fr; }
     .bottom-grid { grid-template-columns: 1fr; }
     .two-col     { grid-template-columns: 1fr; }
     .two-col-equal { grid-template-columns: 1fr; }
@@ -1119,6 +1112,14 @@
       </div>
     </div>
 
+    <!-- Chart -->
+    <div class="chart-wrap">
+      <div class="section-label">Price Action (30m · TradingView)</div>
+      <div class="chart-area">
+        <div id="tv-chart-container" style="width:100%;height:100%"></div>
+      </div>
+    </div>
+
     <!-- ── Fibonacci Levels ── -->
     <div class="card card-padded" style="margin-bottom:20px" id="fib-panel">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
@@ -1184,29 +1185,18 @@
       </div>
     </div>
 
-    <!-- Main grid -->
-    <div class="main-grid">
-      <!-- Chart -->
-      <div class="chart-wrap">
-        <div class="section-label">Price Action (30m · TradingView)</div>
-        <div class="chart-area">
-          <div id="tv-chart-container" style="width:100%;height:100%"></div>
+    <!-- Steps -->
+    <div class="steps-wrap">
+      <div class="section-label">DCA Steps</div>
+      <div id="steps-list"></div>
+      <div class="capital-footer">
+        <div class="section-label" style="margin-bottom:6px">Deployed Capital</div>
+        <div class="cap-track">
+          <div id="capital-bar" class="cap-fill"></div>
         </div>
-      </div>
-
-      <!-- Steps -->
-      <div class="steps-wrap">
-        <div class="section-label">DCA Steps</div>
-        <div id="steps-list"></div>
-        <div class="capital-footer">
-          <div class="section-label" style="margin-bottom:6px">Deployed Capital</div>
-          <div class="cap-track">
-            <div id="capital-bar" class="cap-fill"></div>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
-            <span id="capital-label">$0 / $0</span>
-            <span id="capital-pct">0% deployed</span>
-          </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
+          <span id="capital-label">$0 / $0</span>
+          <span id="capital-pct">0% deployed</span>
         </div>
       </div>
     </div>
