@@ -492,14 +492,6 @@ def _compute_market_signals(force: bool = False) -> dict:
             # (price has already fallen through them)
             levels_passed = sum(1 for tp in trigger_prices if tp > price)
 
-            # If any levels are passed, offer a fresh-start anchor (current price)
-            # so user can still deploy remaining capital from here
-            fresh_anchor = round(price, dec)
-            fresh_triggers = [
-                round(price * (1 - lvl / 100), dec)
-                for lvl in strat_levels
-            ]
-
             # ── ML models ────────────────────────────────────────────
             try:
                 from core.ml_signals import predict_direction, classify_regime, score_entry
@@ -529,8 +521,6 @@ def _compute_market_signals(force: bool = False) -> dict:
                 "anchor":         round(anchor, dec),
                 "trigger_prices": trigger_prices,
                 "levels_passed":  levels_passed,
-                "fresh_anchor":   fresh_anchor,
-                "fresh_triggers": fresh_triggers,
                 "ml_direction":   ml_dir,
                 "ml_regime":      ml_regime,
                 "ml_entry":       ml_entry,
