@@ -94,14 +94,16 @@
   .sig-hero-pending.pending-short { color: #c41f1f; }
   .sig-hero-pending.pending-tbd   { color: #5b5b5e; }
 
-  .sig-hero-target {
+  .sig-hero-targets {
     margin-top: 6px; padding: 6px 10px; border-radius: 8px;
     background: rgba(255,255,255,.55);
-    font-size: 12px; font-weight: 600; color: var(--text2);
-    display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;
+    display: flex; flex-direction: column; gap: 3px;
   }
-  .sig-hero-target strong { font-size: 13px; font-weight: 800; color: var(--text); }
-  .sig-hero-target .sig-target-fib { font-size: 10px; font-weight: 500; color: var(--muted); }
+  .sig-target-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-size: 11px; font-weight: 600; color: var(--text2);
+  }
+  .sig-target-row strong { font-size: 12px; font-weight: 800; color: var(--text); }
 
   /* ── Zone 2: WHY ── */
   .sig-regime-row { display: flex; align-items: center; justify-content: space-between; }
@@ -1884,11 +1886,22 @@ function renderSignals(signals) {
 
     // ── Probable target: nearest Fibonacci level in the signal's direction ──
     let targetHtml = '';
-    if (s.fib_target) {
-      const t = s.fib_target;
-      const arrow = t.direction === 'down' ? '▼' : '▲';
-      const verb  = t.direction === 'down' ? 'Wait for drop to' : 'Wait for rise to';
-      targetHtml = `<div class="sig-hero-target">${arrow} ${verb} <strong>${fmtP(s.coin, t.price)}</strong><span class="sig-target-fib">(Fib ${t.pct} ${t.kind})</span></div>`;
+    {
+      const arrow = s.fib_target?.direction === 'down' || s.vol_target?.direction === 'down' || s.profit_target?.direction === 'down' ? '▼' : '▲';
+      const rows = [];
+      if (s.fib_target) {
+        const t = s.fib_target;
+        rows.push(`<div class="sig-target-row"><span>${arrow} Fib ${t.pct} (${t.kind})</span><strong>${fmtP(s.coin, t.price)}</strong></div>`);
+      }
+      if (s.vol_target) {
+        rows.push(`<div class="sig-target-row"><span>${arrow} Volatility (ATR)</span><strong>${fmtP(s.coin, s.vol_target.price)}</strong></div>`);
+      }
+      if (s.profit_target) {
+        rows.push(`<div class="sig-target-row"><span>${arrow} Quick 2% target</span><strong>${fmtP(s.coin, s.profit_target.price)}</strong></div>`);
+      }
+      if (rows.length) {
+        targetHtml = `<div class="sig-hero-targets">${rows.join('')}</div>`;
+      }
     }
 
     // ── Zone 2: WHY ────────────────────────────────────────────────
