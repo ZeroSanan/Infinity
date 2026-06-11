@@ -649,7 +649,7 @@ For each asset, the last 200 four-hour candles are fetched via `core/market_data
 | BTC, ETH, XRP, SOL | Binance public klines (`GET /api/v3/klines`, `interval=4h`, `limit=200`) | `BTCUSDT`, etc. | No API key required |
 | XAU (gold) | Twelve Data `/time_series` (`interval=4h`, `outputsize=200`) | `XAU/USD` | Requires `TWELVE_DATA_API_KEY` |
 | NVDA | Twelve Data `/time_series` | `NVDA` | Requires `TWELVE_DATA_API_KEY` |
-| WTI (crude oil) | Twelve Data `/time_series` | `WTI/USD` | Requires `TWELVE_DATA_API_KEY` |
+| WTI (crude oil) | Twelve Data `/time_series` | `USO` | Requires `TWELVE_DATA_API_KEY`. The raw `WTI/USD` commodity symbol needs Twelve Data's paid Grow plan, so the **USO** ETF (tracks WTI price movements, trades like a stock) is used as a free-tier proxy — price reflects USO's share price, not the WTI barrel price |
 
 If `TWELVE_DATA_API_KEY` is unset, the XAU/NVDA/WTI cards show "Unknown — insufficient data" while BTC/ETH/XRP/SOL continue working unaffected. From the closing prices the system derives:
 

@@ -342,7 +342,7 @@ def _compute_market_signals(force: bool = False) -> dict:
         ("SOL",  "SOLUSDT", "binance"),
         ("XAU",  "XAU/USD", "twelvedata"),
         ("NVDA", "NVDA",    "twelvedata"),
-        ("WTI",  "WTI/USD", "twelvedata"),
+        ("WTI",  "USO",     "twelvedata"),
     ]
 
     def _ema(data: list, period: int) -> list:
