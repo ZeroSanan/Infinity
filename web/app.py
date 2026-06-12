@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import uuid
+from dataclasses import asdict
 from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -27,17 +28,20 @@ from dotenv import load_dotenv
 
 from binance.exceptions import BinanceAPIException
 from core.binance_client import BinanceSpotClient
+from core.binance_futures_client import BinanceFuturesClient
 from core.dca_engine import DCAEngine
+from core.mixed_engine import MixedEngine
 from core.regime_detector import RegimeDetector
 from core.state_manager import load_state, save_state, reset_state
-from models.dca_config import CoinConfig
+from models.dca_config import CoinConfig, DCAModel
 from utils.calculations import calc_dump_percent, calc_take_profit_price, calc_pnl
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-ROOT          = os.path.join(os.path.dirname(__file__), "..")
-ACCOUNTS_PATH = os.path.join(ROOT, "config", "accounts.json")
-COINS_PATH    = os.path.join(ROOT, "config", "coins.json")
+ROOT            = os.path.join(os.path.dirname(__file__), "..")
+ACCOUNTS_PATH   = os.path.join(ROOT, "config", "accounts.json")
+COINS_PATH      = os.path.join(ROOT, "config", "coins.json")
+DCA_MODELS_PATH = os.path.join(ROOT, "config", "dca_models.json")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app)
@@ -62,12 +66,14 @@ _market_signals_cache: dict = {"data": None, "ts": 0.0}
 _SIGNALS_TTL = 900  # seconds (15 min)
 
 # ── In-memory state ───────────────────────────────────────────────────────────
-_clients: dict = {}        # account_id -> BinanceSpotClient
-_engines: dict = {}        # account_id -> { strategy_id -> DCAEngine }
-_price_cache: dict = {}    # symbol -> float
+_clients: dict = {}          # account_id -> BinanceSpotClient
+_futures_clients: dict = {}  # account_id -> BinanceFuturesClient
+_engines: dict = {}          # account_id -> { strategy_id -> DCAEngine | MixedEngine }
+_price_cache: dict = {}      # symbol -> float
 _price_lock = threading.Lock()
 _coin_configs: list = []   # list[CoinConfig]
 _accounts: list = []       # list[dict]  (loaded from accounts.json)
+_dca_models: list = []     # list[dict]  (loaded from dca_models.json)
 
 
 # ── Loaders ───────────────────────────────────────────────────────────────────
@@ -82,6 +88,18 @@ def load_accounts() -> list:
 def save_accounts(accounts: list):
     with open(ACCOUNTS_PATH, "w") as f:
         json.dump({"accounts": accounts}, f, indent=2)
+
+
+def load_dca_models() -> list:
+    if not os.path.exists(DCA_MODELS_PATH):
+        return []
+    with open(DCA_MODELS_PATH) as f:
+        return json.load(f).get("models", [])
+
+
+def save_dca_models(models: list):
+    with open(DCA_MODELS_PATH, "w") as f:
+        json.dump({"models": models}, f, indent=2)
 
 
 def load_coin_configs() -> list:
@@ -112,6 +130,17 @@ def load_coin_configs() -> list:
             order_sizes=item["order_sizes"],
             take_profit_percent=item["take_profit_percent"],
             reference_price=item.get("reference_price"),
+            mode=item.get("mode", "long"),
+            bear_levels=item.get("bear_levels", []),
+            bear_order_sizes=item.get("bear_order_sizes", []),
+            bear_take_profit_percent=item.get("bear_take_profit_percent", 0.0),
+            bull_stop_loss_percent=item.get("bull_stop_loss_percent", 0.0),
+            bear_stop_loss_percent=item.get("bear_stop_loss_percent", 0.0),
+            leverage=item.get("leverage", 1),
+            use_entry_indicator=item.get("use_entry_indicator", True),
+            rsi_overbought=item.get("rsi_overbought", 70.0),
+            rsi_oversold=item.get("rsi_oversold", 30.0),
+            regime_interval=item.get("regime_interval", "1h"),
         )
         cfg.validate()
         out.append(cfg)
@@ -135,6 +164,21 @@ def get_client(account_id: str) -> Optional[BinanceSpotClient]:
     try:
         client = BinanceSpotClient(acct["api_key"], acct["secret_key"], testnet=acct.get("testnet", False))
         _clients[account_id] = client
+        return client
+    except Exception:
+        return None
+
+
+def get_futures_client(account_id: str) -> Optional[BinanceFuturesClient]:
+    """Return (and cache) a USD-M Futures client for the given account."""
+    if account_id in _futures_clients:
+        return _futures_clients[account_id]
+    acct = next((a for a in _accounts if a["id"] == account_id), None)
+    if not acct:
+        return None
+    try:
+        client = BinanceFuturesClient(acct["api_key"], acct["secret_key"], testnet=acct.get("testnet", False))
+        _futures_clients[account_id] = client
         return client
     except Exception:
         return None
@@ -206,18 +250,43 @@ def _coin_summary(cfg: CoinConfig) -> dict:
     state = load_state(cfg.id, cfg.coin, cfg.symbol)
 
     dump_pct = tp_price = pnl_usdt = pnl_pct = None
+    liq_distance_pct = None
 
     if state.reference_price and price:
         dump_pct = calc_dump_percent(state.reference_price, price)
 
+    is_mixed = cfg.mode == "mixed"
+    is_short = is_mixed and state.direction == "SHORT"
+
     if state.status == "ACTIVE" and state.average_entry:
-        tp_price = calc_take_profit_price(state.average_entry, cfg.take_profit_percent)
-        if price:
-            pnl_usdt, pnl_pct = calc_pnl(state.average_entry, price, state.total_quantity)
+        if is_short:
+            tp_price = state.average_entry * (1 - cfg.bear_take_profit_percent / 100)
+            if price:
+                pnl_usdt = (state.average_entry - price) * state.total_quantity
+                pnl_pct = (pnl_usdt / state.total_invested * 100) if state.total_invested else 0.0
+        else:
+            tp_price = calc_take_profit_price(state.average_entry, cfg.take_profit_percent)
+            if price:
+                pnl_usdt, pnl_pct = calc_pnl(state.average_entry, price, state.total_quantity)
+
+    if state.liquidation_price and price:
+        if is_short:
+            liq_distance_pct = (state.liquidation_price - price) / price * 100
+        else:
+            liq_distance_pct = (price - state.liquidation_price) / price * 100
+
+    # Which ladder to display: bear ladder while SHORT (or armed for a SELL
+    # entry), bull ladder otherwise (default for "long" mode too).
+    if is_mixed and (is_short or state.active_mode == "SELL"):
+        levels, sizes, tp_pct = cfg.bear_levels, cfg.bear_order_sizes, cfg.bear_take_profit_percent
+        total_capital = cfg.total_capital_bear
+    else:
+        levels, sizes, tp_pct = cfg.dump_levels, cfg.order_sizes, cfg.take_profit_percent
+        total_capital = cfg.total_capital
 
     steps = []
     exec_map = {s.step_index: s for s in state.executed_steps}
-    for i, (level, size) in enumerate(zip(cfg.dump_levels, cfg.order_sizes)):
+    for i, (level, size) in enumerate(zip(levels, sizes)):
         ex = exec_map.get(i)
         steps.append({
             "index": i, "dump_level": level, "order_size": size,
@@ -251,13 +320,22 @@ def _coin_summary(cfg: CoinConfig) -> dict:
         "total_invested": state.total_invested  if state.status == "ACTIVE" else None,
         "total_quantity": state.total_quantity  if state.status == "ACTIVE" else None,
         "tp_price":       tp_price,
-        "tp_percent":     cfg.take_profit_percent,
+        "tp_percent":     tp_pct,
         "pnl_usdt":       pnl_usdt,
         "pnl_pct":        pnl_pct,
         "steps_done":     state.steps_done,
-        "step_count":     cfg.step_count,
+        "step_count":     len(levels),
         "steps":          steps,
-        "total_capital":  cfg.total_capital,
+        "total_capital":  total_capital,
+        # ── Mixed long/short engine (Binance USD-M Futures) ────────────────
+        "mode":              cfg.mode,
+        "direction":         state.direction,
+        "active_mode":       state.active_mode,
+        "regime":            state.regime,
+        "anchor_price":      state.anchor_price,
+        "leverage":          cfg.leverage if is_mixed else None,
+        "liquidation_price": state.liquidation_price,
+        "liq_distance_pct":  liq_distance_pct,
     }
 
 
@@ -748,20 +826,25 @@ def api_start_engine():
         return jsonify({"error": "Unknown strategy"}), 404
 
     if not account_id:
-        account_id = next(iter(_clients.keys()), None)
+        account_id = _accounts[0]["id"] if _accounts else None
     if not account_id:
         return jsonify({"error": "No Binance account connected"}), 503
-
-    client = get_client(account_id)
-    if not client:
-        return jsonify({"error": "Could not connect account"}), 503
 
     # Check not already running
     for aid, engines in _engines.items():
         if strategy_id in engines:
             return jsonify({"ok": True, "message": f"Already running on account {aid}"})
 
-    engine = DCAEngine(cfg, client)
+    if cfg.mode == "mixed":
+        client = get_futures_client(account_id)
+        if not client:
+            return jsonify({"error": "Could not connect futures account"}), 503
+        engine = MixedEngine(cfg, client)
+    else:
+        client = get_client(account_id)
+        if not client:
+            return jsonify({"error": "Could not connect account"}), 503
+        engine = DCAEngine(cfg, client)
 
     # Apply entry point (reference price) — overrides whatever was persisted
     if reference_price is not None:
@@ -1021,6 +1104,19 @@ def api_strategies_update(strategy_id):
     if "take_profit_percent" in data: entry["take_profit_percent"] = float(data["take_profit_percent"])
     if "reference_price" in data:     entry["reference_price"]     = data["reference_price"] or None
 
+    # ── Mixed long/short engine fields ──────────────────────────────────────
+    if "mode" in data:                     entry["mode"]                     = data["mode"]
+    if "bear_levels" in data:              entry["bear_levels"]              = [float(x) for x in data["bear_levels"]]
+    if "bear_order_sizes" in data:         entry["bear_order_sizes"]         = [float(x) for x in data["bear_order_sizes"]]
+    if "bear_take_profit_percent" in data: entry["bear_take_profit_percent"] = float(data["bear_take_profit_percent"])
+    if "bull_stop_loss_percent" in data:   entry["bull_stop_loss_percent"]   = float(data["bull_stop_loss_percent"])
+    if "bear_stop_loss_percent" in data:   entry["bear_stop_loss_percent"]   = float(data["bear_stop_loss_percent"])
+    if "leverage" in data:                 entry["leverage"]                 = int(data["leverage"])
+    if "use_entry_indicator" in data:      entry["use_entry_indicator"]      = bool(data["use_entry_indicator"])
+    if "rsi_overbought" in data:           entry["rsi_overbought"]           = float(data["rsi_overbought"])
+    if "rsi_oversold" in data:             entry["rsi_oversold"]             = float(data["rsi_oversold"])
+    if "regime_interval" in data:          entry["regime_interval"]          = data["regime_interval"]
+
     coins[idx] = entry
     cfg_data["coins"] = coins
     with open(COINS_PATH, "w") as f:
@@ -1047,6 +1143,199 @@ def api_strategies_delete(strategy_id):
 
     _coin_configs = load_coin_configs()
     return jsonify({"ok": True})
+
+
+# ── Routes — DCA Models ───────────────────────────────────────────────────────
+
+@app.route("/api/dca_models", methods=["GET"])
+def api_dca_models_get():
+    return jsonify({"models": _dca_models})
+
+
+@app.route("/api/dca_models", methods=["POST"])
+def api_dca_models_create():
+    """Create a new DCA Model template."""
+    global _dca_models
+    data = request.json or {}
+
+    required = ["name", "bull_levels", "bull_order_sizes", "bull_take_profit_percent",
+                 "bear_levels", "bear_order_sizes", "bear_take_profit_percent"]
+    for fld in required:
+        if fld not in data:
+            return jsonify({"error": f"Missing field: {fld}"}), 400
+
+    name = data["name"].strip()
+    if not name:
+        return jsonify({"error": "Name is required"}), 400
+
+    try:
+        model = DCAModel(
+            id=str(uuid.uuid4())[:8],
+            name=name,
+            bull_levels=[float(x) for x in data["bull_levels"]],
+            bull_order_sizes=[float(x) for x in data["bull_order_sizes"]],
+            bull_take_profit_percent=float(data["bull_take_profit_percent"]),
+            bear_levels=[float(x) for x in data["bear_levels"]],
+            bear_order_sizes=[float(x) for x in data["bear_order_sizes"]],
+            bear_take_profit_percent=float(data["bear_take_profit_percent"]),
+            leverage=int(data.get("leverage", 1)),
+            bull_stop_loss_percent=float(data.get("bull_stop_loss_percent", 0.0)),
+            bear_stop_loss_percent=float(data.get("bear_stop_loss_percent", 0.0)),
+            use_entry_indicator=bool(data.get("use_entry_indicator", True)),
+            rsi_overbought=float(data.get("rsi_overbought", 70.0)),
+            rsi_oversold=float(data.get("rsi_oversold", 30.0)),
+            regime_interval=data.get("regime_interval", "1h"),
+        )
+        model.validate()
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+
+    _dca_models.append(asdict(model))
+    save_dca_models(_dca_models)
+    return jsonify({"ok": True, "id": model.id, "name": model.name})
+
+
+@app.route("/api/dca_models/<model_id>", methods=["PUT"])
+def api_dca_models_update(model_id):
+    """Update an existing DCA Model template."""
+    global _dca_models
+    data = request.json or {}
+
+    idx = next((i for i, m in enumerate(_dca_models) if m.get("id") == model_id), None)
+    if idx is None:
+        return jsonify({"error": "Model not found"}), 404
+
+    entry = dict(_dca_models[idx])
+    try:
+        if "name" in data:
+            new_name = data["name"].strip()
+            entry["name"] = new_name or entry["name"]
+        if "bull_levels" in data:
+            entry["bull_levels"] = [float(x) for x in data["bull_levels"]]
+        if "bull_order_sizes" in data:
+            entry["bull_order_sizes"] = [float(x) for x in data["bull_order_sizes"]]
+        if "bull_take_profit_percent" in data:
+            entry["bull_take_profit_percent"] = float(data["bull_take_profit_percent"])
+        if "bear_levels" in data:
+            entry["bear_levels"] = [float(x) for x in data["bear_levels"]]
+        if "bear_order_sizes" in data:
+            entry["bear_order_sizes"] = [float(x) for x in data["bear_order_sizes"]]
+        if "bear_take_profit_percent" in data:
+            entry["bear_take_profit_percent"] = float(data["bear_take_profit_percent"])
+        if "leverage" in data:
+            entry["leverage"] = int(data["leverage"])
+        if "bull_stop_loss_percent" in data:
+            entry["bull_stop_loss_percent"] = float(data["bull_stop_loss_percent"])
+        if "bear_stop_loss_percent" in data:
+            entry["bear_stop_loss_percent"] = float(data["bear_stop_loss_percent"])
+        if "use_entry_indicator" in data:
+            entry["use_entry_indicator"] = bool(data["use_entry_indicator"])
+        if "rsi_overbought" in data:
+            entry["rsi_overbought"] = float(data["rsi_overbought"])
+        if "rsi_oversold" in data:
+            entry["rsi_oversold"] = float(data["rsi_oversold"])
+        if "regime_interval" in data:
+            entry["regime_interval"] = data["regime_interval"]
+
+        DCAModel(**entry).validate()
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+
+    _dca_models[idx] = entry
+    save_dca_models(_dca_models)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/dca_models/<model_id>", methods=["DELETE"])
+def api_dca_models_delete(model_id):
+    global _dca_models
+    before = len(_dca_models)
+    _dca_models = [m for m in _dca_models if m.get("id") != model_id]
+    if len(_dca_models) == before:
+        return jsonify({"error": "Model not found"}), 404
+
+    save_dca_models(_dca_models)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/dca_models/<model_id>/apply", methods=["POST"])
+def api_dca_models_apply(model_id):
+    """
+    Apply a DCA Model template to one or more coin cards, switching them to
+    mode="mixed" (auto long/short on Binance USD-M Futures).
+
+    Body: { "strategy_ids": [...] }  or  { "apply_to_all": true }
+    """
+    global _coin_configs
+    data = request.json or {}
+
+    model_dict = next((m for m in _dca_models if m.get("id") == model_id), None)
+    if not model_dict:
+        return jsonify({"error": "Model not found"}), 404
+
+    strategy_ids = data.get("strategy_ids") or []
+    apply_to_all = bool(data.get("apply_to_all", False))
+
+    with open(COINS_PATH) as f:
+        cfg_data = json.load(f)
+    coins = cfg_data.get("coins", [])
+
+    if apply_to_all:
+        targets = coins
+    else:
+        if not strategy_ids:
+            return jsonify({"error": "strategy_ids or apply_to_all required"}), 400
+        targets = [c for c in coins if c.get("id") in strategy_ids]
+        if not targets:
+            return jsonify({"error": "No matching strategies found"}), 404
+
+    fields = {
+        "mode":                     "mixed",
+        "step_count":               len(model_dict["bull_levels"]),
+        "dump_levels":              model_dict["bull_levels"],
+        "order_sizes":              model_dict["bull_order_sizes"],
+        "take_profit_percent":      model_dict["bull_take_profit_percent"],
+        "bear_levels":              model_dict["bear_levels"],
+        "bear_order_sizes":         model_dict["bear_order_sizes"],
+        "bear_take_profit_percent": model_dict["bear_take_profit_percent"],
+        "leverage":                 model_dict.get("leverage", 1),
+        "bull_stop_loss_percent":   model_dict.get("bull_stop_loss_percent", 0.0),
+        "bear_stop_loss_percent":   model_dict.get("bear_stop_loss_percent", 0.0),
+        "use_entry_indicator":      model_dict.get("use_entry_indicator", True),
+        "rsi_overbought":           model_dict.get("rsi_overbought", 70.0),
+        "rsi_oversold":             model_dict.get("rsi_oversold", 30.0),
+        "regime_interval":          model_dict.get("regime_interval", "1h"),
+    }
+
+    applied = []
+    for entry in targets:
+        merged = {**entry, **fields}
+        try:
+            cfg = CoinConfig(
+                id=merged["id"], name=merged["name"], coin=merged["coin"], symbol=merged["symbol"],
+                enabled=merged.get("enabled", True), step_count=merged["step_count"],
+                dump_levels=merged["dump_levels"], order_sizes=merged["order_sizes"],
+                take_profit_percent=merged["take_profit_percent"], reference_price=merged.get("reference_price"),
+                mode=merged["mode"], bear_levels=merged["bear_levels"], bear_order_sizes=merged["bear_order_sizes"],
+                bear_take_profit_percent=merged["bear_take_profit_percent"],
+                bull_stop_loss_percent=merged["bull_stop_loss_percent"],
+                bear_stop_loss_percent=merged["bear_stop_loss_percent"],
+                leverage=merged["leverage"], use_entry_indicator=merged["use_entry_indicator"],
+                rsi_overbought=merged["rsi_overbought"], rsi_oversold=merged["rsi_oversold"],
+                regime_interval=merged["regime_interval"],
+            )
+            cfg.validate()
+        except (ValueError, KeyError) as e:
+            return jsonify({"error": f"[{entry.get('name', entry.get('id'))}] {e}"}), 400
+        entry.update(fields)
+        applied.append(entry.get("name", entry.get("id")))
+
+    cfg_data["coins"] = coins
+    with open(COINS_PATH, "w") as f:
+        json.dump(cfg_data, f, indent=2)
+
+    _coin_configs = load_coin_configs()
+    return jsonify({"ok": True, "applied": applied})
 
 
 # ── Routes — Logs ─────────────────────────────────────────────────────────────
@@ -1478,9 +1767,10 @@ def webhook_deploy():
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 def start():
-    global _accounts, _coin_configs
+    global _accounts, _coin_configs, _dca_models
     _accounts     = load_accounts()
     _coin_configs = load_coin_configs()
+    _dca_models   = load_dca_models()
 
     # Auto-connect all saved accounts
     for acct in _accounts:
@@ -1520,6 +1810,7 @@ def start():
 # Bootstrap when loaded by Gunicorn (not __main__)
 _accounts     = load_accounts()
 _coin_configs = load_coin_configs()
+_dca_models   = load_dca_models()
 for _acct in _accounts:
     try:
         _clients[_acct["id"]] = BinanceSpotClient(
