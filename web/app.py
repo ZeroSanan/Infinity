@@ -493,6 +493,12 @@ def _compute_market_signals(force: bool = False) -> dict:
             atr_7d  = _atr(closes, highs, lows, period=42)
             atr_14d = _atr(closes, highs, lows, period=84)
 
+            # Range % = (highest high - lowest low) / highest high, over the same windows
+            hh7, ll7   = max(highs[-42:]), min(lows[-42:])
+            hh14, ll14 = max(highs[-84:]), min(lows[-84:])
+            range_pct_7d  = (hh7  - ll7)  / hh7  * 100
+            range_pct_14d = (hh14 - ll14) / hh14 * 100
+
             s1 = price > e50
             s2 = e50   > e200
             s3 = rsi   > 55
@@ -619,6 +625,8 @@ def _compute_market_signals(force: bool = False) -> dict:
                 "week_ret":       round(week_ret, 2),
                 "atr_7d":         round(atr_7d, dec),
                 "atr_14d":        round(atr_14d, dec),
+                "range_pct_7d":   round(range_pct_7d, 2),
+                "range_pct_14d":  round(range_pct_14d, 2),
                 "score":          score,
                 "regime":         regime,
                 "rec":            rec,
