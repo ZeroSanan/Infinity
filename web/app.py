@@ -119,32 +119,36 @@ def load_coin_configs() -> list:
         if not item.get("name"):
             item["name"] = item["coin"]
             changed = True
-        cfg = CoinConfig(
-            id=item["id"],
-            name=item["name"],
-            coin=item["coin"],
-            symbol=item["symbol"],
-            enabled=item.get("enabled", True),
-            step_count=item["step_count"],
-            dump_levels=item["dump_levels"],
-            order_sizes=item["order_sizes"],
-            take_profit_percent=item["take_profit_percent"],
-            reference_price=item.get("reference_price"),
-            mode=item.get("mode", "long"),
-            bear_levels=item.get("bear_levels", []),
-            bear_order_sizes=item.get("bear_order_sizes", []),
-            bear_take_profit_percent=item.get("bear_take_profit_percent", 0.0),
-            bull_stop_loss_percent=item.get("bull_stop_loss_percent", 0.0),
-            bear_stop_loss_percent=item.get("bear_stop_loss_percent", 0.0),
-            leverage=item.get("leverage", 1),
-            use_entry_indicator=item.get("use_entry_indicator", True),
-            rsi_overbought=item.get("rsi_overbought", 70.0),
-            rsi_oversold=item.get("rsi_oversold", 30.0),
-            regime_interval=item.get("regime_interval", "1h"),
-            atr_based_spacing=item.get("atr_based_spacing", False),
-            atr_period=item.get("atr_period", 14),
-        )
-        cfg.validate()
+        try:
+            cfg = CoinConfig(
+                id=item["id"],
+                name=item["name"],
+                coin=item["coin"],
+                symbol=item["symbol"],
+                enabled=item.get("enabled", True),
+                step_count=item["step_count"],
+                dump_levels=item["dump_levels"],
+                order_sizes=item["order_sizes"],
+                take_profit_percent=item["take_profit_percent"],
+                reference_price=item.get("reference_price"),
+                mode=item.get("mode", "long"),
+                bear_levels=item.get("bear_levels", []),
+                bear_order_sizes=item.get("bear_order_sizes", []),
+                bear_take_profit_percent=item.get("bear_take_profit_percent", 0.0),
+                bull_stop_loss_percent=item.get("bull_stop_loss_percent", 0.0),
+                bear_stop_loss_percent=item.get("bear_stop_loss_percent", 0.0),
+                leverage=item.get("leverage", 1),
+                use_entry_indicator=item.get("use_entry_indicator", True),
+                rsi_overbought=item.get("rsi_overbought", 70.0),
+                rsi_oversold=item.get("rsi_oversold", 30.0),
+                regime_interval=item.get("regime_interval", "1h"),
+                atr_based_spacing=item.get("atr_based_spacing", False),
+                atr_period=item.get("atr_period", 14),
+            )
+            cfg.validate()
+        except (KeyError, ValueError) as e:
+            print(f"⚠️  Skipping invalid coin config '{item.get('name', item.get('id'))}': {e}")
+            continue
         out.append(cfg)
 
     if changed:
@@ -352,6 +356,7 @@ def index():
 
 @app.route("/api/status")
 def api_status():
+    global _coin_configs
     any_connected = bool(_clients)
     usdt_totals = {}
     for aid, client in list(_clients.items()):
@@ -359,6 +364,13 @@ def api_status():
             usdt_totals[aid] = client.get_balance("USDT")
         except Exception:
             pass
+
+    # Reload from coins.json so newly-added/edited strategies appear on the
+    # dashboard immediately, even in other worker processes.
+    try:
+        _coin_configs = load_coin_configs()
+    except Exception as e:
+        print(f"⚠️  Failed to reload coin configs: {e}")
 
     coins = [_coin_summary(cfg) for cfg in _coin_configs]
     return jsonify({
