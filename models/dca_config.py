@@ -30,6 +30,10 @@ class CoinConfig:
     rsi_oversold: float = 30.0
     regime_interval: str = "1h"
 
+    # ── ATR-based dynamic spacing ─────────────────────────────────────────────
+    atr_based_spacing: bool = False  # when True, levels/TP/SL are ATR multiples, not fixed %
+    atr_period: int = 14              # candles (in regime_interval units) for live ATR
+
     def validate(self):
         if len(self.dump_levels) != self.step_count:
             raise ValueError(
@@ -68,6 +72,9 @@ class CoinConfig:
                 raise ValueError(f"[{self.name}] leverage must be >= 1")
         elif self.mode != "long":
             raise ValueError(f"[{self.name}] mode must be 'long' or 'mixed', got '{self.mode}'")
+
+        if self.atr_period < 2:
+            raise ValueError(f"[{self.name}] atr_period must be >= 2")
 
         return True
 
@@ -147,6 +154,10 @@ class DCAModel:
     rsi_oversold: float = 30.0
     regime_interval: str = "1h"
 
+    # ── ATR-based dynamic spacing ─────────────────────────────────────────────
+    atr_based_spacing: bool = False  # when True, levels/TP/SL are ATR multiples, not fixed %
+    atr_period: int = 14              # candles (in regime_interval units) for live ATR
+
     def validate(self):
         if len(self.bull_levels) != len(self.bull_order_sizes):
             raise ValueError("bull_levels and bull_order_sizes must be the same length")
@@ -166,4 +177,6 @@ class DCAModel:
             raise ValueError("bear_take_profit_percent must be > 0")
         if self.leverage < 1:
             raise ValueError("leverage must be >= 1")
+        if self.atr_period < 2:
+            raise ValueError("atr_period must be >= 2")
         return True

@@ -117,6 +117,20 @@ def _bb_series(prices: list, period: int = 20, num_std: float = 2.0) -> Tuple[li
     return bb_u, bb_l
 
 
+def _atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
+    """Average True Range over the last `period` candles. 0.0 if insufficient data."""
+    n = len(closes)
+    if n < period + 1:
+        return 0.0
+    trs = [
+        max(highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i]  - closes[i - 1]))
+        for i in range(1, n)
+    ]
+    return sum(trs[-period:]) / period
+
+
 def _vol10_avg_series(vols: list) -> list:
     """10-period volume moving average via prefix sums."""
     n = len(vols)
@@ -157,6 +171,7 @@ def compute_regime_state(
     candles: Dict[str, list],
     rsi_overbought: float = 70.0,
     rsi_oversold: float = 30.0,
+    atr_period: int = 14,
 ) -> Dict[str, Any]:
     """
     Replay the regime score + 5-candle confirmation smoothing + extremity
@@ -170,11 +185,12 @@ def compute_regime_state(
         override_type    "OVERBOUGHT" | "OVERSOLD" | None
         score            latest regime score (-5..+5)
         warmup_ok        bool — False if fewer than 200 candles (EMA-200 not ready)
-        indicators       dict of latest ema21/ema50/ema200/rsi/bb_upper/bb_lower/price
+        indicators       dict of latest ema21/ema50/ema200/rsi/bb_upper/bb_lower/price/atr/atr_pct
         series           precomputed indicator series, for score_entry()
     """
     closes = candles["close"]
     highs = candles["high"]
+    lows = candles.get("low", [])
     vols = candles.get("volume", [])
     n = len(closes)
 
@@ -282,6 +298,9 @@ def compute_regime_state(
                     override_saw_exit = False
                     active_mode = "BUY"
 
+    atr_val = _atr(highs, lows, closes, atr_period) if lows else 0.0
+    atr_pct = (atr_val / closes[-1] * 100) if (atr_val > 0 and closes[-1]) else None
+
     return {
         "confirmed": confirmed,
         "active_mode": active_mode,
@@ -297,6 +316,8 @@ def compute_regime_state(
             "rsi": rsi_s[-1],
             "bb_upper": bb_u_s[-1],
             "bb_lower": bb_l_s[-1],
+            "atr": atr_val,
+            "atr_pct": atr_pct,
         },
         "series": {
             "close": closes,

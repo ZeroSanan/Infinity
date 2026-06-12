@@ -141,6 +141,8 @@ def load_coin_configs() -> list:
             rsi_overbought=item.get("rsi_overbought", 70.0),
             rsi_oversold=item.get("rsi_oversold", 30.0),
             regime_interval=item.get("regime_interval", "1h"),
+            atr_based_spacing=item.get("atr_based_spacing", False),
+            atr_period=item.get("atr_period", 14),
         )
         cfg.validate()
         out.append(cfg)
@@ -336,6 +338,8 @@ def _coin_summary(cfg: CoinConfig) -> dict:
         "leverage":          cfg.leverage if is_mixed else None,
         "liquidation_price": state.liquidation_price,
         "liq_distance_pct":  liq_distance_pct,
+        "atr_based_spacing": cfg.atr_based_spacing if is_mixed else False,
+        "atr_period":        cfg.atr_period if is_mixed else None,
     }
 
 
@@ -1130,6 +1134,8 @@ def api_strategies_update(strategy_id):
     if "rsi_overbought" in data:           entry["rsi_overbought"]           = float(data["rsi_overbought"])
     if "rsi_oversold" in data:             entry["rsi_oversold"]             = float(data["rsi_oversold"])
     if "regime_interval" in data:          entry["regime_interval"]          = data["regime_interval"]
+    if "atr_based_spacing" in data:        entry["atr_based_spacing"]        = bool(data["atr_based_spacing"])
+    if "atr_period" in data:               entry["atr_period"]               = int(data["atr_period"])
 
     coins[idx] = entry
     cfg_data["coins"] = coins
@@ -1199,6 +1205,8 @@ def api_dca_models_create():
             rsi_overbought=float(data.get("rsi_overbought", 70.0)),
             rsi_oversold=float(data.get("rsi_oversold", 30.0)),
             regime_interval=data.get("regime_interval", "1h"),
+            atr_based_spacing=bool(data.get("atr_based_spacing", False)),
+            atr_period=int(data.get("atr_period", 14)),
         )
         model.validate()
     except (ValueError, TypeError) as e:
@@ -1250,6 +1258,10 @@ def api_dca_models_update(model_id):
             entry["rsi_oversold"] = float(data["rsi_oversold"])
         if "regime_interval" in data:
             entry["regime_interval"] = data["regime_interval"]
+        if "atr_based_spacing" in data:
+            entry["atr_based_spacing"] = bool(data["atr_based_spacing"])
+        if "atr_period" in data:
+            entry["atr_period"] = int(data["atr_period"])
 
         DCAModel(**entry).validate()
     except (ValueError, TypeError) as e:
@@ -1319,6 +1331,8 @@ def api_dca_models_apply(model_id):
         "rsi_overbought":           model_dict.get("rsi_overbought", 70.0),
         "rsi_oversold":             model_dict.get("rsi_oversold", 30.0),
         "regime_interval":          model_dict.get("regime_interval", "1h"),
+        "atr_based_spacing":        model_dict.get("atr_based_spacing", False),
+        "atr_period":               model_dict.get("atr_period", 14),
     }
 
     applied = []
@@ -1337,6 +1351,7 @@ def api_dca_models_apply(model_id):
                 leverage=merged["leverage"], use_entry_indicator=merged["use_entry_indicator"],
                 rsi_overbought=merged["rsi_overbought"], rsi_oversold=merged["rsi_oversold"],
                 regime_interval=merged["regime_interval"],
+                atr_based_spacing=merged["atr_based_spacing"], atr_period=merged["atr_period"],
             )
             cfg.validate()
         except (ValueError, KeyError) as e:
