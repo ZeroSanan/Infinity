@@ -23,6 +23,8 @@
     --red-bg:    rgba(255,59,48,0.08);
     --orange:    #ff9500;
     --orange-bg: rgba(255,149,0,0.10);
+    --purple:    #af52de;
+    --purple-bg: rgba(175,82,222,0.10);
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
     --shadow:    0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
     --radius:    12px;
@@ -382,6 +384,12 @@
     background: linear-gradient(135deg, var(--blue) 0%, var(--orange) 100%);
     box-shadow: 0 4px 16px rgba(255,149,0,.3);
   }
+
+  /* ── SCALP MODE ── */
+  #btn-scalp.active { color: var(--purple); }
+  body.scalp-mode .run-btn { background: var(--purple); box-shadow: 0 4px 16px rgba(175,82,222,.3); }
+  body.scalp-mode .stat-card.blue { border-top-color: var(--purple); }
+  body.scalp-mode .stat-val.blue  { color: var(--purple); }
   .mixed-side-header {
     display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px;
   }
@@ -576,6 +584,7 @@
               <button class="mode-btn active" id="btn-long"  onclick="setMode('long')">&#9650;&ensp;Long (Bull)</button>
               <button class="mode-btn"        id="btn-short" onclick="setMode('short')">&#9660;&ensp;Short (Bear)</button>
               <button class="mode-btn"        id="btn-mixed" onclick="setMode('mixed')">&#9889;&ensp;Mixed</button>
+              <button class="mode-btn"        id="btn-scalp" onclick="setMode('scalp')">&#8597;&ensp;Scalp</button>
             </div>
           </div>
           <div id="mode-desc" style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5">
@@ -706,6 +715,74 @@
                 <div class="preset-pair-name">Asymmetric</div>
                 <div class="preset-pair-desc">Bull: -6,-9,-13,-18 TP 10% &bull; Bear: +5,+8,+12 TP 6%</div>
               </div>
+            </div>
+          </div>
+
+          <!-- Mean-Reversion Scalp config (shown only when mode = 'scalp') -->
+          <div id="scalp-config" style="display:none">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Take Profit (%)</label>
+                <input type="number" id="scalp-tp" value="1" min="0.1" step="0.1">
+              </div>
+              <div class="form-group">
+                <label>Stop Loss (%)</label>
+                <input type="number" id="scalp-sl" value="1" min="0.1" step="0.1">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Position Size per Trade ($)</label>
+              <input type="number" id="scalp-position-size" value="1000" min="1" step="50">
+            </div>
+
+            <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
+
+            <div class="section-title">Trend Filter (EMA)</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>EMA Fast (candles)</label>
+                <input type="number" id="scalp-ema-fast" value="50" min="2" step="1">
+              </div>
+              <div class="form-group">
+                <label>EMA Slow (candles)</label>
+                <input type="number" id="scalp-ema-slow" value="200" min="5" step="1">
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin:-6px 0 14px;line-height:1.5">
+              EMA fast &gt; EMA slow &rarr; BULL regime (longs only). EMA fast &lt; EMA slow &rarr; BEAR regime (shorts, if enabled).
+            </div>
+
+            <div class="section-title">RSI Pullback Entry</div>
+            <div class="form-group">
+              <label>RSI Period</label>
+              <input type="number" id="scalp-rsi-period" value="14" min="2" step="1">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Long entry level (RSI)</label>
+                <input type="number" id="scalp-rsi-long" value="45" min="5" max="50" step="1">
+              </div>
+              <div class="form-group">
+                <label>Short entry level (RSI)</label>
+                <input type="number" id="scalp-rsi-short" value="55" min="50" max="95" step="1">
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin:-6px 0 14px;line-height:1.5">
+              In a BULL regime, enters LONG when RSI dips below the long level then crosses back above it (and the mirror for SHORT in a BEAR regime).
+            </div>
+
+            <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
+
+            <div class="indicator-toggle-row">
+              <div>
+                <div class="indicator-toggle-label">Allow Short Entries</div>
+                <div class="indicator-toggle-sub">Open shorts during BEAR regime<br>(disable for long-only testing)</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="scalp-allow-short" checked>
+                <span class="toggle-track"></span>
+              </label>
             </div>
           </div>
 
@@ -911,17 +988,35 @@ function setMode(mode) {
 
   const isShort = mode === 'short';
   const isMixed = mode === 'mixed';
+  const isScalp = mode === 'scalp';
 
   document.getElementById('btn-long').classList.toggle('active',  mode === 'long');
   document.getElementById('btn-short').classList.toggle('active', isShort);
   document.getElementById('btn-mixed').classList.toggle('active', isMixed);
+  document.getElementById('btn-scalp').classList.toggle('active', isScalp);
   document.body.classList.toggle('short-mode', isShort);
   document.body.classList.toggle('mixed-mode', isMixed);
+  document.body.classList.toggle('scalp-mode', isScalp);
 
-  document.getElementById('single-mode-config').style.display = isMixed ? 'none' : 'block';
+  document.getElementById('single-mode-config').style.display = (isMixed || isScalp) ? 'none' : 'block';
   document.getElementById('mixed-config').style.display       = isMixed ? 'block' : 'none';
+  document.getElementById('scalp-config').style.display       = isScalp ? 'block' : 'none';
 
-  if (!isMixed) {
+  if (isMixed) {
+    document.getElementById('mode-desc').textContent =
+      'Runs LONG during bull markets and SHORT during bear markets, switching on regime detection.';
+    document.getElementById('run-btn-text').textContent = '▶ Run Mixed Backtest';
+    document.getElementById('presets-panel').style.display = 'none';
+    // Populate mixed level containers on first switch
+    if (!document.getElementById('bull-levels-container').children.length) {
+      applyMixedPreset('conservative');
+    }
+  } else if (isScalp) {
+    document.getElementById('mode-desc').textContent =
+      'Trend-filtered mean-reversion scalp: enters on an RSI pullback in the EMA-trend direction, exits at a fixed TP/SL (default ±1%/±1%).';
+    document.getElementById('run-btn-text').textContent = '▶ Run Scalp Backtest';
+    document.getElementById('presets-panel').style.display = 'none';
+  } else {
     document.getElementById('mode-desc').textContent = isShort
       ? 'Short on pumps, profit on drops. Levels are pump % above anchor.'
       : 'Buy on dips, profit on recovery. Levels are dump % below anchor.';
@@ -934,15 +1029,6 @@ function setMode(mode) {
       isShort ? '▶ Run Short Backtest' : '▶ Run Backtest';
     renderPresetCards(mode);
     document.getElementById('presets-panel').style.display = 'block';
-  } else {
-    document.getElementById('mode-desc').textContent =
-      'Runs LONG during bull markets and SHORT during bear markets, switching on regime detection.';
-    document.getElementById('run-btn-text').textContent = '▶ Run Mixed Backtest';
-    document.getElementById('presets-panel').style.display = 'none';
-    // Populate mixed level containers on first switch
-    if (!document.getElementById('bull-levels-container').children.length) {
-      applyMixedPreset('conservative');
-    }
   }
 
   document.getElementById('results-section').style.display   = 'none';
@@ -1189,20 +1275,40 @@ async function runBacktest() {
     return;
   }
 
-  const { levels, allocs } = getLevels();
-  if (!levels.length) { showError('Add at least one DCA level.'); return; }
+  let params;
+  if (currentMode === 'scalp') {
+    params = {
+      mode:                'mr_scalp',
+      initial_budget:      parseFloat(document.getElementById('cfg-budget').value),
+      take_profit_percent: parseFloat(document.getElementById('scalp-tp').value),
+      stop_loss_percent:   parseFloat(document.getElementById('scalp-sl').value),
+      position_size:       parseFloat(document.getElementById('scalp-position-size').value),
+      ema_fast:            parseInt(document.getElementById('scalp-ema-fast').value, 10),
+      ema_slow:            parseInt(document.getElementById('scalp-ema-slow').value, 10),
+      rsi_period:          parseInt(document.getElementById('scalp-rsi-period').value, 10),
+      rsi_long_level:      parseFloat(document.getElementById('scalp-rsi-long').value),
+      rsi_short_level:     parseFloat(document.getElementById('scalp-rsi-short').value),
+      allow_short:         document.getElementById('scalp-allow-short').checked,
+      start_date:          document.getElementById('cfg-start').value || null,
+      end_date:            document.getElementById('cfg-end').value || null,
+      dataset:             selectedDataset,
+    };
+  } else {
+    const { levels, allocs } = getLevels();
+    if (!levels.length) { showError('Add at least one DCA level.'); return; }
 
-  const params = {
-    mode:                currentMode,
-    initial_budget:      parseFloat(document.getElementById('cfg-budget').value),
-    dca_levels:          levels,
-    dca_allocations:     allocs,
-    take_profit_percent: parseFloat(document.getElementById('cfg-tp').value),
-    stop_loss_percent:   parseFloat(document.getElementById('cfg-sl').value),
-    start_date:          document.getElementById('cfg-start').value || null,
-    end_date:            document.getElementById('cfg-end').value || null,
-    dataset:             selectedDataset,
-  };
+    params = {
+      mode:                currentMode,
+      initial_budget:      parseFloat(document.getElementById('cfg-budget').value),
+      dca_levels:          levels,
+      dca_allocations:     allocs,
+      take_profit_percent: parseFloat(document.getElementById('cfg-tp').value),
+      stop_loss_percent:   parseFloat(document.getElementById('cfg-sl').value),
+      start_date:          document.getElementById('cfg-start').value || null,
+      end_date:            document.getElementById('cfg-end').value || null,
+      dataset:             selectedDataset,
+    };
+  }
 
   btn.disabled = true;
   btnText.textContent = 'Running…';
@@ -1241,7 +1347,9 @@ async function runBacktest() {
     showError('Request failed: ' + e.message);
   } finally {
     btn.disabled = false;
-    btnText.textContent = currentMode === 'short' ? '▶ Run Short Backtest' : '▶ Run Backtest';
+    btnText.textContent = currentMode === 'short' ? '▶ Run Short Backtest'
+                         : currentMode === 'scalp' ? '▶ Run Scalp Backtest'
+                         : '▶ Run Backtest';
     spinner.style.display = 'none';
   }
 }
