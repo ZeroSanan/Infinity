@@ -2147,6 +2147,8 @@ function renderSignals(signals) {
           <div class="sig-check">${dot(s.s2)}<span>${s.s2 ? 'Golden' : 'Death'} Cross</span></div>
           <div class="sig-check"><span class="sig-check-label">RSI</span><span class="sig-check-val" style="color:${rsiCol}">${s.rsi}</span></div>
           <div class="sig-check"><span class="sig-check-label">7d</span><span class="sig-check-val" style="color:${retCol}">${retArrow} ${Math.abs(s.week_ret)}%</span></div>
+          <div class="sig-check"><span class="sig-check-label">ATR (7d)</span><span class="sig-check-val">${fmtP(s.coin, s.atr_7d)}</span></div>
+          <div class="sig-check"><span class="sig-check-label">ATR (14d)</span><span class="sig-check-val">${fmtP(s.coin, s.atr_14d)}</span></div>
         </div>
         <div class="sig-ml-zone">
           <div class="sig-ml-row">

@@ -489,6 +489,10 @@ def _compute_market_signals(force: bool = False) -> dict:
             n7      = min(42, len(closes) - 1)
             week_ret = (price - closes[-n7 - 1]) / closes[-n7 - 1] * 100
 
+            # ATR over the last 7 and 14 days (4h candles -> 6/day)
+            atr_7d  = _atr(closes, highs, lows, period=42)
+            atr_14d = _atr(closes, highs, lows, period=84)
+
             s1 = price > e50
             s2 = e50   > e200
             s3 = rsi   > 55
@@ -613,6 +617,8 @@ def _compute_market_signals(force: bool = False) -> dict:
                 "ema200":         round(e200, 2),
                 "rsi":            round(rsi,  1),
                 "week_ret":       round(week_ret, 2),
+                "atr_7d":         round(atr_7d, dec),
+                "atr_14d":        round(atr_14d, dec),
                 "score":          score,
                 "regime":         regime,
                 "rec":            rec,
