@@ -1573,7 +1573,7 @@
               <label class="field-label" style="color:var(--green)">Bull Ladder (LONG · buy the dip)</label>
             </div>
             <div class="builder-header">
-              <span>Dump Level %</span>
+              <span id="dm-bull-level-label">Dump Level %</span>
               <span>Order Size (USDT)</span>
               <span></span>
             </div>
@@ -1583,11 +1583,11 @@
 
           <div class="form-row cols-2">
             <div class="field">
-              <label class="field-label">Bull Take Profit %</label>
+              <label class="field-label" id="dm-bull-tp-label">Bull Take Profit %</label>
               <input class="field-input" id="dm-bull-tp" type="number" step="0.1" min="0.1" placeholder="3"/>
             </div>
             <div class="field">
-              <label class="field-label">Bull Stop Loss % <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+              <label class="field-label" id="dm-bull-sl-label">Bull Stop Loss % <span style="color:var(--muted);font-weight:400">(optional)</span></label>
               <input class="field-input" id="dm-bull-sl" type="number" step="0.1" min="0" placeholder="0"/>
             </div>
           </div>
@@ -1600,7 +1600,7 @@
               <label class="field-label" style="color:var(--red)">Bear Ladder (SHORT · sell the rally)</label>
             </div>
             <div class="builder-header">
-              <span>Pump Level %</span>
+              <span id="dm-bear-level-label">Pump Level %</span>
               <span>Order Size (USDT)</span>
               <span></span>
             </div>
@@ -1610,11 +1610,11 @@
 
           <div class="form-row cols-2">
             <div class="field">
-              <label class="field-label">Bear Take Profit %</label>
+              <label class="field-label" id="dm-bear-tp-label">Bear Take Profit %</label>
               <input class="field-input" id="dm-bear-tp" type="number" step="0.1" min="0.1" placeholder="3"/>
             </div>
             <div class="field">
-              <label class="field-label">Bear Stop Loss % <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+              <label class="field-label" id="dm-bear-sl-label">Bear Stop Loss % <span style="color:var(--muted);font-weight:400">(optional)</span></label>
               <input class="field-input" id="dm-bear-sl" type="number" step="0.1" min="0" placeholder="0"/>
             </div>
           </div>
@@ -1638,6 +1638,21 @@
               <label class="field-label">RSI Oversold</label>
               <input class="field-input" id="dm-rsi-oversold" type="number" step="1" min="0" max="50" placeholder="30"/>
             </div>
+          </div>
+
+          <div class="form-divider"></div>
+
+          <!-- ── ATR-based dynamic spacing ── -->
+          <div class="toggle-row">
+            <input class="toggle-check" type="checkbox" id="dm-atr-based-spacing" onchange="toggleDMAtrSpacing()"/>
+            <label class="toggle-label" for="dm-atr-based-spacing">
+              ATR-based spacing — interpret ladder levels, TP and SL as live ATR multiples instead of fixed %
+            </label>
+          </div>
+
+          <div class="field" id="dm-atr-period-field" style="display:none">
+            <label class="field-label">ATR Period (candles, in Regime Interval units)</label>
+            <input class="field-input" id="dm-atr-period" type="number" step="1" min="2" placeholder="14"/>
           </div>
 
           <div class="preview-box" id="dm-summary">
@@ -2305,6 +2320,10 @@ function renderCoin(){
       extraConfigHtml += `
       <span class="config-key">Liquidation</span><span class="config-val" style="color:${liqColor}">$${fmt(c.liquidation_price,2)}${liqDist}</span>`;
     }
+    if(c.atr_based_spacing){
+      extraConfigHtml += `
+      <span class="config-key">Spacing</span><span class="config-val" style="color:var(--orange)">ATR × (period ${c.atr_period})</span>`;
+    }
   } else {
     extraConfigHtml = `<span class="config-key">Leverage</span><span class="config-val" style="color:var(--red)">None</span>`;
   }
@@ -2761,6 +2780,7 @@ async function loadStrategies(){
       </div>
       <div class="item-actions">
         ${c.mode === 'mixed' ? `<span class="badge badge-blue">Mixed ${c.leverage}x</span>` : ''}
+        ${c.mode === 'mixed' && c.atr_based_spacing ? `<span class="badge badge-blue">ATR ${c.atr_period}</span>` : ''}
         <span class="badge ${c.enabled?'badge-green':'badge-muted'}">${c.enabled?'Enabled':'Disabled'}</span>
         <button class="btn btn-red btn-sm"
           onclick="event.stopPropagation();deleteStrategy('${c.id}','${esc(c.name||c.coin)}')">Remove</button>
@@ -2915,7 +2935,9 @@ async function loadDCAModels(){
     return;
   }
 
-  el.innerHTML = _dcaModels.map(m => `
+  el.innerHTML = _dcaModels.map(m => {
+    const unit = m.atr_based_spacing ? '× ATR' : '%';
+    return `
     <div class="list-item" onclick="editDCAModel('${m.id}')">
       <div style="flex:1">
         <div class="item-name">${esc(m.name)}</div>
@@ -2923,19 +2945,21 @@ async function loadDCAModels(){
           Leverage <span>${m.leverage}x</span> &nbsp;·&nbsp;
           Regime <span>${m.regime_interval}</span> &nbsp;·&nbsp;
           Entry indicator <span>${m.use_entry_indicator ? 'On' : 'Off'}</span>
+          ${m.atr_based_spacing ? ` &nbsp;·&nbsp; <span style="color:var(--orange)">ATR spacing (${m.atr_period})</span>` : ''}
         </div>
         <div class="item-meta">
-          <span style="color:var(--green)">Bull</span> ${(m.bull_levels||[]).join('%, ')}% · TP +${m.bull_take_profit_percent}%
+          <span style="color:var(--green)">Bull</span> ${(m.bull_levels||[]).join(unit+', ')}${unit} · TP +${m.bull_take_profit_percent}${unit}
         </div>
         <div class="item-meta">
-          <span style="color:var(--red)">Bear</span> ${(m.bear_levels||[]).join('%, ')}% · TP -${m.bear_take_profit_percent}%
+          <span style="color:var(--red)">Bear</span> ${(m.bear_levels||[]).join(unit+', ')}${unit} · TP -${m.bear_take_profit_percent}${unit}
         </div>
       </div>
       <div class="item-actions">
         <button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApplyModelModal('${m.id}')">Apply</button>
         <button class="btn btn-red btn-sm" onclick="event.stopPropagation();deleteDCAModel('${m.id}','${esc(m.name)}')">Remove</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function newDCAModel(){
@@ -2951,6 +2975,9 @@ function newDCAModel(){
   document.getElementById('dm-use-entry-indicator').checked = true;
   document.getElementById('dm-rsi-overbought').value = '70';
   document.getElementById('dm-rsi-oversold').value = '30';
+  document.getElementById('dm-atr-based-spacing').checked = false;
+  document.getElementById('dm-atr-period').value = '14';
+  toggleDMAtrSpacing();
   document.getElementById('dm-feedback').style.display = 'none';
   document.getElementById('dm-summary').style.display = 'none';
   document.getElementById('dm-cancel-btn').style.display = 'none';
@@ -2978,6 +3005,9 @@ function editDCAModel(modelId){
   document.getElementById('dm-use-entry-indicator').checked = m.use_entry_indicator !== false;
   document.getElementById('dm-rsi-overbought').value = m.rsi_overbought ?? 70;
   document.getElementById('dm-rsi-oversold').value = m.rsi_oversold ?? 30;
+  document.getElementById('dm-atr-based-spacing').checked = !!m.atr_based_spacing;
+  document.getElementById('dm-atr-period').value = m.atr_period ?? 14;
+  toggleDMAtrSpacing();
   document.getElementById('dm-feedback').style.display = 'none';
   document.getElementById('dm-cancel-btn').style.display = 'inline-flex';
   rebuildDMStepRows('dm-bull-builder', (m.bull_levels||[]).map((l,i) => ({level:l, size:(m.bull_order_sizes||[])[i]})));
@@ -2990,6 +3020,19 @@ function editDCAModel(modelId){
 }
 
 function cancelEditDCAModel(){ _editingModelId = null; newDCAModel(); }
+
+function toggleDMAtrSpacing(){
+  const on = document.getElementById('dm-atr-based-spacing').checked;
+  document.getElementById('dm-atr-period-field').style.display = on ? '' : 'none';
+  const unit  = on ? '× ATR' : '%';
+  document.getElementById('dm-bull-level-label').textContent = on ? 'Dump Level (× ATR)' : 'Dump Level %';
+  document.getElementById('dm-bear-level-label').textContent = on ? 'Pump Level (× ATR)' : 'Pump Level %';
+  document.getElementById('dm-bull-tp-label').textContent = `Bull Take Profit ${unit}`;
+  document.getElementById('dm-bear-tp-label').textContent = `Bear Take Profit ${unit}`;
+  document.getElementById('dm-bull-sl-label').innerHTML = `Bull Stop Loss ${unit} <span style="color:var(--muted);font-weight:400">(optional)</span>`;
+  document.getElementById('dm-bear-sl-label').innerHTML = `Bear Stop Loss ${unit} <span style="color:var(--muted);font-weight:400">(optional)</span>`;
+  updateDMPreview();
+}
 
 function rebuildDMStepRows(containerId, steps){
   document.getElementById(containerId).innerHTML = '';
@@ -3032,15 +3075,17 @@ function updateDMPreview(){
 
   const bullCap = bull.reduce((a,s) => a + (s.size||0), 0);
   const bearCap = bear.reduce((a,s) => a + (s.size||0), 0);
+  const atrOn = document.getElementById('dm-atr-based-spacing').checked;
+  const unit  = atrOn ? '× ATR' : '%';
 
   let lines = `<span style="color:var(--text2);font-weight:600">Leverage: ${lev}x</span>\n\n`;
   lines += `<span style="color:var(--green);font-weight:600">Bull (LONG) — Capital: $${fmt(bullCap,0)} · Notional: $${fmt(bullCap*lev,0)}</span>\n`;
   lines += bull.map((s,i) =>
-    `${String(i+1).padStart(2,'0')}  <span style="color:var(--green)">${s.level}%</span>  →  <span style="color:var(--orange)">$${fmt(s.size,0)}</span>`
+    `${String(i+1).padStart(2,'0')}  <span style="color:var(--green)">${s.level}${unit}</span>  →  <span style="color:var(--orange)">$${fmt(s.size,0)}</span>`
   ).join('\n');
   lines += `\n\n<span style="color:var(--red);font-weight:600">Bear (SHORT) — Capital: $${fmt(bearCap,0)} · Notional: $${fmt(bearCap*lev,0)}</span>\n`;
   lines += bear.map((s,i) =>
-    `${String(i+1).padStart(2,'0')}  <span style="color:var(--red)">${s.level}%</span>  →  <span style="color:var(--orange)">$${fmt(s.size,0)}</span>`
+    `${String(i+1).padStart(2,'0')}  <span style="color:var(--red)">${s.level}${unit}</span>  →  <span style="color:var(--orange)">$${fmt(s.size,0)}</span>`
   ).join('\n');
 
   document.getElementById('dm-summary-content').innerHTML = lines;
@@ -3057,11 +3102,14 @@ async function saveDCAModel(){
   const useEntryIndicator = document.getElementById('dm-use-entry-indicator').checked;
   const rsiOB   = parseFloat(document.getElementById('dm-rsi-overbought').value) || 70;
   const rsiOS   = parseFloat(document.getElementById('dm-rsi-oversold').value) || 30;
+  const atrBasedSpacing = document.getElementById('dm-atr-based-spacing').checked;
+  const atrPeriod = parseInt(document.getElementById('dm-atr-period').value) || 14;
 
   if(!name){ setFeedback('dm-feedback','Model name is required.','err'); return; }
   if(!bullTP || bullTP <= 0){ setFeedback('dm-feedback','Bull take profit % must be > 0.','err'); return; }
   if(!bearTP || bearTP <= 0){ setFeedback('dm-feedback','Bear take profit % must be > 0.','err'); return; }
   if(leverage < 1){ setFeedback('dm-feedback','Leverage must be >= 1.','err'); return; }
+  if(atrBasedSpacing && atrPeriod < 2){ setFeedback('dm-feedback','ATR period must be >= 2.','err'); return; }
 
   const bullRows = _readDMSteps('dm-bull-builder');
   const bearRows = _readDMSteps('dm-bear-builder');
@@ -3088,6 +3136,7 @@ async function saveDCAModel(){
     bear_levels, bear_order_sizes, bear_take_profit_percent: bearTP, bear_stop_loss_percent: bearSL,
     use_entry_indicator: useEntryIndicator, rsi_overbought: rsiOB, rsi_oversold: rsiOS,
     regime_interval: regimeInterval,
+    atr_based_spacing: atrBasedSpacing, atr_period: atrPeriod,
   };
 
   const r = _editingModelId

@@ -29,6 +29,7 @@ class MixedEngine:
         self.state: PositionState = load_state(config.id, config.coin, config.symbol)
         self._step_size = client.get_step_size(config.symbol)
         self._hedge_mode = client.get_position_mode()
+        self._atr_pct = None  # latest ATR as % of price, refreshed each tick
 
         if self.state.leverage != config.leverage:
             client.set_leverage(config.symbol, config.leverage)
@@ -59,7 +60,8 @@ class MixedEngine:
             self.logger.error(f"[{self.cfg.name}] Failed to fetch market data: {e}")
             return
 
-        regime = compute_regime_state(candles, self.cfg.rsi_overbought, self.cfg.rsi_oversold)
+        regime = compute_regime_state(candles, self.cfg.rsi_overbought, self.cfg.rsi_oversold, atr_period=self.cfg.atr_period)
+        self._atr_pct = regime["indicators"]["atr_pct"]
         state = self.state
         state.regime = regime["confirmed"]
         new_mode = regime["active_mode"]
@@ -136,6 +138,19 @@ class MixedEngine:
             state.anchor_price = min(state.anchor_price, price)
         return True
 
+    # ── ATR-based dynamic spacing ───────────────────────────────────────────────
+
+    def _effective_pct(self, base_value: float) -> float:
+        """
+        Scale a configured level/TP/SL percentage by the live ATR% when
+        atr_based_spacing is enabled (base_value is then an ATR multiple,
+        e.g. -2 means "-2x ATR%"). Falls back to base_value unchanged
+        when the feature is off or ATR isn't ready yet.
+        """
+        if self.cfg.atr_based_spacing and self._atr_pct:
+            return base_value * self._atr_pct
+        return base_value
+
     # ── Ladder fills ─────────────────────────────────────────────────────────
 
     def _check_ladder_fills(self, price: float):
@@ -156,7 +171,7 @@ class MixedEngine:
             return
 
         pct_move = (price - anchor) / anchor * 100
-        target = levels[next_idx]
+        target = self._effective_pct(levels[next_idx])
         triggered = pct_move <= target if side_label == "LONG" else pct_move >= target
 
         if triggered:
@@ -219,7 +234,8 @@ class MixedEngine:
         cfg = self.cfg
 
         if state.direction == "LONG" and cfg.bull_stop_loss_percent > 0:
-            sl_price = state.anchor_price * (1 - cfg.bull_stop_loss_percent / 100)
+            sl_pct = self._effective_pct(cfg.bull_stop_loss_percent)
+            sl_price = state.anchor_price * (1 - sl_pct / 100)
             if price <= sl_price:
                 self.logger.warning(f"STOP-LOSS [{cfg.name}] LONG | price={price:.4f} <= sl={sl_price:.4f}")
                 self._close_position(price, reason="stop_loss")
@@ -227,7 +243,8 @@ class MixedEngine:
                 return True
 
         elif state.direction == "SHORT" and cfg.bear_stop_loss_percent > 0:
-            sl_price = state.anchor_price * (1 + cfg.bear_stop_loss_percent / 100)
+            sl_pct = self._effective_pct(cfg.bear_stop_loss_percent)
+            sl_price = state.anchor_price * (1 + sl_pct / 100)
             if price >= sl_price:
                 self.logger.warning(f"STOP-LOSS [{cfg.name}] SHORT | price={price:.4f} >= sl={sl_price:.4f}")
                 self._close_position(price, reason="stop_loss")
@@ -241,10 +258,12 @@ class MixedEngine:
         cfg = self.cfg
 
         if state.direction == "LONG":
-            tp_price = state.average_entry * (1 + cfg.take_profit_percent / 100)
+            tp_pct = self._effective_pct(cfg.take_profit_percent)
+            tp_price = state.average_entry * (1 + tp_pct / 100)
             hit = price >= tp_price
         else:
-            tp_price = state.average_entry * (1 - cfg.bear_take_profit_percent / 100)
+            tp_pct = self._effective_pct(cfg.bear_take_profit_percent)
+            tp_price = state.average_entry * (1 - tp_pct / 100)
             hit = price <= tp_price
 
         if hit:
