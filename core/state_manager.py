@@ -34,6 +34,7 @@ def _step_to_dict(step: ExecutedStep) -> dict:
         "quantity":        step.quantity,
         "order_id":        step.order_id,
         "timestamp":       step.timestamp,
+        "side":            step.side,
     }
 
 
@@ -46,6 +47,7 @@ def _step_from_dict(d: dict) -> ExecutedStep:
         quantity=d["quantity"],
         order_id=d["order_id"],
         timestamp=d["timestamp"],
+        side=d.get("side", "LONG"),
     )
 
 
@@ -61,6 +63,12 @@ def _state_to_dict(state: PositionState) -> dict:
         "average_entry":  state.average_entry,
         "reference_price":state.reference_price,
         "last_updated":   state.last_updated,
+        "direction":         state.direction,
+        "active_mode":       state.active_mode,
+        "regime":            state.regime,
+        "anchor_price":      state.anchor_price,
+        "leverage":          state.leverage,
+        "liquidation_price": state.liquidation_price,
     }
 
 
@@ -76,6 +84,12 @@ def _state_from_dict(d: dict) -> PositionState:
         average_entry=d.get("average_entry", 0.0),
         reference_price=d.get("reference_price"),
         last_updated=d.get("last_updated", ""),
+        direction=d.get("direction", "NONE"),
+        active_mode=d.get("active_mode", "WAIT"),
+        regime=d.get("regime", "NEUTRAL"),
+        anchor_price=d.get("anchor_price"),
+        leverage=d.get("leverage", 1),
+        liquidation_price=d.get("liquidation_price"),
     )
 
 
@@ -106,6 +120,8 @@ def reset_state(state: PositionState):
     state.total_invested = 0.0
     state.total_quantity = 0.0
     state.average_entry = 0.0
+    state.direction = "NONE"
+    state.liquidation_price = None
     save_state(state)
     logger.info(f"RESET | [{state.strategy_id}] Position reset — back to WAITING.")
 
@@ -118,6 +134,7 @@ def add_executed_step(
     entry_price: float,
     quantity: float,
     order_id: str,
+    side: str = "LONG",
 ):
     step = ExecutedStep(
         step_index=step_index,
@@ -127,6 +144,7 @@ def add_executed_step(
         quantity=quantity,
         order_id=str(order_id),
         timestamp=_now(),
+        side=side,
     )
     state.executed_steps.append(step)
     state.total_invested += order_size_usdt

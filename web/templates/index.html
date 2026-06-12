@@ -1095,6 +1095,7 @@
       <button class="seg-btn active" onclick="showPage('dashboard',this)">Dashboard</button>
       <button class="seg-btn"        onclick="showPage('account',this)">Accounts</button>
       <button class="seg-btn"        onclick="showPage('strategies',this)">Strategies</button>
+      <button class="seg-btn"        onclick="showPage('dca-models',this)">DCA Models</button>
       <button class="seg-btn"        onclick="showPage('regime',this)">Weekly Regime</button>
     </div>
     <a href="/backtest" class="backtest-link" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">&#9654; Backtest</a>
@@ -1511,6 +1512,152 @@
 
 
   <!-- ══════════════════════════════════════════════════════════
+       PAGE — DCA MODELS  (Mixed long/short Futures templates)
+  ═══════════════════════════════════════════════════════════════ -->
+  <div id="page-dca-models" class="page">
+    <div class="two-col">
+
+      <!-- Left: list -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="section-label" style="margin:0">DCA Models</div>
+          <button class="btn btn-blue btn-sm" onclick="newDCAModel()">+ New Model</button>
+        </div>
+        <div class="list-card" id="dca-model-list">
+          <div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">Loading…</div>
+        </div>
+        <div class="setup-guide">
+          <div class="section-label">What is a DCA Model?</div>
+          <p>
+            A DCA Model is a shared <span class="hl">bull (long) + bear (short)</span> ladder template.<br><br>
+            Applying it to a coin card switches that coin to <span>mode = "mixed"</span> —
+            an auto-switching engine that trades <span style="color:var(--green)">LONG</span> in
+            bullish regimes and <span style="color:var(--red)">SHORT</span> in bearish regimes on
+            <span class="hl">Binance USD-M Futures</span>, using leverage.
+          </p>
+        </div>
+      </div>
+
+      <!-- Right: form -->
+      <div class="form-panel">
+        <div class="form-panel-title" id="dm-form-title">New DCA Model</div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+
+          <div class="field">
+            <label class="field-label">Model Name</label>
+            <input class="field-input" id="dm-name" placeholder="e.g. Standard Mixed 4x"/>
+          </div>
+
+          <div class="form-row cols-2">
+            <div class="field">
+              <label class="field-label">Leverage</label>
+              <input class="field-input" id="dm-leverage" type="number" step="1" min="1" placeholder="3"/>
+            </div>
+            <div class="field">
+              <label class="field-label">Regime Interval</label>
+              <select class="field-select" id="dm-regime-interval">
+                <option value="15m">15m</option>
+                <option value="1h" selected>1h</option>
+                <option value="4h">4h</option>
+                <option value="1d">1d</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-divider"></div>
+
+          <!-- ── Bull (LONG) ladder ── -->
+          <div class="field">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <label class="field-label" style="color:var(--green)">Bull Ladder (LONG · buy the dip)</label>
+            </div>
+            <div class="builder-header">
+              <span>Dump Level %</span>
+              <span>Order Size (USDT)</span>
+              <span></span>
+            </div>
+            <div class="steps-builder" id="dm-bull-builder"></div>
+            <button class="add-step-btn" onclick="addDMStep('dm-bull-builder', -5)">+ Add Step</button>
+          </div>
+
+          <div class="form-row cols-2">
+            <div class="field">
+              <label class="field-label">Bull Take Profit %</label>
+              <input class="field-input" id="dm-bull-tp" type="number" step="0.1" min="0.1" placeholder="3"/>
+            </div>
+            <div class="field">
+              <label class="field-label">Bull Stop Loss % <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+              <input class="field-input" id="dm-bull-sl" type="number" step="0.1" min="0" placeholder="0"/>
+            </div>
+          </div>
+
+          <div class="form-divider"></div>
+
+          <!-- ── Bear (SHORT) ladder ── -->
+          <div class="field">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <label class="field-label" style="color:var(--red)">Bear Ladder (SHORT · sell the rally)</label>
+            </div>
+            <div class="builder-header">
+              <span>Pump Level %</span>
+              <span>Order Size (USDT)</span>
+              <span></span>
+            </div>
+            <div class="steps-builder" id="dm-bear-builder"></div>
+            <button class="add-step-btn" onclick="addDMStep('dm-bear-builder', 5)">+ Add Step</button>
+          </div>
+
+          <div class="form-row cols-2">
+            <div class="field">
+              <label class="field-label">Bear Take Profit %</label>
+              <input class="field-input" id="dm-bear-tp" type="number" step="0.1" min="0.1" placeholder="3"/>
+            </div>
+            <div class="field">
+              <label class="field-label">Bear Stop Loss % <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+              <input class="field-input" id="dm-bear-sl" type="number" step="0.1" min="0" placeholder="0"/>
+            </div>
+          </div>
+
+          <div class="form-divider"></div>
+
+          <!-- ── Entry indicator / RSI ── -->
+          <div class="toggle-row">
+            <input class="toggle-check" type="checkbox" id="dm-use-entry-indicator" checked/>
+            <label class="toggle-label" for="dm-use-entry-indicator">
+              Use entry indicator (EMA21 retest / RSI turn / volume — score ≥ 4 to enter)
+            </label>
+          </div>
+
+          <div class="form-row cols-2">
+            <div class="field">
+              <label class="field-label">RSI Overbought</label>
+              <input class="field-input" id="dm-rsi-overbought" type="number" step="1" min="50" max="100" placeholder="70"/>
+            </div>
+            <div class="field">
+              <label class="field-label">RSI Oversold</label>
+              <input class="field-input" id="dm-rsi-oversold" type="number" step="1" min="0" max="50" placeholder="30"/>
+            </div>
+          </div>
+
+          <div class="preview-box" id="dm-summary">
+            <div id="dm-summary-content"></div>
+          </div>
+
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-green" style="flex:1;justify-content:center" onclick="saveDCAModel()">Save Model</button>
+            <button class="btn btn-ghost" onclick="cancelEditDCAModel()" id="dm-cancel-btn" style="display:none">Cancel</button>
+          </div>
+
+          <div class="feedback" id="dm-feedback"></div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /page-dca-models -->
+
+
+  <!-- ══════════════════════════════════════════════════════════
        PAGE 4 — WEEKLY REGIME
   ═══════════════════════════════════════════════════════════════ -->
   <div id="page-regime" class="page">
@@ -1697,6 +1844,35 @@
       <button class="btn btn-blue" onclick="setRefManual()">Set</button>
     </div>
     <button class="btn btn-ghost" style="width:100%;justify-content:center" onclick="closeModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- ══ Apply DCA Model Modal ═══════════════════════════════════ -->
+<div class="modal-overlay" id="apply-model-modal-overlay">
+  <div class="modal-card" style="max-width:480px">
+    <div class="modal-title">Apply DCA Model</div>
+    <p class="modal-sub" id="apply-model-sub"></p>
+
+    <div style="background:var(--orange-bg);border:1px solid rgba(255,149,0,.2);border-radius:var(--radius-sm);
+                padding:10px 12px;font-size:12px;color:var(--orange);line-height:1.6">
+      ⚠ This switches selected coins to live <strong>Mixed long/short Futures</strong> trading
+      with leverage on Binance USD-M Futures. Existing ladder settings for those coins will be
+      overwritten with this model's values.
+    </div>
+
+    <div class="toggle-row">
+      <input class="toggle-check" type="checkbox" id="apply-select-all" onchange="toggleApplySelectAll()"/>
+      <label class="toggle-label" for="apply-select-all">Select all coins</label>
+    </div>
+
+    <div class="list-card" id="apply-model-coin-list" style="max-height:240px;overflow-y:auto"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-green" onclick="confirmApplyDCAModel()">Apply</button>
+      <button class="btn btn-ghost" onclick="closeApplyModelModal()">Cancel</button>
+    </div>
+
+    <div class="feedback" id="apply-model-feedback"></div>
   </div>
 </div>
 
@@ -1971,6 +2147,8 @@ function renderSignals(signals) {
           <div class="sig-check">${dot(s.s2)}<span>${s.s2 ? 'Golden' : 'Death'} Cross</span></div>
           <div class="sig-check"><span class="sig-check-label">RSI</span><span class="sig-check-val" style="color:${rsiCol}">${s.rsi}</span></div>
           <div class="sig-check"><span class="sig-check-label">7d</span><span class="sig-check-val" style="color:${retCol}">${retArrow} ${Math.abs(s.week_ret)}%</span></div>
+          <div class="sig-check"><span class="sig-check-label">ATR (7d)</span><span class="sig-check-val">${fmtP(s.coin, s.atr_7d)}</span></div>
+          <div class="sig-check"><span class="sig-check-label">ATR (14d)</span><span class="sig-check-val">${fmtP(s.coin, s.atr_14d)}</span></div>
         </div>
         <div class="sig-ml-zone">
           <div class="sig-ml-row">
@@ -2000,6 +2178,7 @@ function showPage(id, btn){
   btn.classList.add('active');
   if(id === 'account')    { loadAccounts(); loadClaudeKeyStatus(); }
   if(id === 'strategies'){ loadAccounts(); loadStrategies(); }
+  if(id === 'dca-models') { loadDCAModels(); }
   if(id === 'regime')     loadRegimeState();
 }
 
@@ -2110,13 +2289,31 @@ function renderCoin(){
   if(c.status === 'EXITED')  document.getElementById('sc-exited').classList.add('s-exited');
 
   // Config grid
+  let extraConfigHtml;
+  if(c.mode === 'mixed'){
+    const dirColor = c.direction === 'LONG' ? 'var(--green)' : c.direction === 'SHORT' ? 'var(--red)' : 'var(--muted)';
+    const regColor = c.regime === 'BULLISH' ? 'var(--green)' : c.regime === 'BEARISH' ? 'var(--red)' : 'var(--orange)';
+    extraConfigHtml = `
+      <span class="config-key">Leverage</span><span class="config-val" style="color:var(--blue)">${c.leverage}x</span>
+      <span class="config-key">Direction</span><span class="config-val" style="color:${dirColor}">${c.direction}</span>
+      <span class="config-key">Regime</span><span class="config-val" style="color:${regColor}">${c.regime}</span>`;
+    if(c.liquidation_price){
+      const liqColor = (c.liq_distance_pct != null && c.liq_distance_pct < 10) ? 'var(--red)' : 'var(--orange)';
+      const liqDist  = c.liq_distance_pct != null ? ` (${fmtPct(c.liq_distance_pct)})` : '';
+      extraConfigHtml += `
+      <span class="config-key">Liquidation</span><span class="config-val" style="color:${liqColor}">$${fmt(c.liquidation_price,2)}${liqDist}</span>`;
+    }
+  } else {
+    extraConfigHtml = `<span class="config-key">Leverage</span><span class="config-val" style="color:var(--red)">None</span>`;
+  }
+
   document.getElementById('config-grid').innerHTML = `
     <span class="config-key">Strategy</span><span class="config-val" style="color:var(--blue)">${esc(c.strategy_name)}</span>
     <span class="config-key">Symbol</span>  <span class="config-val">${c.symbol}</span>
     <span class="config-key">Steps</span>   <span class="config-val">${c.step_count}</span>
     <span class="config-key">Take Profit</span><span class="config-val" style="color:var(--green)">+${c.tp_percent}%</span>
     <span class="config-key">Max Capital</span><span class="config-val" style="color:var(--orange)">$${fmt(c.total_capital,0)}</span>
-    <span class="config-key">Leverage</span><span class="config-val" style="color:var(--red)">None</span>`;
+    ${extraConfigHtml}`;
 
   renderTradingViewChart(c.symbol);
 }
@@ -2561,6 +2758,7 @@ async function loadStrategies(){
         </div>
       </div>
       <div class="item-actions">
+        ${c.mode === 'mixed' ? `<span class="badge badge-blue">Mixed ${c.leverage}x</span>` : ''}
         <span class="badge ${c.enabled?'badge-green':'badge-muted'}">${c.enabled?'Enabled':'Disabled'}</span>
         <button class="btn btn-red btn-sm"
           onclick="event.stopPropagation();deleteStrategy('${c.id}','${esc(c.name||c.coin)}')">Remove</button>
@@ -2701,6 +2899,274 @@ async function deleteStrategy(stratId, stratName){
   else toast(r.error || 'Delete failed','err');
 }
 
+// ── DCA Models (Mixed long/short Futures templates) ──────────────────────────
+let _editingModelId = null;
+let _dcaModels      = [];
+
+async function loadDCAModels(){
+  const r = await api('/api/dca_models');
+  _dcaModels = r.models || [];
+  const el = document.getElementById('dca-model-list');
+
+  if(!_dcaModels.length){
+    el.innerHTML = '<div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">No DCA Models yet. Create one →</div>';
+    return;
+  }
+
+  el.innerHTML = _dcaModels.map(m => `
+    <div class="list-item" onclick="editDCAModel('${m.id}')">
+      <div style="flex:1">
+        <div class="item-name">${esc(m.name)}</div>
+        <div class="item-meta">
+          Leverage <span>${m.leverage}x</span> &nbsp;·&nbsp;
+          Regime <span>${m.regime_interval}</span> &nbsp;·&nbsp;
+          Entry indicator <span>${m.use_entry_indicator ? 'On' : 'Off'}</span>
+        </div>
+        <div class="item-meta">
+          <span style="color:var(--green)">Bull</span> ${(m.bull_levels||[]).join('%, ')}% · TP +${m.bull_take_profit_percent}%
+        </div>
+        <div class="item-meta">
+          <span style="color:var(--red)">Bear</span> ${(m.bear_levels||[]).join('%, ')}% · TP -${m.bear_take_profit_percent}%
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApplyModelModal('${m.id}')">Apply</button>
+        <button class="btn btn-red btn-sm" onclick="event.stopPropagation();deleteDCAModel('${m.id}','${esc(m.name)}')">Remove</button>
+      </div>
+    </div>`).join('');
+}
+
+function newDCAModel(){
+  _editingModelId = null;
+  document.getElementById('dm-form-title').textContent = 'New DCA Model';
+  document.getElementById('dm-name').value = '';
+  document.getElementById('dm-leverage').value = '3';
+  document.getElementById('dm-regime-interval').value = '1h';
+  document.getElementById('dm-bull-tp').value = '3';
+  document.getElementById('dm-bull-sl').value = '0';
+  document.getElementById('dm-bear-tp').value = '3';
+  document.getElementById('dm-bear-sl').value = '0';
+  document.getElementById('dm-use-entry-indicator').checked = true;
+  document.getElementById('dm-rsi-overbought').value = '70';
+  document.getElementById('dm-rsi-oversold').value = '30';
+  document.getElementById('dm-feedback').style.display = 'none';
+  document.getElementById('dm-summary').style.display = 'none';
+  document.getElementById('dm-cancel-btn').style.display = 'none';
+  document.querySelectorAll('#dca-model-list .list-item').forEach(c => c.classList.remove('selected'));
+  rebuildDMStepRows('dm-bull-builder', [
+    {level:-6,size:50},{level:-9,size:75},{level:-13,size:100},{level:-18,size:150}
+  ]);
+  rebuildDMStepRows('dm-bear-builder', [
+    {level:6,size:50},{level:9,size:75},{level:13,size:100},{level:18,size:150}
+  ]);
+  updateDMPreview();
+}
+
+function editDCAModel(modelId){
+  const m = _dcaModels.find(x => x.id === modelId); if(!m) return;
+  _editingModelId = modelId;
+  document.getElementById('dm-form-title').textContent = 'Edit — ' + esc(m.name);
+  document.getElementById('dm-name').value = m.name;
+  document.getElementById('dm-leverage').value = m.leverage;
+  document.getElementById('dm-regime-interval').value = m.regime_interval || '1h';
+  document.getElementById('dm-bull-tp').value = m.bull_take_profit_percent;
+  document.getElementById('dm-bull-sl').value = m.bull_stop_loss_percent || 0;
+  document.getElementById('dm-bear-tp').value = m.bear_take_profit_percent;
+  document.getElementById('dm-bear-sl').value = m.bear_stop_loss_percent || 0;
+  document.getElementById('dm-use-entry-indicator').checked = m.use_entry_indicator !== false;
+  document.getElementById('dm-rsi-overbought').value = m.rsi_overbought ?? 70;
+  document.getElementById('dm-rsi-oversold').value = m.rsi_oversold ?? 30;
+  document.getElementById('dm-feedback').style.display = 'none';
+  document.getElementById('dm-cancel-btn').style.display = 'inline-flex';
+  rebuildDMStepRows('dm-bull-builder', (m.bull_levels||[]).map((l,i) => ({level:l, size:(m.bull_order_sizes||[])[i]})));
+  rebuildDMStepRows('dm-bear-builder', (m.bear_levels||[]).map((l,i) => ({level:l, size:(m.bear_order_sizes||[])[i]})));
+  updateDMPreview();
+  document.querySelectorAll('#dca-model-list .list-item').forEach(c => c.classList.remove('selected'));
+  const idx = _dcaModels.findIndex(x => x.id === modelId);
+  const items = document.querySelectorAll('#dca-model-list .list-item');
+  if(items[idx]) items[idx].classList.add('selected');
+}
+
+function cancelEditDCAModel(){ _editingModelId = null; newDCAModel(); }
+
+function rebuildDMStepRows(containerId, steps){
+  document.getElementById(containerId).innerHTML = '';
+  steps.forEach(s => addDMStepRow(containerId, s.level, s.size));
+}
+
+function addDMStep(containerId, defaultSign){
+  const rows = document.querySelectorAll('#'+containerId+' .builder-row');
+  const lastLevel = rows.length ? parseFloat(rows[rows.length-1].querySelector('.dump-inp').value) || 0 : 0;
+  const next = defaultSign < 0 ? Math.min(lastLevel - 3, -3) : Math.max(lastLevel + 3, 3);
+  addDMStepRow(containerId, next, 50);
+  updateDMPreview();
+}
+
+function addDMStepRow(containerId, level='', size=''){
+  const builder = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'builder-row';
+  row.innerHTML = `
+    <input class="field-input dump-inp" type="number" step="1" placeholder="0" value="${level}" oninput="updateDMPreview()"/>
+    <input class="field-input size-inp" type="number" step="10" min="1" placeholder="50" value="${size}" oninput="updateDMPreview()"/>
+    <button class="remove-btn" onclick="this.closest('.builder-row').remove();updateDMPreview()">✕</button>`;
+  builder.appendChild(row);
+}
+
+function _readDMSteps(containerId){
+  return [...document.querySelectorAll('#'+containerId+' .builder-row')].map(r => ({
+    level: parseFloat(r.querySelector('.dump-inp').value),
+    size:  parseFloat(r.querySelector('.size-inp').value),
+  }));
+}
+
+function updateDMPreview(){
+  const bull = _readDMSteps('dm-bull-builder');
+  const bear = _readDMSteps('dm-bear-builder');
+  const lev  = parseFloat(document.getElementById('dm-leverage').value) || 1;
+  const summary = document.getElementById('dm-summary');
+  if(!bull.length && !bear.length){ summary.style.display = 'none'; return; }
+  summary.style.display = 'block';
+
+  const bullCap = bull.reduce((a,s) => a + (s.size||0), 0);
+  const bearCap = bear.reduce((a,s) => a + (s.size||0), 0);
+
+  let lines = `<span style="color:var(--text2);font-weight:600">Leverage: ${lev}x</span>\n\n`;
+  lines += `<span style="color:var(--green);font-weight:600">Bull (LONG) — Capital: $${fmt(bullCap,0)} · Notional: $${fmt(bullCap*lev,0)}</span>\n`;
+  lines += bull.map((s,i) =>
+    `${String(i+1).padStart(2,'0')}  <span style="color:var(--green)">${s.level}%</span>  →  <span style="color:var(--orange)">$${fmt(s.size,0)}</span>`
+  ).join('\n');
+  lines += `\n\n<span style="color:var(--red);font-weight:600">Bear (SHORT) — Capital: $${fmt(bearCap,0)} · Notional: $${fmt(bearCap*lev,0)}</span>\n`;
+  lines += bear.map((s,i) =>
+    `${String(i+1).padStart(2,'0')}  <span style="color:var(--red)">${s.level}%</span>  →  <span style="color:var(--orange)">$${fmt(s.size,0)}</span>`
+  ).join('\n');
+
+  document.getElementById('dm-summary-content').innerHTML = lines;
+}
+
+async function saveDCAModel(){
+  const name           = document.getElementById('dm-name').value.trim();
+  const leverage       = parseInt(document.getElementById('dm-leverage').value) || 1;
+  const regimeInterval = document.getElementById('dm-regime-interval').value;
+  const bullTP  = parseFloat(document.getElementById('dm-bull-tp').value);
+  const bullSL  = parseFloat(document.getElementById('dm-bull-sl').value) || 0;
+  const bearTP  = parseFloat(document.getElementById('dm-bear-tp').value);
+  const bearSL  = parseFloat(document.getElementById('dm-bear-sl').value) || 0;
+  const useEntryIndicator = document.getElementById('dm-use-entry-indicator').checked;
+  const rsiOB   = parseFloat(document.getElementById('dm-rsi-overbought').value) || 70;
+  const rsiOS   = parseFloat(document.getElementById('dm-rsi-oversold').value) || 30;
+
+  if(!name){ setFeedback('dm-feedback','Model name is required.','err'); return; }
+  if(!bullTP || bullTP <= 0){ setFeedback('dm-feedback','Bull take profit % must be > 0.','err'); return; }
+  if(!bearTP || bearTP <= 0){ setFeedback('dm-feedback','Bear take profit % must be > 0.','err'); return; }
+  if(leverage < 1){ setFeedback('dm-feedback','Leverage must be >= 1.','err'); return; }
+
+  const bullRows = _readDMSteps('dm-bull-builder');
+  const bearRows = _readDMSteps('dm-bear-builder');
+  if(!bullRows.length){ setFeedback('dm-feedback','Add at least one bull ladder step.','err'); return; }
+  if(!bearRows.length){ setFeedback('dm-feedback','Add at least one bear ladder step.','err'); return; }
+
+  const bull_levels = [], bull_order_sizes = [];
+  for(const s of bullRows){
+    if(isNaN(s.level) || s.level >= 0){ setFeedback('dm-feedback','All bull levels must be negative.','err'); return; }
+    if(isNaN(s.size)  || s.size <= 0) { setFeedback('dm-feedback','All bull order sizes must be > 0.','err'); return; }
+    bull_levels.push(s.level); bull_order_sizes.push(s.size);
+  }
+
+  const bear_levels = [], bear_order_sizes = [];
+  for(const s of bearRows){
+    if(isNaN(s.level) || s.level <= 0){ setFeedback('dm-feedback','All bear levels must be positive.','err'); return; }
+    if(isNaN(s.size)  || s.size <= 0) { setFeedback('dm-feedback','All bear order sizes must be > 0.','err'); return; }
+    bear_levels.push(s.level); bear_order_sizes.push(s.size);
+  }
+
+  const payload = {
+    name, leverage,
+    bull_levels, bull_order_sizes, bull_take_profit_percent: bullTP, bull_stop_loss_percent: bullSL,
+    bear_levels, bear_order_sizes, bear_take_profit_percent: bearTP, bear_stop_loss_percent: bearSL,
+    use_entry_indicator: useEntryIndicator, rsi_overbought: rsiOB, rsi_oversold: rsiOS,
+    regime_interval: regimeInterval,
+  };
+
+  const r = _editingModelId
+    ? await api('/api/dca_models/' + _editingModelId, 'PUT', payload)
+    : await api('/api/dca_models', 'POST', payload);
+
+  if(r.ok){
+    setFeedback('dm-feedback','✓ Model saved.','ok');
+    toast('DCA Model "' + name + '" saved ✓');
+    _editingModelId = null;
+    loadDCAModels();
+  } else {
+    setFeedback('dm-feedback','✗ ' + (r.error || 'Save failed'),'err');
+  }
+}
+
+async function deleteDCAModel(modelId, modelName){
+  if(!confirm('Remove DCA Model "' + modelName + '"?')) return;
+  const r = await api('/api/dca_models/' + modelId, 'DELETE');
+  if(r.ok){ toast('"' + modelName + '" removed'); loadDCAModels(); }
+  else toast(r.error || 'Delete failed','err');
+}
+
+// ── Apply DCA Model modal ─────────────────────────────────────────────────────
+let _applyModelId = null;
+
+async function openApplyModelModal(modelId){
+  _applyModelId = modelId;
+  const m = _dcaModels.find(x => x.id === modelId); if(!m) return;
+  document.getElementById('apply-model-sub').textContent = `Choose which coins should use "${m.name}"`;
+  document.getElementById('apply-select-all').checked = false;
+  document.getElementById('apply-model-feedback').style.display = 'none';
+
+  const data  = await api('/api/strategies');
+  const coins = data.coins || [];
+  const list  = document.getElementById('apply-model-coin-list');
+  list.innerHTML = coins.length ? coins.map(c => `
+    <div class="list-item" style="cursor:default">
+      <div style="flex:1;display:flex;align-items:center;gap:10px">
+        <input class="toggle-check apply-coin-cb" type="checkbox" value="${c.id}" id="apply-coin-${c.id}"/>
+        <label for="apply-coin-${c.id}" style="cursor:pointer">
+          <div class="item-name">${esc(c.name || c.coin)}</div>
+          <div class="item-sub">${c.coin} / ${c.symbol}${c.mode === 'mixed' ? ' · <span style="color:var(--orange)">already mixed</span>' : ''}</div>
+        </label>
+      </div>
+    </div>`).join('') : '<div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">No coins/strategies yet.</div>';
+
+  document.getElementById('apply-model-modal-overlay').classList.add('open');
+}
+
+function closeApplyModelModal(){
+  document.getElementById('apply-model-modal-overlay').classList.remove('open');
+}
+
+function toggleApplySelectAll(){
+  const checked = document.getElementById('apply-select-all').checked;
+  document.querySelectorAll('.apply-coin-cb').forEach(cb => cb.checked = checked);
+}
+
+async function confirmApplyDCAModel(){
+  const ids = [...document.querySelectorAll('.apply-coin-cb:checked')].map(cb => cb.value);
+  if(!ids.length){ setFeedback('apply-model-feedback','Select at least one coin.','err'); return; }
+
+  const m = _dcaModels.find(x => x.id === _applyModelId);
+  if(!confirm(`Apply "${m ? m.name : 'model'}" to ${ids.length} coin(s)? This switches them to live leveraged Mixed Futures trading.`)) return;
+
+  setFeedback('apply-model-feedback','Applying…','ok');
+  const r = await api('/api/dca_models/' + _applyModelId + '/apply', 'POST', { strategy_ids: ids });
+  if(r.ok){
+    toast('Applied to ' + (r.applied||[]).join(', '));
+    closeApplyModelModal();
+    refresh(); refreshRunning();
+  } else {
+    setFeedback('apply-model-feedback','✗ ' + (r.error || 'Apply failed'),'err');
+  }
+}
+
+document.getElementById('apply-model-modal-overlay').addEventListener('click', e => {
+  if(e.target === document.getElementById('apply-model-modal-overlay')) closeApplyModelModal();
+});
+
 // ── Auto-fill ─────────────────────────────────────────────────────────────────
 document.getElementById('sf-coin').addEventListener('input', function(){
   const v = this.value.trim().toUpperCase(); this.value = v;
@@ -2718,6 +3184,7 @@ window.addEventListener('load', () => {
   });
   newStrategy();
   newAccount();
+  newDCAModel();
 });
 
 // ── Claude API Key ────────────────────────────────────────────────────────────
