@@ -1128,20 +1128,28 @@ def api_backtest_run():
         start_date          = params.get("start_date") or None
         end_date            = params.get("end_date") or None
         dataset_name        = params.get("dataset")
+
+        # Mean-Reversion Scalp needs close prices for EMA/RSI — use the
+        # mixed-strategy loader (keeps close/open/volume when present).
+        if mode == "mr_scalp":
+            from mixed_dca_strategy import load_mixed_data as _load_data
+        else:
+            _load_data = load_and_prepare_data
+
         if csv_file:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
                 csv_file.save(tmp)
                 tmp_path = tmp.name
             import io, contextlib
             with contextlib.redirect_stdout(io.StringIO()):
-                df = load_and_prepare_data(tmp_path)
+                df = _load_data(tmp_path)
         elif dataset_name:
             data_path = os.path.join(ROOT, "algo-trading", "data", dataset_name)
             if not os.path.exists(data_path):
                 return jsonify({"error": f"Dataset not found: {dataset_name}"}), 404
             import io, contextlib
             with contextlib.redirect_stdout(io.StringIO()):
-                df = load_and_prepare_data(data_path)
+                df = _load_data(data_path)
         else:
             return jsonify({"error": "No dataset specified"}), 400
 
@@ -1160,6 +1168,23 @@ def api_backtest_run():
                 dca_levels=dca_levels,
                 take_profit_percent=take_profit_percent,
                 stop_loss_percent=stop_loss_percent,
+            )
+        elif mode == "mr_scalp":
+            from mr_scalp_strategy import MRScalpStrategy
+            if stop_loss_percent <= 0:
+                return jsonify({"error": "Stop Loss % is required for the Mean-Reversion Scalp (e.g. 1)."}), 400
+            _position_size = params.get("position_size")
+            strategy = MRScalpStrategy(
+                initial_budget=initial_budget,
+                position_size=float(_position_size) if _position_size else None,
+                take_profit_percent=take_profit_percent,
+                stop_loss_percent=stop_loss_percent,
+                ema_fast=int(params.get("ema_fast", 50)),
+                ema_slow=int(params.get("ema_slow", 200)),
+                rsi_period=int(params.get("rsi_period", 14)),
+                rsi_long_level=float(params.get("rsi_long_level", 45)),
+                rsi_short_level=float(params.get("rsi_short_level", 55)),
+                allow_short=bool(params.get("allow_short", True)),
             )
         else:
             strategy = DCAStrategy(

@@ -109,6 +109,100 @@ class BacktestResults:
     total_test_days: float
 
 
+def compute_backtest_results(trades: List[Trade], initial_budget: float) -> BacktestResults:
+    """
+    Aggregate a list of completed trades into summary statistics.
+
+    Shared across all strategy implementations (DCA, Short DCA,
+    Mean-Reversion Scalp, ...) so every backtest mode reports the
+    same metrics in the same way. A trade counts as a "loss" only
+    when its stop_loss_triggered flag is set.
+    """
+    # Handle empty trades case
+    if not trades:
+        return BacktestResults(
+            initial_budget=initial_budget,
+            final_budget=initial_budget,
+            total_trades=0,
+            winning_trades=0,
+            losing_trades=0,
+            stopped_out_trades=0,
+            total_profit=0.0,
+            total_loss=0.0,
+            net_pnl=0.0,
+            total_roi=0.0,
+            win_rate=0.0,
+            stop_loss_rate=0.0,
+            avg_trade_pnl=0.0,
+            largest_loss=0.0,
+            largest_profit=0.0,
+            avg_loss_magnitude=0.0,
+            avg_profit_magnitude=0.0,
+            avg_trade_duration_days=0.0,
+            total_test_days=0.0
+        )
+
+    # Separate trades by outcome — losses are defined by SL trigger only
+    stopped_out_trades = [t for t in trades if t.stop_loss_triggered]
+    winning_trades     = [t for t in trades if not t.stop_loss_triggered]
+    losing_trades      = stopped_out_trades  # alias: every loss is a stop-loss
+
+    # Profit/Loss totals
+    total_profit = sum(t.profit_loss for t in winning_trades if t.profit_loss > 0)
+    total_loss   = abs(sum(t.profit_loss for t in losing_trades if t.profit_loss < 0))
+    net_pnl      = sum(t.profit_loss for t in trades)
+
+    # Final budget = initial + all P&L
+    final_budget = initial_budget + net_pnl
+
+    # ROI = (final - initial) / initial * 100
+    total_roi = ((final_budget - initial_budget) / initial_budget * 100) \
+        if initial_budget > 0 else 0.0
+
+    # Counts and rates
+    total_trades   = len(trades)
+    win_rate       = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0.0
+    stop_loss_rate = (len(stopped_out_trades) / total_trades * 100) if total_trades > 0 else 0.0
+
+    # Averages
+    avg_trade_pnl        = net_pnl / total_trades if total_trades > 0 else 0.0
+    avg_loss_magnitude   = total_loss / len(losing_trades) if losing_trades else 0.0
+    avg_profit_magnitude = total_profit / len(winning_trades) if winning_trades else 0.0
+
+    # Extremes
+    largest_loss = min(t.profit_loss for t in trades)
+    largest_profit = max(t.profit_loss for t in trades)
+
+    # Duration metrics
+    durations_days = [(t.end_time - t.start_time).total_seconds() / (24 * 3600)
+                      for t in trades]
+    avg_trade_duration_days = sum(durations_days) / len(durations_days) if durations_days else 0.0
+
+    total_test_days = (trades[-1].end_time - trades[0].start_time).total_seconds() / (24 * 3600)
+
+    return BacktestResults(
+        initial_budget=initial_budget,
+        final_budget=final_budget,
+        total_trades=total_trades,
+        winning_trades=len(winning_trades),
+        losing_trades=len(losing_trades),
+        stopped_out_trades=len(stopped_out_trades),
+        total_profit=total_profit,
+        total_loss=total_loss,
+        net_pnl=net_pnl,
+        total_roi=total_roi,
+        win_rate=win_rate,
+        stop_loss_rate=stop_loss_rate,
+        avg_trade_pnl=avg_trade_pnl,
+        largest_loss=largest_loss,
+        largest_profit=largest_profit,
+        avg_loss_magnitude=avg_loss_magnitude,
+        avg_profit_magnitude=avg_profit_magnitude,
+        avg_trade_duration_days=avg_trade_duration_days,
+        total_test_days=total_test_days
+    )
+
+
 class DCAStrategy:
     """
     DCA Strategy with adjustable dump levels and take-profit target
@@ -438,105 +532,18 @@ class DCAStrategy:
     def calculate_backtest_results(self) -> BacktestResults:
         """
         Calculate comprehensive backtest statistics.
-        
+
         Recalculates ALL metrics considering stop-loss impact:
         - Available budget affected by losses
         - Win/loss/stop-out counts
         - Profit/loss totals
         - ROI and rates
         - Risk metrics
-        
+
         Returns:
             BacktestResults object with all statistics
         """
-        trades = self.completed_trades
-        
-        # Handle empty trades case
-        if not trades:
-            return BacktestResults(
-                initial_budget=self.initial_budget,
-                final_budget=self.initial_budget,
-                total_trades=0,
-                winning_trades=0,
-                losing_trades=0,
-                stopped_out_trades=0,
-                total_profit=0.0,
-                total_loss=0.0,
-                net_pnl=0.0,
-                total_roi=0.0,
-                win_rate=0.0,
-                stop_loss_rate=0.0,
-                avg_trade_pnl=0.0,
-                largest_loss=0.0,
-                largest_profit=0.0,
-                avg_loss_magnitude=0.0,
-                avg_profit_magnitude=0.0,
-                avg_trade_duration_days=0.0,
-                total_test_days=0.0
-            )
-        
-        # Separate trades by outcome — losses are defined by SL trigger only
-        stopped_out_trades = [t for t in trades if t.stop_loss_triggered]
-        winning_trades     = [t for t in trades if not t.stop_loss_triggered]
-        losing_trades      = stopped_out_trades  # alias: every loss is a stop-loss
-
-        # Profit/Loss totals
-        total_profit = sum(t.profit_loss for t in winning_trades if t.profit_loss > 0)
-        total_loss   = abs(sum(t.profit_loss for t in losing_trades if t.profit_loss < 0))
-        net_pnl      = sum(t.profit_loss for t in trades)
-
-        # Final budget = initial + all P&L
-        final_budget = self.initial_budget + net_pnl
-
-        # ROI = (final - initial) / initial * 100
-        total_roi = ((final_budget - self.initial_budget) / self.initial_budget * 100) \
-            if self.initial_budget > 0 else 0.0
-
-        # Counts and rates
-        total_trades   = len(trades)
-        win_rate       = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0.0
-        stop_loss_rate = (len(stopped_out_trades) / total_trades * 100) if total_trades > 0 else 0.0
-
-        # Averages
-        avg_trade_pnl        = net_pnl / total_trades if total_trades > 0 else 0.0
-        avg_loss_magnitude   = total_loss / len(losing_trades) if losing_trades else 0.0
-        avg_profit_magnitude = total_profit / len(winning_trades) if winning_trades else 0.0
-        
-        # Extremes
-        largest_loss = min(t.profit_loss for t in trades) if trades else 0.0
-        largest_profit = max(t.profit_loss for t in trades) if trades else 0.0
-        
-        # Duration metrics
-        durations_days = [(t.end_time - t.start_time).total_seconds() / (24 * 3600) 
-                          for t in trades]
-        avg_trade_duration_days = sum(durations_days) / len(durations_days) if durations_days else 0.0
-        
-        if trades:
-            total_test_days = (trades[-1].end_time - trades[0].start_time).total_seconds() / (24 * 3600)
-        else:
-            total_test_days = 0.0
-        
-        return BacktestResults(
-            initial_budget=self.initial_budget,
-            final_budget=final_budget,
-            total_trades=total_trades,
-            winning_trades=len(winning_trades),
-            losing_trades=len(losing_trades),
-            stopped_out_trades=len(stopped_out_trades),
-            total_profit=total_profit,
-            total_loss=total_loss,
-            net_pnl=net_pnl,
-            total_roi=total_roi,
-            win_rate=win_rate,
-            stop_loss_rate=stop_loss_rate,
-            avg_trade_pnl=avg_trade_pnl,
-            largest_loss=largest_loss,
-            largest_profit=largest_profit,
-            avg_loss_magnitude=avg_loss_magnitude,
-            avg_profit_magnitude=avg_profit_magnitude,
-            avg_trade_duration_days=avg_trade_duration_days,
-            total_test_days=total_test_days
-        )
+        return compute_backtest_results(self.completed_trades, self.initial_budget)
     
     def run_backtest(self, df: pd.DataFrame) -> List[Trade]:
         """
