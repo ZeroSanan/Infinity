@@ -22,20 +22,20 @@ def calc_weighted_average_entry(
     executed_prices: List[float],
 ) -> float:
     """
-    Weighted average entry price across all executed steps.
+    True average cost basis (USDT spent per coin held) across all executed steps.
 
-    Formula: SUM(size * price) / SUM(size)
+    Formula: SUM(size) / SUM(size / price)
     """
     if not executed_sizes or not executed_prices:
         return 0.0
     if len(executed_sizes) != len(executed_prices):
         raise ValueError("sizes and prices lists must be the same length")
 
-    total_value = sum(s * p for s, p in zip(executed_sizes, executed_prices))
     total_size = sum(executed_sizes)
-    if total_size == 0:
+    total_quantity = sum(s / p for s, p in zip(executed_sizes, executed_prices))
+    if total_quantity == 0:
         return 0.0
-    return total_value / total_size
+    return total_size / total_quantity
 
 
 def calc_take_profit_price(average_entry: float, tp_percent: float) -> float:

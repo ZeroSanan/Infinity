@@ -37,7 +37,7 @@ This is **not** a maximum-profit strategy. The goal is not to catch tops or bott
 **What it is not (default Spot DCA strategies):**
 - Not a high-frequency trader
 - Not a leverage or futures system — leverage exists only in the separate, opt-in Leveraged Long/Short DCA strategy type
-- Not a market-timing system
+- Not a system that requires *precise* market timing — the reference price only needs to be roughly near a local high for the DCA ladder to work, not the exact top (see §19.3 for an honest discussion of how much the reference price still matters)
 - Not a maximum-profit chaser
 - Not emotionally driven
 
@@ -133,35 +133,38 @@ This means if the target level is -10%, the buy triggers when the dump reaches -
 
 ### 4.4 Weighted Average Entry Price
 
-After each buy, the system recalculates the **weighted average entry price** across all executed steps:
+After each buy, the system recalculates the **true average cost basis** — total USDT spent per coin held — across all executed steps:
 
 ```
-avg_entry = Σ(order_size_usdt × entry_price) / Σ(order_size_usdt)
+avg_entry = Σ(order_size_usdt) / Σ(order_size_usdt / entry_price)
+          = total_invested / total_quantity
 ```
 
 Implemented in `utils/calculations.py`:
 
 ```python
 def calc_weighted_average_entry(executed_sizes, executed_prices):
-    total_value = sum(s * p for s, p in zip(executed_sizes, executed_prices))
-    total_size  = sum(executed_sizes)
-    return total_value / total_size
+    total_size     = sum(executed_sizes)
+    total_quantity = sum(s / p for s, p in zip(executed_sizes, executed_prices))
+    return total_size / total_quantity
 ```
 
-**Why this matters:** The average entry moves down with each deeper buy. Because order sizes increase at deeper levels, the average is pulled down faster than a simple average would suggest.
+Since `total_invested` and `total_quantity` are already accumulated incrementally on every fill, `core/state_manager.py` computes this directly as `total_invested / total_quantity` — the same formula, no extra pass over the executed steps required.
+
+**Why this matters:** A naive size-weighted average of *prices* (`Σ(size × price) / Σ(size)`) does **not** equal the true cost basis when order sizes are denominated in USDT — it systematically overstates the average entry price, which would understate realized P&L and push the TP trigger slightly higher than necessary. `total_invested / total_quantity` is the actual blended cost per coin, so a TP at `avg_entry × (1 + tp%)` realizes *exactly* `tp%` profit on the capital deployed (see the worked example in §4.5). This is also the formula used by the backtesting engines (§8), so live and backtested P&L are computed identically.
 
 **Worked example** (P₀ = $100,000, BTC):
 
 | Step | Dump % | Trigger Price | Order Size | Coins Bought | Avg Entry | Avg Entry % Below P₀ |
 |------|--------|--------------|------------|--------------|-----------|----------------------|
 | 1 | -10% | $90,000 | $1,500 | 0.01667 BTC | $90,000 | -10.00% |
-| 2 | -15% | $85,000 | $2,000 | 0.02353 BTC | $87,143 | -12.86% |
-| 3 | -20% | $80,000 | $2,750 | 0.03438 BTC | $84,000 | -16.00% |
-| 4 | -25% | $75,000 | $5,500 | 0.07333 BTC | $79,038 | -20.96% |
-| 5 | -30% | $70,000 | $5,000 | 0.07143 BTC | $76,364 | -23.64% |
-| 6 | -35% | $65,000 | $5,000 | 0.07692 BTC | $73,684 | -26.32% |
+| 2 | -15% | $85,000 | $2,000 | 0.02353 BTC | $87,073 | -12.93% |
+| 3 | -20% | $80,000 | $2,750 | 0.03438 BTC | $83,813 | -16.19% |
+| 4 | -25% | $75,000 | $5,500 | 0.07333 BTC | $79,443 | -20.56% |
+| 5 | -30% | $70,000 | $5,000 | 0.07143 BTC | $76,368 | -23.63% |
+| 6 | -35% | $65,000 | $5,000 | 0.07692 BTC | $73,416 | -26.58% |
 
-After step 6, the asset only needs to recover to **$73,684** (from $65,000) for take profit to trigger — a **13.4% recovery** rather than a 53.8% full round-trip back to P₀.
+After step 6, the asset only needs to recover to **$73,416** (from $65,000) for take profit to trigger — a **12.95% recovery** rather than a 53.8% full round-trip back to P₀.
 
 ### 4.5 Take Profit
 
@@ -181,17 +184,19 @@ def should_take_profit(current_price, tp_price):
     return current_price >= tp_price
 ```
 
-This is **portfolio-level profit**, not per-step profit. The system measures profit against the blended average entry across all executed steps. For example:
+This is **portfolio-level profit**, not per-step profit. The system measures profit against the blended average entry across all executed steps. For example, using the step 1–3 figures from §4.4:
 
 ```
-avg_entry = $84,000  (after steps 1–3)
+avg_entry = $83,812.65  (after steps 1–3)
+total_quantity = 0.074571 BTC
+total_invested = $6,250
 TP = 10%
-exit_price target = $84,000 × 1.10 = $92,400
+exit_price target = $83,812.65 × 1.10 = $92,193.92
 
 P&L = (exit_price - avg_entry) × total_quantity
-    = ($92,400 - $84,000) × 0.07458 BTC
-    = +$626.47 USDT
-    = +10% on the $6,250 invested
+    = ($92,193.92 - $83,812.65) × 0.074571 BTC
+    = +$625.00 USDT
+    = +10% on the $6,250 invested  (exact, by construction)
 ```
 
 TP check runs **first** on every tick (before checking for new buy levels). Once TP is hit, no more buys are placed — the position is sold immediately.
@@ -503,7 +508,9 @@ The mixed engine returns all standard backtest metrics plus:
 
 ## 9. Backtested Top Strategies
 
-The following strategies were discovered by the optimizer running exhaustive grid search over BTC/USDT 1-hour candles from **2018 to 2025** (7 years, ~61,000 candles). All results use a starting budget of **$1,000 USDT** with equal capital split across DCA levels. Strategies are ranked by **ROI/day** — total return divided by the number of calendar days in the test window — to normalize for how quickly capital compounds.
+The following strategies were discovered by the optimizer running exhaustive grid search over BTC/USDT 1-hour candles from **2018 to 2025** (7 years, ~61,000 candles). All results use a starting budget of **$1,000 USDT** with equal capital split across DCA levels. Strategies are ranked by **ROI/day** — **total ROI % divided by the strategy's average trade duration in days** (`roi_per_day` in `algo-trading/optimizer.py`) — which rewards configurations that complete each buy→TP cycle quickly and redeploy capital sooner.
+
+> **Important:** ROI/day here is *not* an annualized or compounding daily return over the full 7-year window — it is total return normalized by the typical single-cycle holding period. A strategy showing "138% ROI, ROI/day 44.4" completed that 138% across ~317 trades with an average 3.1-day hold each, **not** 44.4% per day for 7 years. Treat it as a "capital turnover efficiency" score for comparing strategies, not a literal daily yield.
 
 > **Note:** Past backtest performance does not guarantee future results. These configurations represent historically optimal parameters on BTC 1H data and should be validated against other assets and timeframes before deployment.
 
@@ -1042,7 +1049,7 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 - **Multiple exchange support** (OKX, Bybit)
 - **Dynamic position sizing** based on portfolio value
 - **Trailing take profit** to capture extended uptrends
-- **Risk controls** — max drawdown limits, daily loss caps
+- **Risk controls** — max drawdown limits, daily loss caps, exposure limits, circuit breakers (see §19.6 — this is treated as a near-term priority, not a nice-to-have)
 - **Multi-account portfolio view** — aggregate P&L across all accounts
 - **Strategy optimizer** — auto-tune DCA levels based on backtest results
 - **Live mixed strategy engine** — port the regime detector and entry indicator to the live `DCAEngine` for fully autonomous bull/bear switching
@@ -1052,4 +1059,69 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 
 ---
 
-*Infinity — built for systematic, emotion-free DCA trading on spot markets.*
+## 19. Limitations, Assumptions & Honest Risk Disclosure
+
+This section exists to counter-balance the rest of the document. Sections 1–18 describe how the system is *designed* to work; this section is about where that design is still incomplete, where the backtests are optimistic, and what a user should not assume.
+
+### 19.1 Backtest Realism
+
+The backtest engines (§8) execute fills against candle **high/low wicks** with a fixed, deterministic same-candle ordering (DCA fills → stop-loss → take-profit). This is a reasonable, documented convention — but it is still a simplification of live execution:
+
+- **No fees, slippage, or spread are modeled anywhere in the codebase.** For strategies with a 3% take-profit (the most common in §9.1), a realistic ~0.1–0.2% round-trip cost on Binance spot is a meaningful fraction of the edge. All ROI figures in §9 should be read as **gross, pre-cost** returns.
+- **A candle that touches both a DCA level and the TP price is resolved by the documented rule order, not by reconstructing the true intra-candle path.** In practice, price could have moved through the TP *before* reaching the new DCA level (or vice-versa), which the wick-based model cannot distinguish.
+- **Market orders do not fill exactly at the trigger price** in live trading — `core/dca_engine.py` uses the real exchange fill price (`fill_price`/`fill_qty` from the order response), so live P&L already reflects actual fills; the *backtest* assumes a perfect fill at the trigger price, which live trading will not always match exactly.
+- Partial fills, rejected orders, and API errors are handled defensively in `_execute_buy` (skip + log), but a skipped step in live trading means the position diverges from what the backtest would show for the same price path.
+
+**Takeaway:** treat the ROI figures in §9 as an upper bound on what a frictionless version of the strategy could achieve, not a forecast of live results. A walk-forward or out-of-sample re-run, and a fee/slippage-adjusted re-run, are the natural next steps before sizing real capital off these numbers.
+
+### 19.2 "No Liquidation Risk" Is Not the Same as "Low Risk"
+
+§1 and §2 correctly state that the default Spot DCA strategy type cannot be liquidated and cannot lose more than its allocated capital. That is true, but it is a narrow guarantee. Spot DCA on a single asset can still:
+
+- Suffer a **70–95% drawdown** in a sustained bear market, with the position held the entire time (the live engine has no max-drawdown exit — see §19.6)
+- **Lock capital for months or years** waiting for a recovery that may not come within the user's planning horizon
+- Be exposed to **exchange risk** (Binance outages, withdrawal halts, account restrictions) and **asset-specific risk** (delisting, project failure, a coin that never recovers to its prior range)
+- Carry **opportunity cost** — capital stuck in a dead position is capital that cannot be deployed to a better setup
+
+"No liquidation" means the position cannot be force-closed at a loss by an exchange. It does not mean the position is guaranteed to be profitable, liquid, or even sellable at a reasonable price within any particular timeframe.
+
+### 19.3 The Reference Price Is a Manual, Judgment-Based Input
+
+§4.1 describes setting the reference price "when you believe the asset is near a local top." That is a discretionary, market-timing judgment call — the system does not pick it for you, and the quality of that single input materially affects outcomes:
+
+- If the reference is set **too low** (not actually near a local top), DCA levels may never trigger, or trigger at prices that aren't meaningfully discounted.
+- If the reference is set **too high** (well above where price ever returns), the position may never reach the deeper DCA levels needed to pull the average entry down enough for TP.
+
+The system's mechanical, rule-based execution starts *after* this one discretionary decision. Users should not read "mechanical execution" (§2) as "the system removes all judgment" — it removes judgment from *execution*, not from *anchor selection*. The Market Signals tab (§11) and its anchor/trigger-price calculations (§11.4) are aids for making this single decision more informed, not a replacement for it.
+
+### 19.4 ML Models Are Exploratory, Not Validated Predictors
+
+The three models in §11.6 are trained **on the fly on ~200 four-hour candles (≈33 days)** every time signals are computed. This is useful as a *supplementary, fast-refreshing signal*, but it falls well short of what would be needed to call these "predictive":
+
+- A ~33-day training window is small relative to the multi-week/multi-month patterns the strategy is meant to trade around — these models cannot have learned much about regime changes that happen less often than that.
+- **Model 2's training labels are pseudo-labels generated by the same rule-based score described in §11.2** — the model is, at best, learning a smoothed/interpolated version of the rule it's being compared against. `agrees_with_rules` is therefore not an independent confirmation; the two are correlated by construction.
+- **No walk-forward validation and no out-of-sample backtest** exist for any of the three models. `predict_direction`'s reported `confidence` is a same-run probability estimate, not a validated hit rate.
+- Retraining from scratch every 15 minutes on a small, overlapping window means model output can be noisy/unstable run-to-run.
+
+**Takeaway:** the ML panel is best understood as additional *context* alongside the rule-based regime score and RSI-based entry timing (§11.2, §11.5) — useful for a quick "does the model agree with the rules right now?" check, not as a standalone trading signal. A user should not size positions or override the rule-based recommendation based on ML confidence scores without separately validating them.
+
+### 19.5 Security & Deployment Hardening
+
+§3 and §16 describe the current deployment honestly, but a few aspects are worth calling out explicitly for a system that holds exchange API keys and can place real orders:
+
+- **Auto-deploy on every push to `master`** (cron pulls, reinstalls dependencies, and restarts both services every 60 seconds) means a bad commit can affect a live trading bot within a minute, with no staging environment or manual approval gate in between. A review/staging step before deploys reach the live-trading service is recommended.
+- **The web dashboard runs on the Flask development server** (`web/app.py`, port 5050). This is explicitly not recommended by Flask for production use (no production-grade concurrency, error handling, or hardening) — a WSGI server (gunicorn/waitress) behind a reverse proxy is recommended if the dashboard is exposed beyond a trusted local/VPN network.
+- **Binance API keys should be created with withdrawals disabled** (trading + read-only permissions only), so that even if a key is compromised, funds cannot be moved off the exchange. The codebase does not enforce or verify this — it is an operational requirement for whoever provisions the keys.
+- There is currently **no encryption-at-rest for stored API credentials**, **no role-based access control** on the dashboard, and **no audit log** of manual dashboard actions (set reference price, reset position, start/stop engine). For a single-operator setup this is a lower priority than for any multi-user deployment.
+
+### 19.6 Risk Controls: Treat as a Pre-Scaling Requirement, Not a "Someday"
+
+§18 lists max-drawdown limits, daily loss caps, exposure limits, and circuit breakers as planned extensions. Until they exist, the live engine's only exit condition is take-profit (§4.5) — there is **no mechanism that closes a position early in a sustained adverse move**. In its current form, the strategy's downside is bounded only by "the capital allocated to it can go to zero in USDT terms while the position is held" (§19.2), not by any active risk management.
+
+Practically, this means:
+- Capital allocated to any single strategy should be sized as if it could be fully drawn down and illiquid for an extended period — not as "capital protected by the system's risk controls," because those controls do not yet exist.
+- The extensions in §18 — particularly max-drawdown limits and daily loss caps — should be implemented and tested *before* allocating capital beyond what the operator is fully prepared to hold through a worst-case drawdown.
+
+---
+
+*Infinity — built for systematic, emotion-free DCA trading on spot markets. Section 19 is part of this document — read it before allocating capital.*
