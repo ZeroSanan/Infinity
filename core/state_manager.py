@@ -133,10 +133,8 @@ def add_executed_step(
     state.total_quantity += quantity
     state.status = "ACTIVE"
 
-    sizes  = [s.order_size_usdt for s in state.executed_steps]
-    prices = [s.entry_price      for s in state.executed_steps]
-    total_val = sum(sz * px for sz, px in zip(sizes, prices))
-    state.average_entry = total_val / sum(sizes)
+    # True cost basis: total USDT spent / total coins held.
+    state.average_entry = state.total_invested / state.total_quantity
 
     save_state(state)
     logger.info(
