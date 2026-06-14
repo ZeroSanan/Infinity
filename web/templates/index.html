@@ -2885,7 +2885,6 @@ async function saveStrategy(){
 
   if(!coinVal || !symbol){ setFeedback('strat-feedback','Coin and Symbol are required.','err'); return; }
   if(!tp || tp <= 0)      { setFeedback('strat-feedback','Take profit % must be > 0.','err'); return; }
-  if(!rows.length)        { setFeedback('strat-feedback','Add at least one DCA step.','err'); return; }
 
   const dump_levels = [], order_sizes = [];
   for(const row of rows){
