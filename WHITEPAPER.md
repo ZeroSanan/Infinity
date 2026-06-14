@@ -14,9 +14,9 @@
 | Strategy type | Market | Leverage | Risk profile |
 |---|---|---|---|
 | **Spot DCA** (default) | Spot | None | Capital-bounded — a 100% drop cannot lose more than the capital allocated to that strategy. No liquidation risk. |
-| **Leveraged Long/Short DCA** (planned, opt-in) | Margin/Futures | User-selected | Same dip-buying DCA logic applied with leverage on either the long or short side. Liquidation risk applies — leverage amplifies both gains and losses. |
+| **Mixed Long/Short DCA** (opt-in, live) | Binance USD-M Futures | User-selected (`leverage` field, ≥1×) | Auto-switching long/short DCA driven by live regime detection (§8.6). Liquidation risk applies — leverage amplifies both gains and losses. |
 
-Every account and coin defaults to **Spot DCA**. The Leveraged Long/Short DCA strategy type is a planned, separate addition that a user must explicitly enable per coin/strategy — it does not change the leverage-free behavior of existing or default strategies.
+Every account and coin defaults to **Spot DCA**. The Mixed Long/Short DCA strategy type (`mode="mixed"` in `config/coins.json`, implemented by `core/mixed_engine.py`) is a separate, opt-in mode that a user must explicitly enable per coin/strategy — either by hand-editing that strategy's config or by creating a reusable **DCA Model** template (§10.3) and applying it to a coin card. Enabling it for one strategy does not change the leverage-free behavior of other `mode="long"` strategies.
 
 ---
 
@@ -32,11 +32,11 @@ This is **not** a maximum-profit strategy. The goal is not to catch tops or bott
 | **Stable compounding** | Small, consistent profits (5–10% per cycle) accumulate over time. A 5% gain repeated 20 times grows capital by 165%. |
 | **Long-term capital growth** | The system is designed to run indefinitely, cycling through bull and bear periods without human intervention. |
 
-> **A note on leverage:** The Survivability guarantee above describes the default **Spot DCA** strategy type, which remains leverage-free. A separate **Leveraged Long/Short DCA** strategy type is planned (see §1) for users who explicitly opt in per coin/strategy. That strategy type carries leverage and liquidation risk by design and does not share the capital-bounded guarantee — it is an isolated, user-selected choice that does not affect the leverage-free default.
+> **A note on leverage:** The Survivability guarantee above describes the default **Spot DCA** strategy type, which remains leverage-free. A separate **Mixed Long/Short DCA** strategy type (`mode="mixed"`, see §1 and §8.6) is available for users who explicitly opt in per coin/strategy — either directly or via a DCA Model template (§10.3). That strategy type carries leverage and liquidation risk by design and does not share the capital-bounded guarantee — it is an isolated, user-selected choice that does not affect the leverage-free default.
 
 **What it is not (default Spot DCA strategies):**
 - Not a high-frequency trader
-- Not a leverage or futures system — leverage exists only in the separate, opt-in Leveraged Long/Short DCA strategy type
+- Not a leverage or futures system by default — leverage and futures only apply to the separate, opt-in Mixed Long/Short DCA strategy type (`mode="mixed"`, §8.6)
 - Not a system that requires *precise* market timing — the reference price only needs to be roughly near a local high for the DCA ladder to work, not the exact top (see §19.3 for an honest discussion of how much the reference price still matters)
 - Not a maximum-profit chaser
 - Not emotionally driven
@@ -49,17 +49,21 @@ This is **not** a maximum-profit strategy. The goal is not to catch tops or bott
 Infinity/
 ├── main.py                  # CLI entry point — starts trading engines
 ├── core/
-│   ├── dca_engine.py        # Trading logic: price polling, buy/sell execution
+│   ├── dca_engine.py        # Trading logic: price polling, buy/sell execution (Spot DCA, mode="long")
+│   ├── mixed_engine.py      # Mixed long/short engine: live auto-switching DCA on Binance USD-M Futures (mode="mixed")
 │   ├── binance_client.py    # Binance API wrapper (spot orders, price feed)
-│   ├── regime_detector.py   # Live regime analysis (EMA, volume, AI narrative)
+│   ├── binance_futures_client.py # Binance USD-M Futures API wrapper (orders, leverage, position/liquidation info)
+│   ├── regime_detector.py   # Weekly Regime tab analysis (EMA, volume, AI narrative)
+│   ├── regime_live.py       # Live regime detection (EMA21/50/200, RSI, BB, ATR) feeding the Mixed engine
 │   ├── state_manager.py     # Persists position state to JSON files
 │   ├── ml_signals.py        # ML models: direction, regime & entry-quality scoring
 │   ├── signal_history.py    # SQLite persistence for market signals + ML outputs
 │   └── logger.py            # Structured logging
 ├── models/
-│   └── dca_config.py        # Data models: CoinConfig, PositionState, ExecutedStep
+│   └── dca_config.py        # Data models: CoinConfig (long + mixed fields), PositionState, ExecutedStep, DCAModel
 ├── config/
-│   └── coins.json           # Strategy definitions (coins, levels, sizes, TP)
+│   ├── coins.json           # Strategy definitions (coins, levels, sizes, TP, mode, leverage, ATR spacing)
+│   └── dca_models.json       # DCA Model templates — reusable bull+bear ladders for Mixed strategies
 ├── data/                    # Live position state files (one JSON per strategy)
 │                             # + signal_history.db (Market Signals history)
 ├── utils/
@@ -72,7 +76,7 @@ Infinity/
 └── web/
     ├── app.py               # Flask dashboard (API + UI)
     └── templates/
-        ├── index.html       # Live trading dashboard
+        ├── index.html       # Live trading dashboard (Dashboard, Accounts, Strategies, DCA Models, Weekly Regime tabs)
         └── backtest.html    # Backtesting interface (long, short, mixed modes)
 ```
 
@@ -504,6 +508,54 @@ The mixed engine returns all standard backtest metrics plus:
 | Largest Loss | Worst single trade in USDT |
 | Per-trade breakdown | Entry, levels filled, invested, exit price, profit |
 
+### 8.6 Live Mixed Engine — `core/mixed_engine.py`
+
+The adaptive bull/bear logic described in §8.4 is not only a backtest concept — it runs **live**, on Binance USD-M Futures, for any strategy whose `config/coins.json` entry has `mode: "mixed"`. `MixedEngine` is the live counterpart to `MixedDCAStrategy`: same regime-scoring, 5-candle confirmation, extremity-override, and entry-indicator logic, ported to operate on a rolling window of live klines (`core/regime_live.py`) instead of a historical CSV.
+
+#### 8.6.1 Tick Cycle
+
+`MixedEngine.tick()` runs once per `POLL_INTERVAL` (30 seconds):
+
+1. **Fetch data** — `core/regime_live.fetch_candles()` pulls the latest `CANDLE_LIMIT` (500) candles for `cfg.symbol` at `cfg.regime_interval` (default `1h`) from Binance's public klines endpoint; `client.get_mark_price()` fetches the current futures mark price.
+2. **Compute regime** — `compute_regime_state()` replays the full candle window through the same Layer 1/2/4 state machine as §8.4.1–8.4.4 (regime score, 5-candle confirmation, extremity overrides) and returns the confirmed regime, `active_mode` (BUY/SELL/WAIT), and the latest indicator values including `atr_pct` (§8.6.4).
+3. **Mode change** — if `active_mode` flipped since the last tick, any open position is closed (`reason="mode_change"`) and the ladder anchor is cleared.
+4. **Arm the anchor** — if no position is open, `_arm_anchor()` either waits for the Layer 3 entry indicator (§8.4.5, when `use_entry_indicator=True`) and anchors to `ema21` at the signal candle, or — when the indicator is disabled — tracks a rolling extreme price as the anchor.
+5. **Check ladder fills** — `_check_ladder_fills()` compares the % move from the anchor against the next configured level (`dump_levels`/`order_sizes` for BUY, `bear_levels`/`bear_order_sizes` for SELL), opening a market order on Binance USD-M Futures when triggered.
+6. **Stop-loss / take-profit** — `_check_stop_loss()` (using `bull_stop_loss_percent`/`bear_stop_loss_percent`) and `_check_take_profit()` (using `take_profit_percent`/`bear_take_profit_percent`) are evaluated against the current position's `average_entry`.
+
+State is persisted to `data/<strategy_id>.json` after every tick via the same `PositionState` model used by `DCAEngine`, extended with mixed-mode fields (§12).
+
+#### 8.6.2 Position Sides & Leverage
+
+- `state.direction` tracks the currently open broker position: `NONE`, `LONG`, or `SHORT`.
+- `cfg.leverage` (≥1) is applied to every order's notional (`notional = order_size_usdt × leverage`); `client.set_leverage()` is called once on engine startup if the configured leverage differs from the persisted state.
+- After every fill, `_refresh_liquidation_price()` queries `client.get_position()` and stores the exchange-reported `liquidation_price` in `PositionState` so the dashboard can display it.
+- Both hedge-mode and one-way Binance Futures account modes are supported (`client.get_position_mode()`).
+
+#### 8.6.3 Re-arming After Take-Profit
+
+Unlike the backtest (which simply records a closed trade), the live engine **re-arms the ladder in the same direction** after a take-profit close: `state.anchor_price` is reset to the exit price, so the engine immediately starts tracking for the next entry in the still-confirmed regime, without waiting for a new regime confirmation.
+
+#### 8.6.4 ATR-Based Dynamic Spacing
+
+Both `core/mixed_engine.py` and `models/dca_config.py::DCAModel` support an optional **ATR-based dynamic spacing** mode, controlled by two fields:
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `atr_based_spacing` | `False` | When `True`, every configured level/TP/SL value is interpreted as a **multiple of the live ATR%**, not a fixed percentage |
+| `atr_period` | `14` | Number of candles (in `regime_interval` units) used to compute ATR |
+
+On every tick, `compute_regime_state()` computes `atr = _atr(highs, lows, closes, atr_period)` (Average True Range over the last `atr_period` candles) and `atr_pct = atr / latest_close × 100`. `MixedEngine._effective_pct(base_value)` then returns:
+
+```
+effective_pct = base_value × atr_pct   if atr_based_spacing and atr_pct is available
+effective_pct = base_value             otherwise (feature off, or ATR not ready yet)
+```
+
+This is applied to `dump_levels`, `bear_levels`, `take_profit_percent`, `bear_take_profit_percent`, `bull_stop_loss_percent`, and `bear_stop_loss_percent`. For example, with `atr_based_spacing=True` and a configured level of `-6` (meaning "−6× ATR%"): if live ATR% is 1.5%, the effective trigger distance from the anchor is −9%; if ATR% rises to 3% (more volatile), the same `-6` becomes −18% — the ladder automatically widens in choppier markets and tightens in calmer ones, instead of using a fixed spacing regardless of volatility.
+
+The Market Signals dashboard (§11.2) surfaces `atr_7d`/`atr_14d`/`range_pct_7d`/`range_pct_14d` so a user can gauge an asset's current volatility before choosing fixed-percent vs. ATR-based spacing for a new strategy or DCA Model.
+
 ---
 
 ## 9. Backtested Top Strategies
@@ -584,7 +636,7 @@ Short strategies generate more ROI/day in absolute terms despite lower win rates
 
 The Flask dashboard (port 5050) provides full visibility and control over live strategies.
 
-### Live Trading Tab
+### 10.1 Live Trading Tab
 - Real-time price display per strategy
 - Position status: dump %, average entry, total invested, P&L
 - Step-by-step progress visualization
@@ -592,7 +644,7 @@ The Flask dashboard (port 5050) provides full visibility and control over live s
 - Set reference price manually
 - Reset position state
 
-### Backtesting Tab
+### 10.2 Backtesting Tab
 
 #### Long & Short Modes
 - Run historical simulations on uploaded OHLCV CSV data (Binance export format)
@@ -616,12 +668,39 @@ The Flask dashboard (port 5050) provides full visibility and control over live s
 - **INDICATOR / REGIME badges** in the trade table identifying how each trade was entered; indicator-triggered rows highlighted with a gold left border
 - Regime timeline overlay on equity chart (color-coded BULLISH/BEARISH/NEUTRAL background bands)
 
-### Accounts Tab
+### 10.3 DCA Models Tab
+
+The **DCA Models** tab manages reusable `DCAModel` templates (`config/dca_models.json`, `models/dca_config.py::DCAModel`) — pre-built bull (long) + bear (short) DCA ladders, plus regime/leverage settings, that can be applied to one or more coin cards in the Strategies tab to turn them into auto-switching **Mixed** strategies (§8.6).
+
+**Create / edit a model** (`POST` / `PUT /api/dca_models`) — a model is defined by:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Display name for the template |
+| `bull_levels` / `bull_order_sizes` | Negative-% DCA levels and USDT sizes for the long ladder |
+| `bull_take_profit_percent` | Take-profit % for the long side |
+| `bear_levels` / `bear_order_sizes` | Positive-% DCA levels and USDT sizes for the short ladder |
+| `bear_take_profit_percent` | Take-profit % for the short side |
+| `leverage` | Futures leverage applied to every order (≥1×) |
+| `bull_stop_loss_percent` / `bear_stop_loss_percent` | Optional stop-loss % per side (0 = disabled) |
+| `use_entry_indicator` | Toggle the three-factor entry confirmation (§8.4.5) |
+| `rsi_overbought` / `rsi_oversold` | Extremity-override thresholds (§8.4.4) |
+| `regime_interval` | Candle interval used for live regime detection (default `1h`) |
+| `atr_based_spacing` | When on, all of the above level/TP/SL values are treated as ATR multiples (§8.6.4) instead of fixed percentages |
+| `atr_period` | Candles used for the live ATR calculation when `atr_based_spacing` is on |
+
+A model's ladders are validated the same way as `DCAModel.validate()`: `bull_levels` must all be negative, `bear_levels` all positive, both ladders' level/size lists must be the same length, and both take-profit percentages must be > 0.
+
+**Apply a model** (`POST /api/dca_models/<id>/apply`) — applies a model to one or more existing strategies, either by `strategy_ids` (a list of coin-card IDs from the Strategies tab) or `apply_to_all: true`. For each target strategy, the model's fields (`mode`, `step_count`, `dump_levels`, `order_sizes`, `take_profit_percent`, `bear_levels`, `bear_order_sizes`, `bear_take_profit_percent`, `leverage`, `bull_stop_loss_percent`, `bear_stop_loss_percent`, `use_entry_indicator`, `rsi_overbought`, `rsi_oversold`, `regime_interval`, `atr_based_spacing`, `atr_period`) are merged into the strategy's `config/coins.json` entry — overwriting any prior ladder/mode settings — while `id`, `name`, `coin`, `symbol`, `enabled`, and `reference_price` are preserved. This switches the strategy from `mode="long"` to `mode="mixed"`, and the live engine picks it up as a `MixedEngine` on its next reload.
+
+> **Note:** Apply is a **one-time copy**, not a live link. There is no `model_id` back-reference stored on the strategy — editing a DCA Model after applying it does **not** retroactively change strategies it was previously applied to. To propagate a model change, re-apply it to the affected strategies.
+
+### 10.4 Accounts Tab
 - Add/remove Binance API accounts
 - Test connectivity and view USDT balance
 - Supports both live and testnet accounts
 
-### Market Signals Tab
+### 10.5 Market Signals Tab
 - Live regime read for BTC, ETH, XRP, SOL, ZEC, SUI, XAU (gold), and NVDA on the 4-hour timeframe, refreshed every 15 minutes
 - Per-coin card: regime badge, 4-signal checklist, recommended strategy (saved or suggested) with DCA trigger-price chips, anchor price, and fresh-start levels
 - Action banner — **LONG NOW / SHORT NOW / WATCH / WAIT** — with a one-line plain-English condition
@@ -665,6 +744,8 @@ If `TWELVE_DATA_API_KEY` is unset, the XAU/NVDA cards show "Unknown — insuffic
 | EMA200 | 200-period exponential moving average of closes |
 | RSI(14) | 14-period relative strength index |
 | 7-day return | `(price - close[-43]) / close[-43] × 100` (42 candles ≈ 7 days at 4h) |
+| `atr_7d` / `atr_14d` | Average True Range (price-denominated) over the last 42 / 84 four-hour candles (≈7 / 14 days) |
+| `range_pct_7d` / `range_pct_14d` | `(highest_high - lowest_low) / highest_high × 100` over the same 42 / 84 candle windows |
 
 Four boolean signals are scored:
 
@@ -684,6 +765,8 @@ score = s1 + s2 + s3 + s4   (range 0–4)
 | 3–4 | BULL | Long DCA |
 | 2 | NEUTRAL | Mixed DCA |
 | 0–1 | BEAR | Short DCA |
+
+`atr_7d`, `atr_14d`, `range_pct_7d`, and `range_pct_14d` do not feed into the regime score — they are displayed on each asset's card as **volatility context**, so a user can judge whether an asset is currently calm or choppy before choosing fixed-percent DCA levels or enabling ATR-based dynamic spacing (§8.6.4) for a Mixed strategy on that asset.
 
 ### 11.3 Strategy Recommendation Engine
 
@@ -940,13 +1023,47 @@ Position state is stored as JSON files in the `data/` directory. Each file corre
       "entry_price": 90000.0,
       "quantity": 0.01666,
       "order_id": "12345678",
-      "timestamp": "2026-06-04 21:00:00 UTC"
+      "timestamp": "2026-06-04 21:00:00 UTC",
+      "side": "LONG"
     }
   ]
 }
 ```
 
 State survives process restarts and VPS reboots. The engine resumes exactly where it left off: same reference price, same executed steps, same average entry, waiting for the next level or TP trigger.
+
+### 12.1 Mixed Engine State Fields
+
+For strategies running `mode="mixed"`, `PositionState` carries additional fields written and read by `core/mixed_engine.py`:
+
+```json
+{
+  "strategy_id": "btc-aggressive",
+  "coin": "BTC",
+  "symbol": "BTCUSDT",
+  "status": "ACTIVE",
+  "average_entry": 82500.0,
+  "total_invested": 6250.0,
+  "total_quantity": 0.07142,
+  "executed_steps": [ { "...": "...", "side": "SHORT" } ],
+
+  "direction": "SHORT",
+  "active_mode": "SELL",
+  "regime": "BEARISH",
+  "anchor_price": 91200.0,
+  "leverage": 3,
+  "liquidation_price": 121850.0
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `direction` | Currently open broker position: `NONE`, `LONG`, or `SHORT` |
+| `active_mode` | Regime-driven target direction: `WAIT`, `BUY`, or `SELL` (§8.6.1) |
+| `regime` | Last confirmed regime: `BULLISH`, `BEARISH`, or `NEUTRAL` (§8.4.3) |
+| `anchor_price` | Current ladder anchor — either the EMA21 entry-indicator signal price or a rolling extreme, depending on `use_entry_indicator` (§8.6.1) |
+| `leverage` | Leverage currently applied on the exchange for this position |
+| `liquidation_price` | Exchange-reported liquidation price for the open position, refreshed after every fill (`null` when no position is open) |
 
 ---
 
@@ -989,11 +1106,53 @@ Strategies are defined in `config/coins.json`. Each entry includes:
 | `coin` | string | Asset ticker (e.g. BTC) |
 | `symbol` | string | Trading pair (e.g. BTCUSDT) |
 | `enabled` | bool | Whether this strategy runs on startup |
-| `step_count` | int | Number of DCA buy levels |
-| `dump_levels` | float[] | Price drop % to trigger each step (must be negative) |
-| `order_sizes` | float[] | USDT amount to buy at each step |
-| `take_profit_percent` | float | Target return % to trigger sell |
+| `step_count` | int | Number of DCA buy (long) levels. May be `0` — a strategy can be created with no ladder steps at all, as long as `take_profit_percent > 0` |
+| `dump_levels` | float[] | Price drop % to trigger each long step (must be negative). Empty list if `step_count` is `0` |
+| `order_sizes` | float[] | USDT amount to buy at each long step. Empty list if `step_count` is `0` |
+| `take_profit_percent` | float | Target return % to trigger sell on the long side. Must be > 0 |
 | `reference_price` | float? | Starting reference price (null = must be set manually) |
+
+### 14.1 Mixed Mode Fields (`mode="mixed"`)
+
+The following additional fields apply when a strategy's `mode` is `"mixed"` (§8.6) — typically set via the DCA Models "Apply" flow (§10.3) rather than hand-edited:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `mode` | string | `"long"` | `"long"` (Spot DCA, `core/dca_engine.py`) or `"mixed"` (auto long/short Futures, `core/mixed_engine.py`) |
+| `bear_levels` | float[] | `[]` | Price pump % to trigger each short step (must be positive). Required, non-empty for `mode="mixed"` |
+| `bear_order_sizes` | float[] | `[]` | USDT margin amount to sell-short at each bear step; must match `bear_levels` length |
+| `bear_take_profit_percent` | float | `0.0` | Target return % to close the short side. Must be > 0 for `mode="mixed"` |
+| `bull_stop_loss_percent` | float | `0.0` | Optional stop-loss % for the long side, measured from the anchor (`0` = disabled) |
+| `bear_stop_loss_percent` | float | `0.0` | Optional stop-loss % for the short side, measured from the anchor (`0` = disabled) |
+| `leverage` | int | `1` | Futures leverage applied to every order (≥1) |
+| `use_entry_indicator` | bool | `true` | Gate entries behind the three-factor confirmation signal (§8.4.5) |
+| `rsi_overbought` | float | `70.0` | RSI threshold for a BULLISH→SELL extremity override (§8.4.4) |
+| `rsi_oversold` | float | `30.0` | RSI threshold for a BEARISH→BUY extremity override (§8.4.4) |
+| `regime_interval` | string | `"1h"` | Candle interval used for live regime detection (`core/regime_live.py`) |
+| `atr_based_spacing` | bool | `false` | When `true`, `dump_levels`/`bear_levels`/TP/SL values are interpreted as ATR multiples (§8.6.4) |
+| `atr_period` | int | `14` | Candles (in `regime_interval` units) used for the live ATR calculation; must be ≥ 2 |
+
+### 14.2 DCA Model Templates — `config/dca_models.json`
+
+Reusable Mixed-mode templates are stored in `config/dca_models.json` as `{"models": [...]}`, where each entry is a `DCAModel` (`models/dca_config.py`). The schema mirrors §14.1's mixed-mode fields, but without a coin/symbol/id binding — a model is a *template*, not a running strategy:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique model identifier |
+| `name` | string | Display name |
+| `bull_levels` / `bull_order_sizes` | float[] | Long ladder levels (negative %) and USDT sizes |
+| `bull_take_profit_percent` | float | Take-profit % for the long side. Must be > 0 |
+| `bear_levels` / `bear_order_sizes` | float[] | Short ladder levels (positive %) and USDT sizes |
+| `bear_take_profit_percent` | float | Take-profit % for the short side. Must be > 0 |
+| `leverage` | int | Futures leverage (≥1), default `1` |
+| `bull_stop_loss_percent` / `bear_stop_loss_percent` | float | Optional per-side stop-loss %, default `0.0` |
+| `use_entry_indicator` | bool | Default `true` |
+| `rsi_overbought` / `rsi_oversold` | float | Defaults `70.0` / `30.0` |
+| `regime_interval` | string | Default `"1h"` |
+| `atr_based_spacing` | bool | Default `false` |
+| `atr_period` | int | Default `14`, must be ≥ 2 |
+
+Applying a model (§10.3) copies these fields onto a target strategy's `config/coins.json` entry and sets `mode="mixed"`. The model itself is not referenced again afterward — there is no `model_id` stored on the strategy.
 
 ---
 
@@ -1052,10 +1211,9 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 - **Risk controls** — max drawdown limits, daily loss caps, exposure limits, circuit breakers (see §19.6 — this is treated as a near-term priority, not a nice-to-have)
 - **Multi-account portfolio view** — aggregate P&L across all accounts
 - **Strategy optimizer** — auto-tune DCA levels based on backtest results
-- **Live mixed strategy engine** — port the regime detector and entry indicator to the live `DCAEngine` for fully autonomous bull/bear switching
 - **Direction-aware strategy matching** — restrict saved strategies suggested for Short DCA to those whose levels were originally designed for short entries, rather than mirroring long-only level sets
 - **Charting for Signal History** — equity-style charts of regime, RSI, and entry score over time per coin
-- **Leveraged Long/Short DCA strategy type** — a separate, opt-in strategy type (per §1) applying the same dip-buying DCA logic with user-selected leverage on the long or short side; isolated from the default leverage-free Spot DCA strategies and carries liquidation risk
+- **DCA Model live link** — store a `model_id` back-reference on strategies created via "Apply" (§10.3), so a later edit to the model can optionally be re-propagated to every strategy it was applied to, instead of requiring a manual re-apply
 
 ---
 
@@ -1084,6 +1242,8 @@ The backtest engines (§8) execute fills against candle **high/low wicks** with 
 - Carry **opportunity cost** — capital stuck in a dead position is capital that cannot be deployed to a better setup
 
 "No liquidation" means the position cannot be force-closed at a loss by an exchange. It does not mean the position is guaranteed to be profitable, liquid, or even sellable at a reasonable price within any particular timeframe.
+
+> **Mixed-mode strategies (`mode="mixed"`) are the exception to all of the above.** Any strategy switched to Mixed via a DCA Model (§10.3) trades on Binance USD-M Futures with `leverage` ≥ 1× and **can be liquidated** — a sufficiently large adverse move before the configured ladder/stop-loss reacts can result in losing the full margin for that position, independent of `bull_stop_loss_percent`/`bear_stop_loss_percent` (which are checked only once per `POLL_INTERVAL`, not continuously by the exchange). `liquidation_price` (§12.1) is reported by Binance and shown on the dashboard, but the engine does not actively manage distance-to-liquidation — higher leverage directly reduces the price move needed to reach it. The Survivability guarantee in §1/§2 applies only to `mode="long"` Spot DCA strategies.
 
 ### 19.3 The Reference Price Is a Manual, Judgment-Based Input
 
@@ -1121,6 +1281,15 @@ The three models in §11.6 are trained **on the fly on ~200 four-hour candles (�
 Practically, this means:
 - Capital allocated to any single strategy should be sized as if it could be fully drawn down and illiquid for an extended period — not as "capital protected by the system's risk controls," because those controls do not yet exist.
 - The extensions in §18 — particularly max-drawdown limits and daily loss caps — should be implemented and tested *before* allocating capital beyond what the operator is fully prepared to hold through a worst-case drawdown.
+
+### 19.7 ATR-Based Spacing Is Recomputed Every Tick, Not Locked at Anchor Time
+
+When `atr_based_spacing=True` (§8.6.4), `_effective_pct()` multiplies each configured level/TP/SL by the **current** `atr_pct` on every tick — not the `atr_pct` that was in effect when the ladder was anchored or when a step was filled. This has two practical consequences:
+
+- **Trigger distances drift while a ladder is armed.** If volatility rises after the anchor is set but before the next level fills, that level's effective trigger distance widens in real time; if volatility falls, it narrows. The dashboard reflects whatever ATR% was last computed, which can differ from the ATR% in effect at the moment a level actually triggers.
+- **Cold-start fallback is a fixed percentage, not "no spacing."** Until `core/regime_live.py` has enough candles to compute ATR (`atr_period + 1`), `_effective_pct()` falls back to the configured `base_value` unchanged — so a level configured as `-6` (intended as "−6× ATR%") is briefly treated as a literal **−6%** level until ATR becomes available. For small `atr_period` values this window is short, but it is not zero.
+
+Neither behavior is a bug — both follow directly from "spacing tracks live volatility" — but a user comparing a dashboard's displayed trigger price against the price that ultimately fills should expect small differences proportional to how much ATR% moved in between.
 
 ---
 
