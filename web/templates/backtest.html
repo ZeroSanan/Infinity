@@ -843,6 +843,14 @@
         </button>
       </div>
 
+      <!-- Results / Realism Tabs -->
+      <div class="mode-toggle-wrap">
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="tab-btn-results" onclick="setResultsTab('results')">Results</button>
+          <button class="mode-btn" id="tab-btn-realism" onclick="setResultsTab('realism')">&#129518;&ensp;Realism Check</button>
+        </div>
+      </div>
+
       <!-- Error Banner -->
       <div class="error-banner" id="error-banner" style="display:none"></div>
 
@@ -936,6 +944,87 @@
           </div>
         </div>
 
+      </div>
+
+      <!-- ══ REALISM CHECK SECTION ══ -->
+      <div id="realism-section" style="display:none">
+        <div class="panel">
+          <div class="panel-head">Realism Check Settings</div>
+          <div class="panel-body">
+            <div class="form-group">
+              <label>Round-trip cost % (fees + slippage, deducted from every trade)</label>
+              <input type="number" id="realism-fee" value="0.1" min="0" step="0.05">
+            </div>
+
+            <div style="border-top:1px solid var(--border);margin:16px 0 14px;"></div>
+
+            <div class="section-title">Walk-Forward Split (optional — leave all four blank to auto-split the date range in half)</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>In-Sample Start</label>
+                <input type="date" id="realism-is-start">
+              </div>
+              <div class="form-group">
+                <label>In-Sample End</label>
+                <input type="date" id="realism-is-end">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Out-of-Sample Start</label>
+                <input type="date" id="realism-oos-start">
+              </div>
+              <div class="form-group">
+                <label>Out-of-Sample End</label>
+                <input type="date" id="realism-oos-end">
+              </div>
+            </div>
+
+            <button class="run-btn" id="realism-run-btn" onclick="runRealismCheck()" style="margin-bottom:0">
+              <span id="realism-run-btn-text">&#9654;&ensp;Run Realism Check</span>
+              <div class="spinner" id="realism-spinner" style="display:none"></div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Realism Error Banner -->
+        <div class="error-banner" id="realism-error" style="display:none"></div>
+
+        <!-- Realism Results -->
+        <div id="realism-results" style="display:none">
+
+          <!-- Sample-size banner -->
+          <div class="warnings-box" id="realism-n-banner" style="display:none"></div>
+
+          <!-- Gross vs Net ROI -->
+          <div class="stats-grid" id="realism-stats-grid"></div>
+
+          <!-- Buy & Hold comparison -->
+          <div class="panel">
+            <div class="panel-head">Strategy vs Buy &amp; Hold</div>
+            <div class="panel-body" style="padding:0">
+              <div style="overflow-x:auto">
+                <table class="comparison-table" id="realism-bh-table"></table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Walk-forward table -->
+          <div class="panel">
+            <div class="panel-head">Walk-Forward Split — In-Sample vs Out-of-Sample</div>
+            <div class="panel-body" style="padding:0">
+              <div style="overflow-x:auto">
+                <table class="comparison-table" id="realism-wf-table"></table>
+              </div>
+            </div>
+          </div>
+          <div class="warnings-box" id="realism-overfit-warning" style="display:none"></div>
+
+          <!-- Risk metrics -->
+          <div class="section-title">Risk Metrics (Net of Fees)</div>
+          <div class="stats-grid" id="realism-risk-grid"></div>
+
+        </div>
       </div>
 
     </main>
@@ -2259,6 +2348,258 @@ function renderTradesTable() {
       <td>${badge}</td>
     </tr>${detailHtml}`;
   }).join('');
+}
+
+// ── Realism Check (cost-adjusted, risk-aware view) ───────────────────────────
+function setResultsTab(tab) {
+  document.getElementById('tab-btn-results').classList.toggle('active', tab === 'results');
+  document.getElementById('tab-btn-realism').classList.toggle('active', tab === 'realism');
+
+  const resultsEl    = document.getElementById('results-section');
+  const comparisonEl = document.getElementById('comparison-panel');
+  const realismEl    = document.getElementById('realism-section');
+
+  if (tab === 'realism') {
+    resultsEl.dataset.realismHidden    = resultsEl.style.display;
+    comparisonEl.dataset.realismHidden = comparisonEl.style.display;
+    resultsEl.style.display    = 'none';
+    comparisonEl.style.display = 'none';
+    realismEl.style.display    = 'block';
+  } else {
+    realismEl.style.display = 'none';
+    if (resultsEl.dataset.realismHidden !== undefined) {
+      resultsEl.style.display = resultsEl.dataset.realismHidden;
+    }
+    if (comparisonEl.dataset.realismHidden !== undefined) {
+      comparisonEl.style.display = comparisonEl.dataset.realismHidden;
+    }
+  }
+}
+
+function buildRealismParams() {
+  let params;
+  if (currentMode === 'mixed') {
+    params = {
+      mode:                'mixed',
+      initial_budget:      parseFloat(document.getElementById('cfg-budget').value),
+      bull_config:         getBullConfig(),
+      bear_config:         getBearConfig(),
+      use_entry_indicator: document.getElementById('use-entry-indicator').checked,
+      rsi_overbought:      parseFloat(document.getElementById('rsi-overbought').value) || 70,
+      rsi_oversold:        parseFloat(document.getElementById('rsi-oversold').value)   || 30,
+    };
+  } else if (currentMode === 'scalp') {
+    params = {
+      mode:                'mr_scalp',
+      initial_budget:      parseFloat(document.getElementById('cfg-budget').value),
+      take_profit_percent: parseFloat(document.getElementById('scalp-tp').value),
+      stop_loss_percent:   parseFloat(document.getElementById('scalp-sl').value),
+      position_size:       parseFloat(document.getElementById('scalp-position-size').value),
+      ema_fast:            parseInt(document.getElementById('scalp-ema-fast').value, 10),
+      ema_slow:            parseInt(document.getElementById('scalp-ema-slow').value, 10),
+      rsi_period:          parseInt(document.getElementById('scalp-rsi-period').value, 10),
+      rsi_long_level:      parseFloat(document.getElementById('scalp-rsi-long').value),
+      rsi_short_level:     parseFloat(document.getElementById('scalp-rsi-short').value),
+      allow_short:         document.getElementById('scalp-allow-short').checked,
+    };
+  } else {
+    const { levels, allocs } = getLevels();
+    params = {
+      mode:                currentMode,
+      initial_budget:      parseFloat(document.getElementById('cfg-budget').value),
+      dca_levels:          levels,
+      dca_allocations:     allocs,
+      take_profit_percent: parseFloat(document.getElementById('cfg-tp').value),
+      stop_loss_percent:   parseFloat(document.getElementById('cfg-sl').value),
+    };
+  }
+
+  params.start_date = document.getElementById('cfg-start').value || null;
+  params.end_date   = document.getElementById('cfg-end').value   || null;
+  params.dataset    = selectedDataset;
+  params.fee_pct    = parseFloat(document.getElementById('realism-fee').value) || 0;
+  params.is_start   = document.getElementById('realism-is-start').value  || null;
+  params.is_end     = document.getElementById('realism-is-end').value    || null;
+  params.oos_start  = document.getElementById('realism-oos-start').value || null;
+  params.oos_end    = document.getElementById('realism-oos-end').value   || null;
+
+  return params;
+}
+
+async function runRealismCheck() {
+  const btn     = document.getElementById('realism-run-btn');
+  const spinner = document.getElementById('realism-spinner');
+  const btnText = document.getElementById('realism-run-btn-text');
+  const errEl   = document.getElementById('realism-error');
+  errEl.style.display = 'none';
+
+  if (!selectedDataset && !uploadedFile) {
+    errEl.textContent = 'Please select a dataset or upload a CSV file.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (currentMode !== 'mixed' && !getLevels().levels.length) {
+    errEl.textContent = 'Add at least one DCA level.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const params = buildRealismParams();
+
+  btn.disabled = true;
+  btnText.textContent = 'Running…';
+  spinner.style.display = 'block';
+  document.getElementById('realism-results').style.display = 'none';
+
+  try {
+    let res;
+    if (uploadedFile) {
+      const form = new FormData();
+      form.append('params', JSON.stringify(params));
+      form.append('csv_file', uploadedFile);
+      res = await fetch('/api/backtest/realism', { method: 'POST', body: form });
+    } else {
+      res = await fetch('/api/backtest/realism', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+    }
+
+    const raw = await res.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (_) {
+      errEl.textContent = 'Server error (non-JSON response). The server may be restarting or missing a dependency. Check the VPS logs.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!res.ok || !data.ok) {
+      errEl.textContent = data.error || 'Realism check failed.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    renderRealismResults(data);
+  } catch (e) {
+    errEl.textContent = 'Request failed: ' + e.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = '▶ Run Realism Check';
+    spinner.style.display = 'none';
+  }
+}
+
+function renderRealismResults(data) {
+  document.getElementById('realism-results').style.display = 'block';
+
+  // ── Sample-size banner ──
+  const nBanner = document.getElementById('realism-n-banner');
+  nBanner.style.display = 'block';
+  if (data.low_sample_size) {
+    nBanner.style.background  = 'var(--orange-bg)';
+    nBanner.style.borderColor = 'rgba(255,149,0,.25)';
+    nBanner.innerHTML = `<strong>Low sample size (N=${data.trade_count})</strong> — results are statistically inconclusive, treat with caution.`;
+  } else {
+    nBanner.style.background  = 'var(--green-bg)';
+    nBanner.style.borderColor = 'rgba(52,199,89,.25)';
+    nBanner.innerHTML = `Total trades (N): <strong>${data.trade_count}</strong> — sample size is large enough for a basic read.`;
+  }
+
+  // ── Gross vs Net ROI ──
+  const gross = data.gross, net = data.net;
+  const grossSign = gross.roi_pct >= 0 ? '+' : '-';
+  const netSign   = net.roi_pct   >= 0 ? '+' : '-';
+  const costDrag  = gross.roi_pct - net.roi_pct; // >= 0 for fee_pct >= 0
+
+  document.getElementById('realism-stats-grid').innerHTML = `
+    <div class="stat-card blue">
+      <div class="stat-label">Gross ROI</div>
+      <div class="stat-val ${gross.roi_pct >= 0 ? 'green' : 'red'}">${grossSign}${fmt(gross.roi_pct)}%</div>
+      <div class="stat-sub">Before fees/slippage</div>
+    </div>
+    <div class="stat-card ${net.roi_pct >= 0 ? 'green' : 'red'}">
+      <div class="stat-label">Net ROI</div>
+      <div class="stat-val ${net.roi_pct >= 0 ? 'green' : 'red'}">${netSign}${fmt(net.roi_pct)}%</div>
+      <div class="stat-sub">After ${fmt(data.fee_pct)}% round-trip cost</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Cost Drag</div>
+      <div class="stat-val orange">-${fmt(costDrag)}%</div>
+      <div class="stat-sub">Gross &rarr; Net ROI difference</div>
+    </div>
+  `;
+
+  // ── Buy & Hold comparison ──
+  const bhTable = document.getElementById('realism-bh-table');
+  if (data.buy_and_hold_roi_pct === null) {
+    bhTable.innerHTML = `<tr><td style="color:var(--muted)">No close-price data available for a buy-and-hold comparison.</td></tr>`;
+  } else {
+    const bh = data.buy_and_hold_roi_pct;
+    const stratWins = net.roi_pct > bh;
+    const bhWins    = bh > net.roi_pct;
+    bhTable.innerHTML = `
+      <tr><th>Metric</th><th class="comparison-col-header">Strategy Net ROI</th><th class="comparison-col-header">Buy &amp; Hold ROI</th></tr>
+      <tr>
+        <td>Return over tested range</td>
+        <td class="${stratWins ? 'better' : ''}">${netSign}${fmt(net.roi_pct)}%</td>
+        <td class="${bhWins ? 'better' : ''}">${bh >= 0 ? '+' : '-'}${fmt(bh)}%</td>
+      </tr>
+    `;
+  }
+
+  // ── Walk-forward split ──
+  const wfTable = document.getElementById('realism-wf-table');
+  const wfWarn  = document.getElementById('realism-overfit-warning');
+  const wf = data.walk_forward;
+  if (!wf.in_sample || !wf.out_of_sample) {
+    wfTable.innerHTML = `<tr><td style="color:var(--muted)">${wf.error || 'Walk-forward split unavailable.'}</td></tr>`;
+    wfWarn.style.display = 'none';
+  } else {
+    const is = wf.in_sample, oos = wf.out_of_sample;
+    const isSign  = is.roi_pct  >= 0 ? '+' : '-';
+    const oosSign = oos.roi_pct >= 0 ? '+' : '-';
+    const oosCls  = wf.overfit_warning ? 'worse' : '';
+    wfTable.innerHTML = `
+      <tr><th>Metric</th><th class="comparison-col-header">In-Sample</th><th class="comparison-col-header">Out-of-Sample</th></tr>
+      <tr><td>Date Range</td><td>${is.range.start.slice(0,10)} &rarr; ${is.range.end.slice(0,10)}</td><td>${oos.range.start.slice(0,10)} &rarr; ${oos.range.end.slice(0,10)}</td></tr>
+      <tr><td>ROI %</td><td>${isSign}${fmt(is.roi_pct)}%</td><td class="${oosCls}">${oosSign}${fmt(oos.roi_pct)}%</td></tr>
+      <tr><td>Win Rate</td><td>${fmt(is.win_rate)}%</td><td>${fmt(oos.win_rate)}%</td></tr>
+      <tr><td>Max Drawdown</td><td>${fmt(is.max_drawdown_pct)}%</td><td>${fmt(oos.max_drawdown_pct)}%</td></tr>
+      <tr><td>Trade Count</td><td>${is.trade_count}</td><td>${oos.trade_count}</td></tr>
+    `;
+    if (wf.overfit_warning) {
+      wfWarn.style.display = 'block';
+      wfWarn.style.background  = 'var(--red-bg)';
+      wfWarn.style.borderColor  = 'rgba(255,59,48,.25)';
+      wfWarn.style.color = 'var(--red)';
+      wfWarn.innerHTML = `<strong>Overfit warning:</strong> out-of-sample ROI (${oosSign}${fmt(oos.roi_pct)}%) is less than half of in-sample ROI (${isSign}${fmt(is.roi_pct)}%). This strategy config may be overfit to the in-sample period.`;
+    } else {
+      wfWarn.style.display = 'none';
+    }
+  }
+
+  // ── Risk metrics (net of fees) ──
+  const risk = data.risk;
+  document.getElementById('realism-risk-grid').innerHTML = `
+    <div class="stat-card red">
+      <div class="stat-label">Max Drawdown</div>
+      <div class="stat-val red">${fmt(risk.max_drawdown_pct)}%</div>
+      <div class="stat-sub">Peak-to-trough equity decline (net)</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Longest Losing Streak</div>
+      <div class="stat-val orange">${risk.longest_losing_streak}</div>
+      <div class="stat-sub">Consecutive losing trades</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Longest Time Underwater</div>
+      <div class="stat-val blue">${fmt(risk.longest_underwater_days)}d</div>
+      <div class="stat-sub">From an equity peak until recovered</div>
+    </div>
+  `;
 }
 </script>
 </body>
