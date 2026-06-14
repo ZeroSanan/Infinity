@@ -1684,6 +1684,347 @@ def api_backtest_mixed():
             os.unlink(tmp_path)
 
 
+# ── Realism backtest wrapper (additive, post-processing only) ─────────────────
+# Pure helpers that wrap the EXISTING engines (DCAStrategy / ShortDCAStrategy /
+# MRScalpStrategy / MixedDCABacktest) and post-process their output. No engine
+# logic is modified here.
+
+def _normalize_trade(t, mode):
+    """Normalize a Trade dataclass (long/short/mr_scalp) or a mixed-mode trade
+    dict into a common shape: start, end, invested, profit_loss, profit_percent."""
+    if mode == "mixed":
+        import pandas as pd
+        return {
+            "start":          pd.to_datetime(t["start"]),
+            "end":            pd.to_datetime(t["end"]),
+            "invested":       float(t["invested"]),
+            "profit_loss":    float(t["profit_loss"]),
+            "profit_percent": float(t["profit_percent"]),
+        }
+    return {
+        "start":          t.start_time,
+        "end":            t.end_time,
+        "invested":       float(t.total_invested),
+        "profit_loss":    float(t.profit_loss),
+        "profit_percent": float(t.profit_percent),
+    }
+
+
+def _run_strategy_trades(mode, params, df):
+    """Run the existing engine for `mode` on `df` with `params` and return
+    (normalized_trades, initial_budget). Mirrors the param handling in
+    /api/backtest/run and /api/backtest/mixed — does not alter engine logic."""
+    if mode == "mixed":
+        from mixed_dca_strategy import MixedDCABacktest
+
+        initial_budget = float(params.get("initial_budget", 10000))
+        bull_config = dict(params.get("bull_config", {}))
+        bear_config = dict(params.get("bear_config", {}))
+        if "dump_levels" in bull_config:
+            bull_config["dump_levels"] = [-abs(l) for l in bull_config["dump_levels"]]
+        if "dump_levels" in bear_config:
+            bear_config["dump_levels"] = [abs(l) for l in bear_config["dump_levels"]]
+
+        engine = MixedDCABacktest()
+        result = engine.run(
+            df, bull_config, bear_config, initial_budget,
+            use_entry_indicator=bool(params.get("use_entry_indicator", True)),
+            rsi_overbought=float(params.get("rsi_overbought", 70)),
+            rsi_oversold=float(params.get("rsi_oversold", 30)),
+        )
+        raw_trades = result.get("trades", [])
+    else:
+        from dca_strategy import DCAStrategy
+
+        initial_budget = float(params.get("initial_budget", 1000))
+        _raw_levels = [float(x) for x in params.get("dca_levels", [-6, -9, -12, -16, -20, -24])]
+        dca_levels = [abs(l) for l in _raw_levels] if mode == "short" else [-abs(l) for l in _raw_levels]
+        dca_allocations_raw = params.get("dca_allocations")
+        dca_allocations = [float(x) for x in dca_allocations_raw] if dca_allocations_raw else None
+        take_profit_percent = float(params.get("take_profit_percent", 5.0))
+        stop_loss_percent   = float(params.get("stop_loss_percent", 0.0))
+
+        if mode == "short":
+            from short_dca_strategy import ShortDCAStrategy
+            strategy = ShortDCAStrategy(
+                initial_budget=initial_budget,
+                budget_per_level=dca_allocations,
+                dca_levels=dca_levels,
+                take_profit_percent=take_profit_percent,
+                stop_loss_percent=stop_loss_percent,
+            )
+        elif mode == "mr_scalp":
+            from mr_scalp_strategy import MRScalpStrategy
+            if stop_loss_percent <= 0:
+                raise ValueError("Stop Loss % is required for the Mean-Reversion Scalp (e.g. 1).")
+            _position_size = params.get("position_size")
+            strategy = MRScalpStrategy(
+                initial_budget=initial_budget,
+                position_size=float(_position_size) if _position_size else None,
+                take_profit_percent=take_profit_percent,
+                stop_loss_percent=stop_loss_percent,
+                ema_fast=int(params.get("ema_fast", 50)),
+                ema_slow=int(params.get("ema_slow", 200)),
+                rsi_period=int(params.get("rsi_period", 14)),
+                rsi_long_level=float(params.get("rsi_long_level", 45)),
+                rsi_short_level=float(params.get("rsi_short_level", 55)),
+                allow_short=bool(params.get("allow_short", True)),
+            )
+        else:
+            strategy = DCAStrategy(
+                initial_budget=initial_budget,
+                budget_per_level=dca_allocations,
+                dca_levels=dca_levels,
+                take_profit_percent=take_profit_percent,
+                stop_loss_percent=stop_loss_percent,
+            )
+        raw_trades = strategy.run_backtest(df)
+
+    return [_normalize_trade(t, mode) for t in raw_trades], initial_budget
+
+
+def _fee_adjusted_pnl(trades, fee_pct):
+    """Return copies of `trades` with `net_profit_loss` / `net_profit_percent`
+    added, after deducting a round-trip `fee_pct` cost from each trade's
+    invested amount."""
+    adjusted = []
+    for t in trades:
+        cost = t["invested"] * (fee_pct / 100.0)
+        net_pnl = t["profit_loss"] - cost
+        net_pct = (net_pnl / t["invested"] * 100.0) if t["invested"] else 0.0
+        nt = dict(t)
+        nt["net_profit_loss"] = net_pnl
+        nt["net_profit_percent"] = net_pct
+        adjusted.append(nt)
+    return adjusted
+
+
+def _summarize_trades(trades, initial_budget, pnl_key="profit_loss"):
+    """ROI / win-rate / max-drawdown summary for a list of normalized trades
+    using the given P&L field (gross or fee-adjusted)."""
+    n = len(trades)
+    if n == 0:
+        return {"trade_count": 0, "win_rate": 0.0, "roi_pct": 0.0, "net_pnl": 0.0, "max_drawdown_pct": 0.0}
+
+    net_pnl = sum(t[pnl_key] for t in trades)
+    wins = sum(1 for t in trades if t[pnl_key] > 0)
+
+    equity = initial_budget
+    peak = equity
+    max_dd = 0.0
+    for t in trades:
+        equity += t[pnl_key]
+        peak = max(peak, equity)
+        if peak > 0:
+            max_dd = max(max_dd, (peak - equity) / peak * 100.0)
+
+    return {
+        "trade_count": n,
+        "win_rate": round(wins / n * 100.0, 1),
+        "roi_pct": round(net_pnl / initial_budget * 100.0, 2) if initial_budget else 0.0,
+        "net_pnl": round(net_pnl, 2),
+        "max_drawdown_pct": round(max_dd, 2),
+    }
+
+
+def _risk_metrics(trades, initial_budget, pnl_key="profit_loss"):
+    """Max drawdown %, longest losing streak (consecutive losing trades), and
+    longest time-underwater (days from an equity peak until that peak is
+    recovered) from a list of normalized trades."""
+    if not trades:
+        return {"max_drawdown_pct": 0.0, "longest_losing_streak": 0, "longest_underwater_days": 0.0}
+
+    equity = initial_budget
+    peak = equity
+    peak_date = trades[0]["start"]
+    max_dd = 0.0
+    underwater_since = None
+    longest_underwater = 0.0
+    streak = 0
+    longest_streak = 0
+
+    for t in trades:
+        equity += t[pnl_key]
+        if equity >= peak:
+            if underwater_since is not None:
+                days = (t["end"] - underwater_since).total_seconds() / 86400.0
+                longest_underwater = max(longest_underwater, days)
+                underwater_since = None
+            peak = equity
+            peak_date = t["end"]
+        else:
+            if underwater_since is None:
+                underwater_since = peak_date
+            if peak > 0:
+                max_dd = max(max_dd, (peak - equity) / peak * 100.0)
+
+        if t[pnl_key] < 0:
+            streak += 1
+            longest_streak = max(longest_streak, streak)
+        else:
+            streak = 0
+
+    if underwater_since is not None:
+        days = (trades[-1]["end"] - underwater_since).total_seconds() / 86400.0
+        longest_underwater = max(longest_underwater, days)
+
+    return {
+        "max_drawdown_pct": round(max_dd, 2),
+        "longest_losing_streak": longest_streak,
+        "longest_underwater_days": round(longest_underwater, 2),
+    }
+
+
+def _buy_and_hold_roi(df):
+    """Buy-and-hold ROI % over `df`'s close prices, or None if no 'close' column."""
+    if "close" not in df.columns or len(df) == 0:
+        return None
+    first = float(df["close"].iloc[0])
+    last = float(df["close"].iloc[-1])
+    if first == 0:
+        return None
+    return (last - first) / first * 100.0
+
+
+@app.route("/api/backtest/realism", methods=["POST"])
+def api_backtest_realism():
+    """Cost-adjusted, risk-aware view of a backtest: fee-adjusted ROI,
+    walk-forward (in-sample vs out-of-sample) split, buy-and-hold baseline,
+    drawdown/risk metrics, and a low-sample-size flag. Reuses the existing
+    engines as-is via _run_strategy_trades(); does not modify them."""
+    tmp_path = None
+    try:
+        import pandas as pd
+        from mixed_dca_strategy import load_mixed_data
+        import io, contextlib
+
+        if request.content_type and "multipart" in request.content_type:
+            params   = json.loads(request.form.get("params", "{}"))
+            csv_file = request.files.get("csv_file")
+        else:
+            params   = request.json or {}
+            csv_file = None
+
+        mode    = params.get("mode", "long")
+        fee_pct = float(params.get("fee_pct", 0.1))
+
+        start_date   = params.get("start_date") or None
+        end_date     = params.get("end_date") or None
+        is_start     = params.get("is_start") or None
+        is_end       = params.get("is_end") or None
+        oos_start    = params.get("oos_start") or None
+        oos_end      = params.get("oos_end") or None
+        dataset_name = params.get("dataset")
+
+        # Use the mixed-data loader for every mode — it's a superset (adds
+        # open/close/volume when present, needed for the buy-and-hold
+        # baseline) and the long/short/mr_scalp engines only read
+        # datetime/high/low (plus close for mr_scalp), so extra columns
+        # are harmless.
+        if csv_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+                csv_file.save(tmp)
+                tmp_path = tmp.name
+            with contextlib.redirect_stdout(io.StringIO()):
+                df = load_mixed_data(tmp_path)
+        elif dataset_name:
+            data_path = os.path.join(ROOT, "algo-trading", "data", dataset_name)
+            if not os.path.exists(data_path):
+                return jsonify({"error": f"Dataset not found: {dataset_name}"}), 404
+            with contextlib.redirect_stdout(io.StringIO()):
+                df = load_mixed_data(data_path)
+        else:
+            return jsonify({"error": "No dataset specified"}), 400
+
+        if len(df) == 0:
+            return jsonify({"error": "Dataset is empty"}), 400
+
+        # ── Main run (gross vs fee-adjusted) ─────────────────────────────
+        main_df = df
+        if start_date:
+            main_df = main_df[main_df["datetime"] >= pd.to_datetime(start_date)]
+        if end_date:
+            main_df = main_df[main_df["datetime"] <= pd.to_datetime(end_date)]
+        if len(main_df) == 0:
+            return jsonify({"error": "No candles in the specified date range"}), 400
+
+        main_trades, initial_budget = _run_strategy_trades(mode, params, main_df)
+        main_trades_net = _fee_adjusted_pnl(main_trades, fee_pct)
+
+        gross_summary = _summarize_trades(main_trades, initial_budget, pnl_key="profit_loss")
+        net_summary   = _summarize_trades(main_trades_net, initial_budget, pnl_key="net_profit_loss")
+        risk          = _risk_metrics(main_trades_net, initial_budget, pnl_key="net_profit_loss")
+
+        # ── Buy & hold baseline over the same range ──────────────────────
+        bh_roi = _buy_and_hold_roi(main_df)
+
+        # ── Walk-forward / out-of-sample split ───────────────────────────
+        if not any([is_start, is_end, oos_start, oos_end]):
+            mid = main_df["datetime"].iloc[len(main_df) // 2]
+            is_df  = main_df[main_df["datetime"] < mid]
+            oos_df = main_df[main_df["datetime"] >= mid]
+        else:
+            is_df = main_df
+            if is_start:
+                is_df = is_df[is_df["datetime"] >= pd.to_datetime(is_start)]
+            if is_end:
+                is_df = is_df[is_df["datetime"] <= pd.to_datetime(is_end)]
+            oos_df = main_df
+            if oos_start:
+                oos_df = oos_df[oos_df["datetime"] >= pd.to_datetime(oos_start)]
+            if oos_end:
+                oos_df = oos_df[oos_df["datetime"] <= pd.to_datetime(oos_end)]
+
+        walk_forward = {"in_sample": None, "out_of_sample": None, "overfit_warning": False}
+        if len(is_df) > 0 and len(oos_df) > 0:
+            is_trades, is_budget   = _run_strategy_trades(mode, params, is_df)
+            oos_trades, oos_budget = _run_strategy_trades(mode, params, oos_df)
+            is_summary  = _summarize_trades(is_trades, is_budget, pnl_key="profit_loss")
+            oos_summary = _summarize_trades(oos_trades, oos_budget, pnl_key="profit_loss")
+            is_risk  = _risk_metrics(is_trades, is_budget, pnl_key="profit_loss")
+            oos_risk = _risk_metrics(oos_trades, oos_budget, pnl_key="profit_loss")
+            walk_forward["in_sample"] = {
+                **is_summary,
+                "max_drawdown_pct": is_risk["max_drawdown_pct"],
+                "range": {"start": is_df["datetime"].iloc[0].isoformat(), "end": is_df["datetime"].iloc[-1].isoformat()},
+            }
+            walk_forward["out_of_sample"] = {
+                **oos_summary,
+                "max_drawdown_pct": oos_risk["max_drawdown_pct"],
+                "range": {"start": oos_df["datetime"].iloc[0].isoformat(), "end": oos_df["datetime"].iloc[-1].isoformat()},
+            }
+            walk_forward["overfit_warning"] = oos_summary["roi_pct"] < (is_summary["roi_pct"] / 2)
+        else:
+            walk_forward["error"] = "Not enough candles in one or both walk-forward ranges."
+
+        return jsonify({
+            "ok":   True,
+            "mode": mode,
+            "fee_pct":         fee_pct,
+            "initial_budget":  initial_budget,
+            "trade_count":     gross_summary["trade_count"],
+            "low_sample_size": gross_summary["trade_count"] < 100,
+            "gross": gross_summary,
+            "net":   net_summary,
+            "risk":  risk,
+            "buy_and_hold_roi_pct": (round(bh_roi, 2) if bh_roi is not None else None),
+            "walk_forward": walk_forward,
+            "data_range": {
+                "start":   main_df["datetime"].iloc[0].isoformat(),
+                "end":     main_df["datetime"].iloc[-1].isoformat(),
+                "candles": len(main_df),
+            },
+            "deploy_time": _DEPLOY_TIME,
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
 # ── Routes — Settings (API keys stored in .env) ───────────────────────────────
 
 ENV_PATH = os.path.join(ROOT, ".env")
