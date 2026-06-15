@@ -753,6 +753,10 @@ def _layer1_dxy() -> dict:
     ).json()
     values = data.get("values")
     if not values:
+        if data.get("status") == "error" and data.get("code") in (400, 403, 404):
+            # DXY is not available on Twelve Data's free plan — fall back to
+            # the manual check-now card rather than "Data unavailable".
+            return {"status": "no_key"}
         raise ValueError(data.get("message") or "no DXY data")
 
     closes = [float(v["close"]) for v in reversed(values)]  # oldest -> newest
@@ -927,6 +931,10 @@ def _layer1_vix() -> dict:
     ).json()
     values = data.get("values")
     if not values:
+        if data.get("status") == "error" and data.get("code") in (400, 403, 404):
+            # VIX is not available on Twelve Data's free plan — fall back to
+            # the manual check-now card rather than "Data unavailable".
+            return {"status": "no_key"}
         raise ValueError(data.get("message") or "no VIX data")
 
     closes = [float(v["close"]) for v in reversed(values)]
