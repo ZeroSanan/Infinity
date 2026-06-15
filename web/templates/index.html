@@ -96,6 +96,8 @@
   .ms-pill.blue   { background: rgba(0,122,255,.12);  color: #0a5dc2; }
   .ms-pill.orange { background: rgba(255,149,0,.14);  color: #a05c00; }
   .ms-pill.grey   { background: rgba(142,142,147,.12); color: var(--muted); }
+  .ms-pill.ltgreen{ background: rgba(140,214,113,.22); color: #3e8e2f; }
+  .ms-pill.darkred{ background: rgba(139,0,0,.14);    color: #8b0000; }
 
   .ms-sparkline { width: 100%; height: 46px; display: block; }
   .ms-chart     { width: 100%; height: 64px; display: block; }
@@ -136,6 +138,61 @@
     margin-top: 10px;
     padding: 0 8px;
   }
+
+  /* ── LAYER 1 — Macro Environment ── */
+  .ms-l1-timestamp {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: right;
+    margin-bottom: 8px;
+  }
+
+  .ms-layer1-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 14px 0 4px;
+  }
+  @media (max-width: 1024px) { .ms-layer1-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px)  { .ms-layer1-grid { grid-template-columns: 1fr; } }
+
+  .ms-l1-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    min-height: 184px;
+  }
+  .ms-l1-card.manual {
+    border-style: dashed;
+    border-color: var(--border2);
+  }
+
+  .ms-l1-value  { font-size: 26px; font-weight: 800; letter-spacing: -.4px; text-align: center; font-variant-numeric: tabular-nums; }
+  .ms-l1-change { font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+  .ms-l1-change.up   { color: var(--green); }
+  .ms-l1-change.down { color: var(--red); }
+  .ms-l1-sub  { font-size: 11px; color: var(--muted); text-align: center; }
+  .ms-l1-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: auto; }
+  .ms-l1-card .ms-pill { margin: 0 auto; }
+
+  .ms-l1-manual-icon  { font-size: 24px; text-align: center; color: var(--muted); }
+  .ms-l1-manual-desc  { font-size: 11.5px; color: var(--text2); text-align: center; line-height: 1.45; }
+  .ms-l1-manual-extra { font-size: 11px; color: var(--muted); text-align: center; }
+  .ms-l1-link-btn {
+    display: block; text-align: center; font-size: 12px; font-weight: 700;
+    color: var(--blue); text-decoration: none; padding: 8px; border-radius: 8px;
+    background: var(--blue-bg); margin-top: auto;
+  }
+  .ms-l1-link-btn:hover { background: rgba(0,122,255,.16); }
+  .ms-l1-manual-label { font-size: 10px; color: var(--muted); text-align: center; font-style: italic; }
+  .ms-l1-retry {
+    display: block; margin: 0 auto; text-align: center; font-size: 12px; font-weight: 700;
+    color: var(--blue); background: var(--blue-bg); border: none; border-radius: 8px;
+    padding: 6px 14px; cursor: pointer;
+  }
+  .ms-l1-retry:hover { background: rgba(0,122,255,.16); }
 
   .ms-info-btn {
     background: none; border: none; cursor: pointer;
@@ -1675,7 +1732,15 @@
 
       <!-- LAYER 1 — MACRO ENVIRONMENT -->
       <div class="section-label" style="margin-bottom:10px">LAYER 1 — MACRO ENVIRONMENT</div>
-      <div class="ms-placeholder">Coming soon — DXY, Fear &amp; Greed, Risk-on/off, Fed Rate, BTC Dominance</div>
+      <div id="ms-layer1-body">
+        <div class="ms-l1-timestamp" id="ms-l1-timestamp">Last updated: —</div>
+        <div class="ms-verdict grey" id="ms-l1-verdict">
+          <div class="ms-verdict-emoji" id="ms-l1-verdict-emoji">—</div>
+          <div class="ms-verdict-label" id="ms-l1-verdict-label">Loading…</div>
+        </div>
+        <div class="ms-verdict-note">Based on live indicators only. Manual indicators require your own judgment. Always combine with Layer 2 positioning and Layer 3 entry timing.</div>
+        <div class="ms-layer1-grid" id="ms-layer1-grid"></div>
+      </div>
 
       <!-- LAYER 2 — MARKET POSITIONING -->
       <div class="section-label" style="margin:24px 0 10px">LAYER 2 — MARKET POSITIONING</div>
@@ -2069,6 +2134,243 @@ function renderVerdict(v) {
   emoji.textContent = v.emoji; label.textContent = v.label;
 }
 
+// ── Layer 1 — Macro Environment ───────────────────────────────────────────────
+let _layer1Data = null;
+
+async function loadLayer1() {
+  try {
+    const data = await api('/api/layer1');
+    _layer1Data = data;
+    renderL1Verdict(data.verdict);
+    updateL1Timestamp();
+    document.getElementById('ms-layer1-grid').innerHTML = [
+      l1FearGreed(data.fear_greed),
+      l1BtcDominance(data.btc_dominance),
+      l1Dxy(data.dxy),
+      l1FedFunds(data.fed_funds),
+      l1Yield10y(data.yield_10y),
+      l1Cpi(data.cpi),
+      l1Vix(data.vix),
+      l1ManualCard({
+        name: 'CME FedWatch — Rate Probabilities',
+        desc: 'Market-implied probability of Fed rate cuts or hikes at upcoming meetings. The most forward-looking Fed signal available.',
+        link: 'https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html',
+        btnText: 'Check FedWatch →',
+        modalKey: 'fedwatch',
+      }),
+      l1ManualCard({
+        name: 'Jobs Report — Unemployment Rate',
+        desc: 'Monthly employment data. Strong jobs = Fed keeps rates high. Weak jobs = Fed cuts sooner.',
+        link: 'https://www.bls.gov/news.release/empsit.nr0.htm',
+        btnText: 'Latest Jobs Report →',
+        modalKey: 'jobs',
+        extra: `Next release: <strong>${data.dates.next_jobs_report}</strong>`,
+      }),
+      l1ManualCard({
+        name: 'BTC Rainbow Chart — Cycle Position',
+        desc: 'Where Bitcoin sits in its long-term logarithmic growth cycle. Tells you the macro cycle stage, not short-term direction.',
+        link: 'https://www.blockchaincenter.net/en/bitcoin-rainbow-chart/',
+        btnText: 'Check Rainbow Chart →',
+        modalKey: 'rainbow',
+      }),
+      l1ManualCard({
+        name: 'Global M2 Money Supply',
+        desc: 'Total money in the global financial system. Historically Bitcoin follows M2 with a 3-6 month lag.',
+        link: 'https://fred.stlouisfed.org/series/M2SL',
+        btnText: 'Check M2 on FRED →',
+        modalKey: 'm2',
+      }),
+    ].join('');
+  } catch (e) {
+    renderL1Verdict(null);
+  }
+}
+
+function renderL1Verdict(v) {
+  const box   = document.getElementById('ms-l1-verdict');
+  const emoji = document.getElementById('ms-l1-verdict-emoji');
+  const label = document.getElementById('ms-l1-verdict-label');
+  if (!v) {
+    box.className = 'ms-verdict grey';
+    emoji.textContent = '—'; label.textContent = 'Unable to load';
+    return;
+  }
+  box.className = 'ms-verdict ' + v.color;
+  emoji.textContent = v.emoji; label.textContent = v.label;
+}
+
+function updateL1Timestamp() {
+  const el = document.getElementById('ms-l1-timestamp');
+  if (!_layer1Data || !_layer1Data.timestamp) { el.textContent = 'Last updated: —'; return; }
+  const mins = Math.max(0, Math.round((Date.now() - _layer1Data.timestamp) / 60000));
+  el.textContent = mins < 1 ? 'Last updated: just now'
+    : mins === 1 ? 'Last updated: 1 minute ago'
+    : `Last updated: ${mins} minutes ago`;
+}
+
+function l1InfoBtn(key, label) {
+  return `<button class="ms-info-btn" onclick="openMsModal(MS_MODAL.${key}.title, MS_MODAL.${key}.body)" aria-label="About ${label}" title="About ${label}">ⓘ</button>`;
+}
+
+function l1ErrorCard(name, modalKey) {
+  return `
+    <div class="ms-l1-card">
+      <div class="ms-panel-head"><span>${name}</span>${l1InfoBtn(modalKey, name)}</div>
+      <div class="ms-l1-value">—</div>
+      <span class="ms-pill grey">Data unavailable</span>
+      <button class="ms-l1-retry" onclick="loadLayer1()">Retry</button>
+    </div>`;
+}
+
+function l1ManualCard({ name, desc, link, btnText, modalKey, extra }) {
+  return `
+    <div class="ms-l1-card manual">
+      <div class="ms-panel-head"><span>${name}</span>${l1InfoBtn(modalKey, name)}</div>
+      <div class="ms-l1-manual-icon">🔗</div>
+      <div class="ms-l1-manual-desc">${desc}</div>
+      ${extra ? `<div class="ms-l1-manual-extra">${extra}</div>` : ''}
+      <a class="ms-l1-link-btn" href="${link}" target="_blank" rel="noopener">${btnText}</a>
+      <div class="ms-l1-manual-label">Manual check — not automated</div>
+    </div>`;
+}
+
+function l1FearGreed(d) {
+  if (!d || d.status === 'error') return l1ErrorCard('Fear &amp; Greed Index', 'fng');
+  return `
+    <div class="ms-l1-card">
+      <div class="ms-panel-head"><span>Fear &amp; Greed Index</span>${l1InfoBtn('fng', 'Fear and Greed Index')}</div>
+      <div class="ms-l1-value">${d.value}</div>
+      <span class="ms-pill ${d.color}">${d.label}</span>
+      <svg class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">${msSparkline(d.history)}</svg>
+    </div>`;
+}
+
+function l1BtcDominance(d) {
+  if (!d || d.status === 'error') return l1ErrorCard('BTC Dominance', 'btcdom');
+  const arrow = d.change_24h >= 0 ? '↑' : '↓';
+  const dir   = d.change_24h >= 0 ? 'up' : 'down';
+  return `
+    <div class="ms-l1-card">
+      <div class="ms-panel-head"><span>BTC Dominance</span>${l1InfoBtn('btcdom', 'BTC Dominance')}</div>
+      <div class="ms-l1-value">${d.value.toFixed(1)}%</div>
+      <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_24h).toFixed(2)}% (24h)</div>
+      <span class="ms-pill ${d.color}">${d.label}</span>
+      <div class="ms-l1-note">Bullish for alts when falling. Neutral for BTC.</div>
+    </div>`;
+}
+
+function l1Dxy(d) {
+  if (!d || d.status === 'error') return l1ErrorCard('DXY — US Dollar Index', 'dxy');
+  if (d.status === 'no_key') {
+    return l1ManualCard({
+      name: 'DXY — US Dollar Index',
+      desc: 'US Dollar strength vs. a basket of major currencies. A rising dollar is historically a headwind for crypto; a falling dollar a tailwind.',
+      link: 'https://www.tradingview.com/symbols/TVC-DXY/',
+      btnText: 'Check DXY Chart →',
+      modalKey: 'dxy',
+    });
+  }
+  const arrow = d.change_7d_pct >= 0 ? '↑' : '↓';
+  const dir   = d.change_7d_pct >= 0 ? 'up' : 'down';
+  return `
+    <div class="ms-l1-card">
+      <div class="ms-panel-head"><span>DXY — US Dollar</span>${l1InfoBtn('dxy', 'DXY — US Dollar Index')}</div>
+      <div class="ms-l1-value">${d.value.toFixed(2)}</div>
+      <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_7d_pct).toFixed(2)}% (7d)</div>
+      <span class="ms-pill ${d.color}">${d.label}</span>
+      <svg class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">${msSparkline(d.history)}</svg>
+    </div>`;
+}
+
+function l1FedFunds(d) {
+  if (!d || d.status === 'error') return l1ErrorCard('Fed Funds Rate', 'fedfunds');
+  if (d.status === 'no_key') {
+    return l1ManualCard({
+      name: 'Fed Funds Rate',
+      desc: "The Fed's benchmark interest rate. Cutting cycles are historically bullish for crypto; hiking cycles bearish.",
+      link: 'https://fred.stlouisfed.org/series/FEDFUNDS',
+      btnText: 'Check Fed Funds Rate →',
+      modalKey: 'fedfunds',
+    });
+  }
+  return `
+    <div class="ms-l1-card">
+      <div class="ms-panel-head"><span>Fed Funds Rate</span>${l1InfoBtn('fedfunds', 'Fed Funds Rate')}</div>
+      <div class="ms-l1-value">${d.value.toFixed(2)}%</div>
+      <span class="ms-pill ${d.color}">${d.cycle}</span>
+      <div class="ms-l1-sub">${d.label}</div>
+      <div class="ms-l1-note">Next FOMC: <strong>${d.next_fomc}</strong></div>
+    </div>`;
+}
+
+function l1Yield10y(d) {
+  if (!d || d.status === 'error') return l1ErrorCard('US 10-Year Treasury Yield', 'yield10y');
+  if (d.status === 'no_key') {
+    return l1ManualCard({
+      name: 'US 10-Year Treasury Yield',
+      desc: 'The risk-free benchmark rate crypto competes with for capital. High and rising yields are a headwind; low yields a tailwind.',
+      link: 'https://fred.stlouisfed.org/series/DGS10',
+      btnText: 'Check 10Y Yield →',
+      modalKey: 'yield10y',
+    });
+  }
+  const arrow = d.change_7d >= 0 ? '↑' : '↓';
+  const dir   = d.change_7d >= 0 ? 'up' : 'down';
+  return `
+    <div class="ms-l1-card">
+      <div class="ms-panel-head"><span>US 10-Year Yield</span>${l1InfoBtn('yield10y', 'US 10-Year Treasury Yield')}</div>
+      <div class="ms-l1-value">${d.value.toFixed(2)}%</div>
+      <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_7d).toFixed(2)}pp (7d)</div>
+      <span class="ms-pill ${d.color}">${d.label}</span>
+    </div>`;
+}
+
+function l1Cpi(d) {
+  if (!d || d.status === 'error') return l1ErrorCard('CPI — Inflation Rate', 'cpi');
+  if (d.status === 'no_key') {
+    return l1ManualCard({
+      name: 'CPI — Inflation Rate',
+      desc: 'Year-over-year consumer price inflation. High/rising inflation keeps the Fed hawkish; low/falling inflation lets it ease.',
+      link: 'https://fred.stlouisfed.org/series/CPIAUCSL',
+      btnText: 'Check CPI →',
+      modalKey: 'cpi',
+    });
+  }
+  const dirLabel = d.direction === 'rising' ? '↑ Rising vs. last month' : '↓ Falling vs. last month';
+  return `
+    <div class="ms-l1-card">
+      <div class="ms-panel-head"><span>CPI — Inflation</span>${l1InfoBtn('cpi', 'CPI — Inflation Rate')}</div>
+      <div class="ms-l1-value">${d.value.toFixed(1)}%</div>
+      <div class="ms-l1-sub">${dirLabel}</div>
+      <span class="ms-pill ${d.color}">${d.label}</span>
+      <div class="ms-l1-sub">${d.vs_target}</div>
+      <div class="ms-l1-note">Next release: <strong>${d.next_release}</strong></div>
+    </div>`;
+}
+
+function l1Vix(d) {
+  if (!d || d.status === 'error') return l1ErrorCard('VIX — Market Fear Index', 'vix');
+  if (d.status === 'no_key') {
+    return l1ManualCard({
+      name: 'VIX — Market Fear Index',
+      desc: 'Wall Street\'s "fear gauge." Calm markets (low VIX) favor risk assets; spikes above 30 often coincide with crypto selloffs.',
+      link: 'https://www.tradingview.com/symbols/CBOE-VIX/',
+      btnText: 'Check VIX →',
+      modalKey: 'vix',
+    });
+  }
+  const arrow = d.change_7d >= 0 ? '↑' : '↓';
+  const dir   = d.change_7d >= 0 ? 'up' : 'down';
+  return `
+    <div class="ms-l1-card">
+      <div class="ms-panel-head"><span>VIX — Fear Index</span>${l1InfoBtn('vix', 'VIX — Market Fear Index')}</div>
+      <div class="ms-l1-value">${d.value.toFixed(1)}</div>
+      <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_7d).toFixed(1)} (7d)</div>
+      <span class="ms-pill ${d.color}">${d.label}</span>
+      <svg class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">${msSparkline(d.history)}</svg>
+    </div>`;
+}
+
 // ── Market Signals info modal ─────────────────────────────────────────────────
 const MS_MODAL = {
   funding: {
@@ -2117,6 +2419,156 @@ const MS_MODAL = {
       <p>🟢 <strong>45% to 55% either way — Balanced</strong><br>No extreme signal from positioning alone.</p>
       <p><strong>WHEN TOP TRADERS DIFFER FROM RETAIL</strong><br>If retail is 70% long but top traders are only 45% long — sophisticated money is not following the crowd. This divergence is one of the strongest warning signals on this card. Smart money sees something retail does not.</p>
     `
+  },
+  fng: {
+    title: 'Fear and Greed Index',
+    body: `
+      <p>Measures the overall emotional state of the crypto market on a scale from 0 (Extreme Fear) to 100 (Extreme Greed). Updated daily.</p>
+      <p>This is a <strong>CONTRARIAN</strong> indicator — it works opposite to what feels natural:</p>
+      <p>🔴 <strong>Extreme Fear (0-24)</strong><br>Everyone is panicking and selling. Most people who wanted to sell have already sold. Historically this precedes recoveries. It feels terrible — that is the point.</p>
+      <p>🟠 <strong>Fear (25-44)</strong><br>Market nervous. More sellers than buyers. Still a cautious bullish lean for patient traders.</p>
+      <p>⚪ <strong>Neutral (45-55)</strong><br>No strong signal. Market undecided. Wait for a clearer reading.</p>
+      <p>🟡 <strong>Greed (56-74)</strong><br>Market optimistic. Buyers crowding in. Caution on new long positions — late buyers often get caught.</p>
+      <p>🟢 <strong>Extreme Greed (75-100)</strong><br>Everyone euphoric. Most people who wanted to buy have already bought. Historically precedes corrections. Feels amazing — that is the warning.</p>
+      <p><strong>THE SPARKLINE</strong><br>Shows 30 days of history. A reading that has been in Extreme Fear for multiple days is a stronger signal than a single-day spike. Watch for the trend turning, not just the current number.</p>
+      <p>Source: alternative.me — updates once per day.</p>
+    `
+  },
+  btcdom: {
+    title: 'BTC Dominance',
+    body: `
+      <p>BTC Dominance is Bitcoin's share of the total crypto market capitalization. If Bitcoin is worth $1 trillion and the whole crypto market is worth $2 trillion, BTC dominance is 50%.</p>
+      <p>Think of it as a measure of where money is hiding within the crypto world.</p>
+      <p>🟠 <strong>RISING DOMINANCE — BTC Season</strong><br>Money is flowing FROM altcoins INTO Bitcoin. Investors are choosing the safer, more established asset. This is risk-off behavior within crypto. Altcoins tend to underperform or fall in USD terms. Bitcoin holds better or rises while everything else struggles.</p>
+      <p>🔵 <strong>FALLING DOMINANCE — Altcoin Season</strong><br>Money is flowing FROM Bitcoin INTO altcoins. Investors are confident enough to take more risk. ETH, SOL, and smaller coins tend to outperform Bitcoin. This is risk-on behavior within crypto — a sign of broad market confidence.</p>
+      <p><strong>WHY IT MATTERS FOR YOUR COINS</strong><br>You trade BTC, ETH, SOL, ZEC, and XAUT. When dominance is rising, BTC strategies are safer. When dominance is falling, altcoin strategies have more tailwind.</p>
+      <p><strong>IMPORTANT</strong><br>BTC dominance is an internal crypto signal — it tells you about money flow within the crypto market, not about the overall macro environment. Always combine with external macro signals like DXY and Fear and Greed.</p>
+      <p>Source: CoinGecko — updates every few minutes.</p>
+    `
+  },
+  dxy: {
+    title: 'DXY — US Dollar Index',
+    body: `
+      <p>The DXY measures the strength of the US Dollar against a basket of six major currencies (Euro, Japanese Yen, British Pound, Canadian Dollar, Swedish Krona, Swiss Franc).</p>
+      <p>Think of it as the global price of the dollar.</p>
+      <p><strong>THE SEESAW</strong><br>Imagine a seesaw with the dollar on one side and everything else (crypto, stocks, gold) on the other. When the dollar side goes up, the other side goes down.</p>
+      <p>📈 <strong>DXY RISING — Dollar Strengthening</strong><br>Big money moves INTO dollars. Why hold volatile Bitcoin when you can hold stable dollars earning good interest? Capital flows out of crypto and into dollar-denominated assets. Historically one of the strongest headwinds for crypto.</p>
+      <p>Real example: In 2022, DXY rose from 95 to 114 — its strongest level in 20 years. In the same period, Bitcoin fell from $48,000 to $16,000.</p>
+      <p>📉 <strong>DXY FALLING — Dollar Weakening</strong><br>Dollars are becoming less attractive. Investors seek better returns elsewhere. Money flows into risky assets including crypto. A falling dollar is historically one of the strongest tailwinds for crypto bull markets.</p>
+      <p>Real example: In 2020-2021, DXY fell from 103 to 89 as the Fed cut rates to zero and printed money. Bitcoin rose from $10,000 to $69,000 in the same period.</p>
+      <p><strong>WHY THE DOLLAR MOVES</strong><br>Fed raises interest rates → dollar attractive → DXY up. Fed cuts rates → dollar less attractive → DXY down. Global crisis → everyone rushes to dollar safety → DXY up. Global confidence → investors take risk → DXY down.</p>
+      <p>The 7-day trend matters more than the daily move. A dollar that has been consistently strengthening for a week is a real signal. A one-day spike is noise.</p>
+      <p>Source: Twelve Data — daily candle, 30-day history.</p>
+    `
+  },
+  fedfunds: {
+    title: 'Fed Funds Rate',
+    body: `
+      <p>The Federal Funds Rate is the interest rate set by the US Federal Reserve — the central bank of the United States. It is the single most powerful number in global finance.</p>
+      <p>Think of it as the price of money itself. When this number changes, the cost of every mortgage, business loan, and credit card in America changes with it.</p>
+      <p>📈 <strong>RISING CYCLE — Tightening</strong><br>The Fed is making money more expensive to borrow. Why? To slow down an overheating economy and reduce inflation. The consequences for crypto:</p>
+      <p>→ Safe investments (bonds) start paying good returns<br>→ Why hold risky Bitcoin when bonds pay 5% safely?<br>→ Money flows OUT of crypto into bonds and cash<br>→ Crypto falls</p>
+      <p>🟡 <strong>HOLDING — On Hold</strong><br>The Fed has stopped moving rates. The market is waiting to see which direction comes next. Watch the language in Fed speeches for hints — words like 'restrictive for longer' mean no cuts soon (bearish). Words like 'data dependent' mean cuts are possible (neutral to bullish).</p>
+      <p>📉 <strong>CUTTING CYCLE — Easing</strong><br>The Fed is making money cheaper to borrow. The economy needs stimulation. Consequences for crypto:</p>
+      <p>→ Safe investments (bonds) pay less return<br>→ Investors seek better returns in riskier assets<br>→ Money flows INTO crypto, stocks, gold<br>→ Crypto rises</p>
+      <p><strong>NEXT FOMC MEETING</strong><br>The Fed meets 8 times per year on a fixed schedule. The date shown is the next meeting where a rate decision will be announced. Markets often move BEFORE the meeting based on expectations — not after the announcement.</p>
+      <p>Source: Federal Reserve of St. Louis (FRED) — monthly data, most authoritative source available.</p>
+    `
+  },
+  yield10y: {
+    title: 'US 10-Year Treasury Yield',
+    body: `
+      <p>The 10-Year Treasury Yield is the annual return investors earn for lending money to the US government for 10 years. It is considered the global benchmark for the 'risk-free rate' — the return you can get with essentially zero risk.</p>
+      <p>Every other investment in the world is compared to this number. Crypto must compete with it for capital.</p>
+      <p><strong>THE COMPETITION</strong><br>Imagine you have $10,000 to invest. You have two options:</p>
+      <p>Option A: Buy Bitcoin — could go up 100% or down 50%<br>Option B: Buy a Treasury bond — guaranteed 5% per year</p>
+      <p>When the yield is HIGH (5%+), Option B looks very attractive. Many investors choose the guaranteed return over the risky one. Money flows OUT of crypto into bonds.</p>
+      <p>When the yield is LOW (2%), Option B is unattractive. $200 per year on $10,000 is barely worth it. Investors take more risk looking for better returns. Money flows INTO crypto.</p>
+      <p>📈 <strong>YIELD RISING — Bad for crypto</strong><br>Either the economy is strong (less need for safety) or inflation is persistent (Fed keeping rates high). Either way, bonds become more attractive vs crypto.</p>
+      <p>📉 <strong>YIELD FALLING — Good for crypto</strong><br>Either the economy is weakening (Fed will cut) or inflation is cooling (Fed can cut). Bonds become less competitive. Money seeks risk assets.</p>
+      <p><strong>THE RELATIONSHIP WITH THE FED</strong><br>The 10Y yield is not directly set by the Fed — it is set by the bond market. But it closely follows Fed rate expectations. When the market believes the Fed will cut rates, the 10Y yield falls in anticipation — sometimes months before any cut.</p>
+      <p>This makes the 10Y yield a LEADING indicator of Fed policy, while the Fed Funds Rate card shows the CURRENT policy. Both together give you the full picture.</p>
+      <p>Source: FRED — daily data, US Treasury.</p>
+    `
+  },
+  cpi: {
+    title: 'CPI — Inflation Rate',
+    body: `
+      <p>CPI (Consumer Price Index) measures how much prices are rising across the economy — food, housing, energy, clothing, medical care — everything the average person buys.</p>
+      <p>The Federal Reserve's target is 2% annual inflation. Everything above or below this target triggers a policy response that affects crypto.</p>
+      <p>🔴 <strong>HIGH INFLATION (above 4%)</strong><br>Prices rising too fast. The Fed must raise interest rates to slow things down. Higher rates make the dollar attractive and crypto less attractive. This is the environment that caused the 2022 crypto crash.</p>
+      <p>🟡 <strong>ELEVATED (2-4%)</strong><br>Above target but moving in the right direction may allow the Fed to hold or eventually cut. Watch the DIRECTION more than the number — falling from 6% to 4% is bullish even though 4% is still high.</p>
+      <p>🟢 <strong>AT TARGET OR BELOW (below 2%)</strong><br>The Fed has achieved its goal or inflation is too low. The Fed can cut rates or keep them low. Cheap money environment — historically bullish for crypto.</p>
+      <p><strong>THE DIRECTION MATTERS MORE THAN THE NUMBER</strong><br>CPI at 5% and falling is better for crypto than CPI at 3% and rising. Markets price in the trajectory, not just today's reading.</p>
+      <p><strong>WHEN IT RELEASES</strong><br>CPI is released monthly by the US Bureau of Labor Statistics, usually on the 10th-13th of each month. It is one of the most market-moving data releases in the world. Crypto often makes sharp moves on CPI release days — high CPI = immediate drop, low CPI = immediate pump.</p>
+      <p>Source: FRED — monthly data, Bureau of Labor Statistics.</p>
+    `
+  },
+  vix: {
+    title: 'VIX — Market Fear Index',
+    body: `
+      <p>The VIX (Volatility Index) measures how much fear and uncertainty exists in the US stock market. It is calculated from options prices on the S&amp;P 500 — when investors are scared and buying insurance (put options) the VIX rises.</p>
+      <p>Nicknamed 'the fear gauge' of Wall Street.</p>
+      <p>Think of VIX like a weather forecast for financial storms. Low VIX = sunny skies. High VIX = storm warning.</p>
+      <p>🟢 <strong>BELOW 15 — Calm Markets</strong><br>Investors are relaxed. Nobody is buying insurance. Risk appetite is high. Money flows into risky assets including crypto. Bull market conditions.</p>
+      <p>⚪ <strong>15-25 — Normal Uncertainty</strong><br>Typical market conditions. Some concern but no panic. Neutral signal for crypto.</p>
+      <p>🟡 <strong>25-30 — Elevated Fear</strong><br>Investors are worried. Buying insurance. Risk appetite declining. Crypto may underperform or see increased volatility. Caution warranted.</p>
+      <p>🔴 <strong>ABOVE 30 — High Fear</strong><br>Significant fear in traditional markets. Major institutions reducing risk. Capital flowing to safety. Crypto usually falls alongside stocks in this environment.</p>
+      <p>🚨 <strong>ABOVE 40 — Crisis Level</strong><br>Extreme panic. Market dislocation. Crypto initially crashes with everything else as institutions sell everything to raise cash. However — historically after the initial shock passes, VIX spikes above 40 have preceded strong crypto recoveries as fear exhausts itself.</p>
+      <p><strong>WHY STOCK MARKET FEAR AFFECTS CRYPTO</strong><br>Institutional investors manage portfolios across stocks, bonds, AND crypto. When stocks panic, institutions sell crypto too to raise cash and reduce overall portfolio risk. The correlation between VIX and crypto is not perfect but is strong during crisis periods.</p>
+      <p>Source: Twelve Data — daily, CBOE VIX index.</p>
+    `
+  },
+  fedwatch: {
+    title: 'CME FedWatch Tool',
+    body: `
+      <p>The CME FedWatch Tool shows what probability the futures market assigns to different Fed rate outcomes at each upcoming FOMC meeting.</p>
+      <p>For example it might show:<br>→ 70% probability: Fed cuts by 0.25% at next meeting<br>→ 25% probability: Fed holds rates unchanged<br>→ 5% probability: Fed cuts by 0.50%</p>
+      <p>This is the market's collective forecast of Fed policy — not a guess, but the actual betting positions of professional traders with real money at stake. It is arguably the most important forward-looking macro signal for crypto.</p>
+      <p><strong>HOW TO READ IT</strong><br>High probability of cuts → money anticipates cheaper borrowing soon → crypto tends to rise in anticipation BEFORE any cut actually happens.</p>
+      <p>High probability of hikes → money anticipates expensive borrowing → crypto tends to fall in anticipation.</p>
+      <p><strong>WHY IT IS NOT AUTOMATED</strong><br>CME does not provide a simple free public API for this data. The link takes you directly to their tool. Check it before any FOMC meeting and after any major economic data release (CPI, jobs report) as those events shift the probabilities significantly.</p>
+      <p>Check this weekly minimum. Check it immediately after every CPI and jobs report release.</p>
+    `
+  },
+  jobs: {
+    title: 'Jobs Report — Non-Farm Payrolls',
+    body: `
+      <p>The Jobs Report (officially: Non-Farm Payrolls) is released on the first Friday of every month by the US Bureau of Labor Statistics. It shows how many jobs were added or lost in the previous month and the current unemployment rate.</p>
+      <p>It is one of the most market-moving data releases in the world.</p>
+      <p><strong>THE COUNTERINTUITIVE RULE</strong><br>Bad jobs news is often good for crypto. Good jobs news is often bad for crypto.</p>
+      <p>This seems backwards. Here is why:</p>
+      <p><strong>STRONG JOBS REPORT</strong><br>Many jobs added, unemployment low → economy is hot → inflation risk → Fed keeps rates high or raises them → expensive money → crypto falls.</p>
+      <p><strong>WEAK JOBS REPORT</strong><br>Few jobs added, unemployment rising → economy cooling → less inflation risk → Fed will cut rates sooner → cheap money coming → crypto rises in anticipation.</p>
+      <p>Markets are always pricing in the FUTURE, not the present. A weak economy today means cheap money tomorrow — and cheap money is the fuel for crypto bull markets.</p>
+      <p><strong>THE UNEMPLOYMENT AND INFLATION CROSS</strong><br>Employment and inflation pull against each other. The Fed cannot fix both simultaneously. When employment is too strong, inflation rises. When inflation is controlled, unemployment often rises. The Fed is always balancing between them — and which problem is currently worse determines whether rates go up or down.</p>
+      <p>Releases: First Friday of every month, 8:30 AM EST.</p>
+    `
+  },
+  rainbow: {
+    title: 'Bitcoin Rainbow Chart',
+    body: `
+      <p>The Bitcoin Rainbow Chart plots Bitcoin's price against a logarithmic regression curve — a mathematical model of Bitcoin's long-term growth trend — and divides the space around it into colored bands.</p>
+      <p>Think of it as a map of where you are in the Bitcoin cycle, from the deepest bottom to the most extreme top.</p>
+      <p><strong>THE BANDS (bottom to top)</strong></p>
+      <p>🔵 Basically a Fire Sale — Historic bottom. Extreme accumulation opportunity.<br>🟦 Buy — Deep value. Strong long-term entry.<br>🟩 Accumulate — Below fair value. Good entry.<br>🟨 Still cheap — Around fair value.<br>🟧 HODL — Above fair value. Hold don't buy.<br>🟧 Is this a bubble? — Getting expensive.<br>🔴 FOMO intensifies — Bubble territory.<br>🔴 Sell. Seriously, sell. — Extreme overvaluation.<br>🔴 Maximum Bubble Territory — Historic top zone.</p>
+      <p><strong>THIS IS A LONG-TERM TOOL</strong><br>The rainbow chart is NOT for timing trades this week. It tells you the macro cycle position — whether you are in a historically cheap zone (strong long-term entry) or an expensive zone (reduce exposure, take profits).</p>
+      <p>If the chart shows Bitcoin in the blue/green bands, the macro cycle context strongly favors accumulation regardless of short-term noise. If it shows red bands, the cycle context suggests caution regardless of how bullish the news feels.</p>
+      <p>Use this to set your overall bias for months ahead, not for individual trade entries.</p>
+    `
+  },
+  m2: {
+    title: 'Global M2 Money Supply',
+    body: `
+      <p>M2 is the total amount of money in circulation — cash, bank deposits, and short-term savings — across the global financial system.</p>
+      <p>Think of M2 as the total water level in the global financial ocean. When water level rises, all boats (assets including crypto) float higher. When water level falls, all boats sink.</p>
+      <p><strong>THE BITCOIN CORRELATION</strong><br>Historically, Bitcoin's price has followed Global M2 with approximately a 3-6 month lag. When central banks around the world (Federal Reserve, European Central Bank, Bank of Japan, People's Bank of China) print money and expand M2, that money eventually finds its way into Bitcoin.</p>
+      <p>When central banks tighten and M2 contracts, Bitcoin tends to follow downward 3-6 months later.</p>
+      <p><strong>WHY THE LAG</strong><br>Newly created money doesn't instantly reach crypto markets. It first goes into banks, then into businesses and consumers, then eventually into investment accounts, and finally into risk assets like crypto. This transmission takes months.</p>
+      <p><strong>HOW TO USE IT</strong><br>M2 rising for 3-6 months → tailwind for crypto is building even if price hasn't moved yet. M2 falling for 3-6 months → headwind building even if price currently looks strong.</p>
+      <p>This is a slow-moving, long-term signal — not for weekly trading decisions. Use it to understand the macro liquidity environment over quarters.</p>
+      <p>Note: The FRED link shows US M2. True global M2 requires combining multiple central bank data sources — check Twitter/X for 'Global M2 Bitcoin' charts which traders compile and share regularly.</p>
+    `
   }
 };
 
@@ -2140,7 +2592,7 @@ function showPage(id, btn){
   if(id === 'strategies'){ loadAccounts(); loadStrategies(); }
   if(id === 'dca-models') { loadDCAModels(); }
   if(id === 'regime')     loadRegimeState();
-  if(id === 'market-signals') loadLayer2();
+  if(id === 'market-signals') { loadLayer2(); loadLayer1(); }
 }
 
 // ── Strategy tabs ─────────────────────────────────────────────────────────────
@@ -3393,10 +3845,13 @@ async function loadRegimeState(){
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 refresh();
 loadLayer2();
+loadLayer1();
 refreshRunning();
 setInterval(refresh, 5000);
 setInterval(refreshRunning, 5000);
 setInterval(() => loadLayer2(), 300000);
+setInterval(() => loadLayer1(), 900000);
+setInterval(updateL1Timestamp, 60000);
 </script>
 </body>
 </html>
