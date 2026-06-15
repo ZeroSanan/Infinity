@@ -24,6 +24,11 @@ INTERVAL_MS = {
 # EMA-200 readiness — matches signal_fn.get_verdict()'s warmup_ok check.
 WARMUP_CANDLES = 200
 
+# signal_fn.get_verdict() is O(window) per call, so harness.run_walk() over n
+# candles is O(n^2)-ish. Cap the total candle count so a Signal Scan request
+# stays well within a typical web-request timeout.
+MAX_SCAN_CANDLES = 2000
+
 
 def fetch_replay_window(symbol: str, interval: str, t_ms: int, lookahead_n: int = 6,
                          warmup: int = WARMUP_CANDLES) -> tuple[dict, dict]:
@@ -98,3 +103,72 @@ def fetch_replay_window(symbol: str, interval: str, t_ms: int, lookahead_n: int 
         "open_time": [int(k[0]) for k in future_raw],
     }
     return history, future
+
+
+def fetch_candle_range(symbol: str, interval: str, start_ms: int, end_ms: int,
+                        warmup: int = WARMUP_CANDLES,
+                        max_candles: int = MAX_SCAN_CANDLES) -> dict:
+    """
+    Fetch every candle covering [start_ms - warmup*step, end_ms], for the
+    Signal Scan walk (signal_lab.harness.run_walk). Paginates Binance's
+    1000-candle-per-request limit as needed. Returned dict is oldest-first
+    and includes "open_time"/"close_time" so callers can map signal/trade
+    indices back to real timestamps.
+
+    Raises ValueError if the range would need more than `max_candles`
+    candles (the walk is O(n^2)-ish — see MAX_SCAN_CANDLES).
+    """
+    if interval not in INTERVAL_MS:
+        raise ValueError(f"Unsupported interval: {interval}")
+    if end_ms <= start_ms:
+        raise ValueError("end date must be after start date")
+    step_ms = INTERVAL_MS[interval]
+
+    fetch_start = start_ms - warmup * step_ms
+    needed = (end_ms - fetch_start) // step_ms + 2
+    if needed > max_candles:
+        raise ValueError(
+            f"Requested range needs ~{needed} candles at {interval} "
+            f"(limit {max_candles}). Use a shorter date range or a larger interval."
+        )
+
+    all_klines: list = []
+    cursor = fetch_start
+    while cursor <= end_ms:
+        resp = requests.get(
+            _KLINES_URL,
+            params={
+                "symbol": symbol,
+                "interval": interval,
+                "startTime": cursor,
+                "endTime": end_ms,
+                "limit": 1000,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        batch = resp.json()
+        if isinstance(batch, dict):
+            raise ValueError(batch.get("msg", "Binance API error"))
+        if not batch:
+            break
+        all_klines.extend(batch)
+        last_open = int(batch[-1][0])
+        if last_open <= cursor:  # safety net against an infinite loop
+            break
+        cursor = last_open + step_ms
+        if len(batch) < 1000:
+            break
+
+    if not all_klines:
+        raise ValueError("No kline data returned for the requested range.")
+
+    return {
+        "open":       [float(k[1]) for k in all_klines],
+        "high":       [float(k[2]) for k in all_klines],
+        "low":        [float(k[3]) for k in all_klines],
+        "close":      [float(k[4]) for k in all_klines],
+        "volume":     [float(k[5]) for k in all_klines],
+        "open_time":  [int(k[0]) for k in all_klines],
+        "close_time": [int(k[6]) for k in all_klines],
+    }

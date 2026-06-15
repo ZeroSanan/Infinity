@@ -589,6 +589,14 @@
     </div>
   </header>
 
+  <!-- ══ PAGE MODE TOGGLE ══ -->
+  <div class="mode-toggle-wrap">
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="page-btn-backtest" onclick="setPageMode('backtest')">Backtest</button>
+      <button class="mode-btn" id="page-btn-signal" onclick="setPageMode('signal')">&#128260;&ensp;Signal Testing</button>
+    </div>
+  </div>
+
   <!-- ══ PRESETS ROW ══ -->
   <div class="presets-panel" id="presets-panel" style="display:none">
     <div class="panel-head">Top Strategies from Optimizer <span id="presets-sub" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--muted);margin-left:6px"></span></div>
@@ -876,7 +884,6 @@
         <div class="mode-toggle">
           <button class="mode-btn active" id="tab-btn-results" onclick="setResultsTab('results')">Results</button>
           <button class="mode-btn" id="tab-btn-realism" onclick="setResultsTab('realism')">&#129518;&ensp;Realism Check</button>
-          <button class="mode-btn" id="tab-btn-replay" onclick="setResultsTab('replay')">&#128260;&ensp;Signal Replay</button>
         </div>
       </div>
 
@@ -1056,91 +1063,217 @@
         </div>
       </div>
 
-      <!-- ══ SIGNAL REPLAY SECTION ══ -->
-      <div id="replay-section" style="display:none">
+    </main>
+  </div>
+
+  <!-- ══ SIGNAL TESTING (full width) ══ -->
+  <div id="signal-testing-section" style="display:none">
+
+    <!-- Signal Scan / Point-in-Time Test Tabs -->
+    <div class="mode-toggle-wrap">
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="sigtab-btn-scan" onclick="setSignalTab('scan')">Signal Scan</button>
+        <button class="mode-btn" id="sigtab-btn-replay" onclick="setSignalTab('replay')">&#128260;&ensp;Point-in-Time Test</button>
+      </div>
+    </div>
+
+    <!-- ══ SIGNAL SCAN ══ -->
+    <div id="signal-scan-section">
+      <div class="panel">
+        <div class="panel-head">Signal Scan Settings</div>
+        <div class="panel-body">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+            Walks your live signal logic (signal_lab/signal_fn.py, a standalone copy of
+            core.regime_live) candle-by-candle over the chosen date range — at each step
+            only candles up to that point are visible, exactly as the live engine would have
+            seen it (no future data). Shows every BUY (LONG_NOW) / SELL (SHORT_NOW) signal it
+            would have fired, and how those trades would have performed vs. baselines.
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Symbol</label>
+              <input type="text" id="scan-symbol" value="BTCUSDT" placeholder="BTCUSDT">
+            </div>
+            <div class="form-group">
+              <label>Interval</label>
+              <select id="scan-interval">
+                <option value="1h">1h</option>
+                <option value="2h">2h</option>
+                <option value="4h" selected>4h</option>
+                <option value="6h">6h</option>
+                <option value="12h">12h</option>
+                <option value="1d">1d</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Start Date</label>
+              <input type="date" id="scan-start">
+            </div>
+            <div class="form-group">
+              <label>End Date</label>
+              <input type="date" id="scan-end">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Take Profit (%)</label>
+              <input type="number" id="scan-tp" value="3" min="0.1" step="0.1">
+            </div>
+            <div class="form-group">
+              <label>Stop Loss (%)</label>
+              <input type="number" id="scan-sl" value="2" min="0.1" step="0.1">
+            </div>
+            <div class="form-group">
+              <label>Horizon (candles)</label>
+              <input type="number" id="scan-horizon" value="12" min="1" max="500" step="1">
+            </div>
+          </div>
+
+          <button class="run-btn" id="scan-run-btn" onclick="runSignalScan()" style="margin-bottom:0">
+            <span id="scan-run-btn-text">&#9654;&ensp;Run Signal Scan</span>
+            <div class="spinner" id="scan-spinner" style="display:none"></div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scan Error Banner -->
+      <div class="error-banner" id="scan-error" style="display:none"></div>
+
+      <!-- Scan Results -->
+      <div id="scan-results" style="display:none">
+
+        <div class="warnings-box" id="scan-low-sample" style="display:none">
+          &#9888;&ensp;Only <span id="scan-complete-count"></span> completed trade(s) in this
+          range &mdash; results below are <strong>not statistically meaningful</strong>. Try a
+          longer date range or a smaller interval to collect more signals.
+        </div>
+
+        <div class="stats-grid" id="scan-stats-grid"></div>
+
+        <!-- Baseline Comparison -->
         <div class="panel">
-          <div class="panel-head">Signal Replay Settings</div>
-          <div class="panel-body">
-            <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
-              Pick a historical moment T. The system verdict is computed using <strong>only</strong>
-              candles that closed at or before T (this is core.regime_live's live signal logic,
-              replayed via signal_lab/signal_fn.py) — no future data is ever used.
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Symbol</label>
-                <input type="text" id="replay-symbol" value="BTCUSDT" placeholder="BTCUSDT">
-              </div>
-              <div class="form-group">
-                <label>Interval</label>
-                <select id="replay-interval">
-                  <option value="1h">1h</option>
-                  <option value="2h">2h</option>
-                  <option value="4h" selected>4h</option>
-                  <option value="6h">6h</option>
-                  <option value="12h">12h</option>
-                  <option value="1d">1d</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Moment T (date &amp; time, UTC)</label>
-                <input type="datetime-local" id="replay-datetime">
-              </div>
-              <div class="form-group">
-                <label>Lookahead (candles after T)</label>
-                <input type="number" id="replay-lookahead" value="6" min="1" max="100">
-              </div>
-            </div>
-
-            <button class="run-btn" id="replay-run-btn" onclick="runReplay()" style="margin-bottom:0">
-              <span id="replay-run-btn-text">&#9654;&ensp;Get Verdict</span>
-              <div class="spinner" id="replay-spinner" style="display:none"></div>
-            </button>
-          </div>
-        </div>
-
-        <!-- Replay Error Banner -->
-        <div class="error-banner" id="replay-error" style="display:none"></div>
-
-        <!-- Step A — your guess -->
-        <div class="panel" id="replay-guess-panel" style="display:none">
-          <div class="panel-head">Step 1 &mdash; What's Your Call?</div>
-          <div class="panel-body">
-            <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
-              Using only data up to and including <strong id="replay-t-label"></strong>, what would you do?
-            </div>
-            <div class="replay-guess-row">
-              <button class="replay-guess-btn long" id="replay-guess-long" onclick="recordGuess('LONG')">I'd go LONG</button>
-              <button class="replay-guess-btn short" id="replay-guess-short" onclick="recordGuess('SHORT')">I'd go SHORT</button>
-              <button class="replay-guess-btn wait" id="replay-guess-wait" onclick="recordGuess('WAIT')">I'd WAIT</button>
+          <div class="panel-head">Strategy vs. Baselines (net of fees)</div>
+          <div class="panel-body" style="padding:0">
+            <div style="overflow-x:auto">
+              <table class="comparison-table" id="scan-baseline-table"></table>
             </div>
           </div>
         </div>
 
-        <!-- Step B — system verdict -->
-        <div class="panel" id="replay-verdict-panel" style="display:none">
-          <div class="panel-head">Step 2 &mdash; System Verdict</div>
-          <div class="panel-body">
-            <div class="stats-grid" id="replay-verdict-grid"></div>
-            <button class="run-btn" id="replay-reveal-btn" onclick="revealOutcome()" style="margin-top:14px;margin-bottom:0">
-              &#128065;&ensp;Reveal Outcome
-            </button>
+        <!-- Signals Table -->
+        <div class="panel">
+          <div class="panel-head">Signals <span id="scan-signal-count-badge" style="font-weight:400;font-size:11px;color:var(--muted);margin-left:6px"></span></div>
+          <div class="panel-body" style="padding:0">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Entry Time</th>
+                    <th>Side</th>
+                    <th>Regime</th>
+                    <th>Entry Price</th>
+                    <th>Exit Price</th>
+                    <th>Bars Held</th>
+                    <th>Exit Reason</th>
+                    <th>Net P&amp;L %</th>
+                  </tr>
+                </thead>
+                <tbody id="scan-signals-body"></tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        <!-- Step C — outcome -->
-        <div class="panel" id="replay-outcome-panel" style="display:none">
-          <div class="panel-head">Step 3 &mdash; What Actually Happened</div>
-          <div class="panel-body">
-            <div class="stats-grid" id="replay-outcome-grid"></div>
-            <div id="replay-summary" style="margin-top:14px"></div>
+      </div>
+    </div>
+
+    <!-- ══ POINT-IN-TIME TEST (Signal Replay) ══ -->
+    <div id="replay-section" style="display:none">
+      <div class="panel">
+        <div class="panel-head">Signal Replay Settings</div>
+        <div class="panel-body">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+            Pick a historical moment T. The system verdict is computed using <strong>only</strong>
+            candles that closed at or before T (this is core.regime_live's live signal logic,
+            replayed via signal_lab/signal_fn.py) — no future data is ever used.
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Symbol</label>
+              <input type="text" id="replay-symbol" value="BTCUSDT" placeholder="BTCUSDT">
+            </div>
+            <div class="form-group">
+              <label>Interval</label>
+              <select id="replay-interval">
+                <option value="1h">1h</option>
+                <option value="2h">2h</option>
+                <option value="4h" selected>4h</option>
+                <option value="6h">6h</option>
+                <option value="12h">12h</option>
+                <option value="1d">1d</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Moment T (date &amp; time, UTC)</label>
+              <input type="datetime-local" id="replay-datetime">
+            </div>
+            <div class="form-group">
+              <label>Lookahead (candles after T)</label>
+              <input type="number" id="replay-lookahead" value="6" min="1" max="100">
+            </div>
+          </div>
+
+          <button class="run-btn" id="replay-run-btn" onclick="runReplay()" style="margin-bottom:0">
+            <span id="replay-run-btn-text">&#9654;&ensp;Get Verdict</span>
+            <div class="spinner" id="replay-spinner" style="display:none"></div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Replay Error Banner -->
+      <div class="error-banner" id="replay-error" style="display:none"></div>
+
+      <!-- Step A — your guess -->
+      <div class="panel" id="replay-guess-panel" style="display:none">
+        <div class="panel-head">Step 1 &mdash; What's Your Call?</div>
+        <div class="panel-body">
+          <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+            Using only data up to and including <strong id="replay-t-label"></strong>, what would you do?
+          </div>
+          <div class="replay-guess-row">
+            <button class="replay-guess-btn long" id="replay-guess-long" onclick="recordGuess('LONG')">I'd go LONG</button>
+            <button class="replay-guess-btn short" id="replay-guess-short" onclick="recordGuess('SHORT')">I'd go SHORT</button>
+            <button class="replay-guess-btn wait" id="replay-guess-wait" onclick="recordGuess('WAIT')">I'd WAIT</button>
           </div>
         </div>
       </div>
 
-    </main>
+      <!-- Step B — system verdict -->
+      <div class="panel" id="replay-verdict-panel" style="display:none">
+        <div class="panel-head">Step 2 &mdash; System Verdict</div>
+        <div class="panel-body">
+          <div class="stats-grid" id="replay-verdict-grid"></div>
+          <button class="run-btn" id="replay-reveal-btn" onclick="revealOutcome()" style="margin-top:14px;margin-bottom:0">
+            &#128065;&ensp;Reveal Outcome
+          </button>
+        </div>
+      </div>
+
+      <!-- Step C — outcome -->
+      <div class="panel" id="replay-outcome-panel" style="display:none">
+        <div class="panel-head">Step 3 &mdash; What Actually Happened</div>
+        <div class="panel-body">
+          <div class="stats-grid" id="replay-outcome-grid"></div>
+          <div id="replay-summary" style="margin-top:14px"></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -2473,16 +2606,13 @@ function renderTradesTable() {
 function setResultsTab(tab) {
   document.getElementById('tab-btn-results').classList.toggle('active', tab === 'results');
   document.getElementById('tab-btn-realism').classList.toggle('active', tab === 'realism');
-  document.getElementById('tab-btn-replay').classList.toggle('active', tab === 'replay');
 
   const resultsEl    = document.getElementById('results-section');
   const comparisonEl = document.getElementById('comparison-panel');
   const realismEl    = document.getElementById('realism-section');
-  const replayEl     = document.getElementById('replay-section');
 
   if (tab === 'results') {
     realismEl.style.display = 'none';
-    replayEl.style.display  = 'none';
     if (resultsEl.dataset.realismHidden !== undefined) {
       resultsEl.style.display = resultsEl.dataset.realismHidden;
     }
@@ -2496,8 +2626,7 @@ function setResultsTab(tab) {
     }
     resultsEl.style.display    = 'none';
     comparisonEl.style.display = 'none';
-    realismEl.style.display = (tab === 'realism') ? 'block' : 'none';
-    replayEl.style.display  = (tab === 'replay')  ? 'block' : 'none';
+    realismEl.style.display = 'block';
   }
 }
 
@@ -2893,6 +3022,242 @@ function revealOutcome() {
     </div>
   `;
   setReplayStep(3);
+}
+
+// ── Page mode toggle (Backtest <-> Signal Testing) ───────────────────────────
+let scanDatesInitialized = false;
+
+function setPageMode(mode) {
+  document.getElementById('page-btn-backtest').classList.toggle('active', mode === 'backtest');
+  document.getElementById('page-btn-signal').classList.toggle('active', mode === 'signal');
+
+  const layoutEl  = document.querySelector('.layout');
+  const presetsEl = document.getElementById('presets-panel');
+  const signalEl  = document.getElementById('signal-testing-section');
+
+  if (mode === 'signal') {
+    layoutEl.dataset.pageHidden  = layoutEl.style.display;
+    presetsEl.dataset.pageHidden = presetsEl.style.display;
+    layoutEl.style.display  = 'none';
+    presetsEl.style.display = 'none';
+    signalEl.style.display  = 'block';
+
+    if (!scanDatesInitialized) {
+      const end = new Date();
+      const start = new Date(end.getTime() - 60 * 24 * 60 * 60 * 1000); // 60 days back
+      document.getElementById('scan-end').value   = end.toISOString().slice(0, 10);
+      document.getElementById('scan-start').value = start.toISOString().slice(0, 10);
+      scanDatesInitialized = true;
+    }
+  } else {
+    signalEl.style.display  = 'none';
+    layoutEl.style.display  = layoutEl.dataset.pageHidden  || '';
+    presetsEl.style.display = presetsEl.dataset.pageHidden || 'none';
+  }
+}
+
+// ── Signal Testing sub-tabs (Signal Scan <-> Point-in-Time Test) ────────────
+function setSignalTab(tab) {
+  document.getElementById('sigtab-btn-scan').classList.toggle('active', tab === 'scan');
+  document.getElementById('sigtab-btn-replay').classList.toggle('active', tab === 'replay');
+  document.getElementById('signal-scan-section').style.display = (tab === 'scan')   ? 'block' : 'none';
+  document.getElementById('replay-section').style.display      = (tab === 'replay') ? 'block' : 'none';
+}
+
+// ── Signal Scan (walk the live signal logic over a date range) ──────────────
+let signalScanResult = null;
+
+async function runSignalScan() {
+  const btn       = document.getElementById('scan-run-btn');
+  const spinner   = document.getElementById('scan-spinner');
+  const btnText   = document.getElementById('scan-run-btn-text');
+  const errEl     = document.getElementById('scan-error');
+  const resultsEl = document.getElementById('scan-results');
+  errEl.style.display = 'none';
+  resultsEl.style.display = 'none';
+
+  const symbol   = document.getElementById('scan-symbol').value.trim().toUpperCase();
+  const interval = document.getElementById('scan-interval').value;
+  const startVal = document.getElementById('scan-start').value;
+  const endVal   = document.getElementById('scan-end').value;
+  const tp       = parseFloat(document.getElementById('scan-tp').value) || 3;
+  const sl       = parseFloat(document.getElementById('scan-sl').value) || 2;
+  const horizon  = parseInt(document.getElementById('scan-horizon').value, 10) || 12;
+
+  if (!symbol) {
+    errEl.textContent = 'Please enter a symbol (e.g. BTCUSDT).';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (!startVal || !endVal) {
+    errEl.textContent = 'Please pick a start and end date.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btnText.textContent = 'Scanning…';
+  spinner.style.display = 'block';
+
+  try {
+    const res = await fetch('/api/backtest/signal-scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol, interval,
+        start_date: startVal + 'T00:00:00Z',
+        end_date:   endVal   + 'T00:00:00Z',
+        tp_pct: tp, sl_pct: sl, horizon,
+      }),
+    });
+
+    const raw = await res.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (_) {
+      errEl.textContent = 'Server error (non-JSON response). The server may be restarting or missing a dependency.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!res.ok || !data.ok) {
+      errEl.textContent = data.error || 'Signal scan failed.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    signalScanResult = data;
+    renderSignalScan(data);
+  } catch (e) {
+    errEl.textContent = 'Request failed: ' + e.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = '▶ Run Signal Scan';
+    spinner.style.display = 'none';
+  }
+}
+
+function pctCell(v) {
+  if (v === null || v === undefined) return '—';
+  return (v >= 0 ? '+' : '-') + fmt(v) + '%';
+}
+
+function numCell(v, decimals) {
+  if (v === null || v === undefined) return '—';
+  return v.toFixed(decimals != null ? decimals : 1);
+}
+
+function renderSignalScan(data) {
+  document.getElementById('scan-results').style.display = 'block';
+
+  const lowEl = document.getElementById('scan-low-sample');
+  if (data.low_sample_size) {
+    document.getElementById('scan-complete-count').textContent = data.complete_count;
+    lowEl.style.display = 'block';
+  } else {
+    lowEl.style.display = 'none';
+  }
+
+  const s  = data.summary;
+  const vc = data.verdict_counts;
+  const totalNetClass = (s.total_net_pct || 0) >= 0 ? 'green' : 'red';
+
+  document.getElementById('scan-stats-grid').innerHTML = `
+    <div class="stat-card blue">
+      <div class="stat-label">Candles Scanned</div>
+      <div class="stat-val">${data.candles_used}</div>
+      <div class="stat-sub">${new Date(data.range_start_iso).toUTCString().slice(0, 16)} &rarr; ${new Date(data.range_end_iso).toUTCString().slice(0, 16)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Signals</div>
+      <div class="stat-val">${data.signal_count}</div>
+      <div class="stat-sub">${vc.LONG_NOW} BUY &bull; ${vc.SHORT_NOW} SELL &bull; ${vc.WATCH} WATCH &bull; ${vc.WAIT} WAIT</div>
+    </div>
+    <div class="stat-card ${totalNetClass}">
+      <div class="stat-label">Total Net P&amp;L</div>
+      <div class="stat-val ${totalNetClass}">${pctCell(s.total_net_pct)}</div>
+      <div class="stat-sub">${s.n || 0} completed trade(s)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Win Rate</div>
+      <div class="stat-val">${s.win_rate != null ? fmt(s.win_rate) + '%' : '—'}</div>
+      <div class="stat-sub">avg ${pctCell(s.avg_net_pct)} / trade</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Profit Factor</div>
+      <div class="stat-val">${s.profit_factor != null ? fmt(s.profit_factor) : '—'}</div>
+      <div class="stat-sub">avg ${s.avg_bars_held != null ? numCell(s.avg_bars_held) : '—'} bars held</div>
+    </div>
+  `;
+
+  renderScanBaselineTable(data);
+  renderScanSignalsTable(data);
+}
+
+function renderScanBaselineTable(data) {
+  const s   = data.summary;
+  const inv = data.baselines.inverted;
+  const rnd = data.baselines.random;
+  const bh  = data.baselines.buy_and_hold;
+
+  const rows = [
+    ['Trades',        v => (v != null ? v : '—'),  s.n,              inv.n,              rnd.n,              1],
+    ['Win Rate',      v => (v != null ? fmt(v) + '%' : '—'), s.win_rate, inv.win_rate, rnd.win_rate, null],
+    ['Avg Net %',     pctCell,                      s.avg_net_pct,    inv.avg_net_pct,    rnd.avg_net_pct,    bh.net_pct],
+    ['Total Net %',   pctCell,                      s.total_net_pct,  inv.total_net_pct,  rnd.total_net_pct,  bh.net_pct],
+    ['Profit Factor', v => (v != null ? fmt(v) : '—'), s.profit_factor, inv.profit_factor, rnd.profit_factor, null],
+    ['Avg Bars Held', v => (v != null ? numCell(v) : '—'), s.avg_bars_held, inv.avg_bars_held, rnd.avg_bars_held, bh.bars_held],
+  ];
+
+  const body = rows.map(([label, f, strat, inverted, random, buyHold]) => `
+    <tr>
+      <td>${label}</td>
+      <td>${f(strat)}</td>
+      <td>${f(inverted)}</td>
+      <td>${f(random)}</td>
+      <td>${buyHold !== null ? f(buyHold) : '—'}</td>
+    </tr>`).join('');
+
+  document.getElementById('scan-baseline-table').innerHTML = `
+    <thead><tr>
+      <th>Metric</th>
+      <th>Signal Strategy</th>
+      <th>Inverted</th>
+      <th>Random (avg)</th>
+      <th>Buy &amp; Hold</th>
+    </tr></thead>
+    <tbody>${body}</tbody>`;
+}
+
+function renderScanSignalsTable(data) {
+  document.getElementById('scan-signal-count-badge').textContent =
+    `${data.signal_count} signal${data.signal_count === 1 ? '' : 's'}`;
+
+  if (!data.signals.length) {
+    document.getElementById('scan-signals-body').innerHTML =
+      `<tr><td colspan="9" class="no-trades">No LONG_NOW / SHORT_NOW signals fired in this range.</td></tr>`;
+    return;
+  }
+
+  document.getElementById('scan-signals-body').innerHTML = data.signals.map((sig, i) => {
+    const badge = sig.direction === 'LONG'
+      ? '<span class="badge badge-long">BUY</span>'
+      : '<span class="badge badge-short">SELL</span>';
+    const pnlClass = sig.net_pct > 0 ? 'pos' : (sig.net_pct < 0 ? 'neg' : '');
+    const openTag  = sig.incomplete ? ' <span class="badge badge-orange">OPEN</span>' : '';
+    return `<tr>
+      <td class="num">${i + 1}</td>
+      <td>${new Date(sig.entry_time).toUTCString()}</td>
+      <td>${badge}</td>
+      <td>${sig.regime}</td>
+      <td>$${fmt(sig.entry_price)}</td>
+      <td>$${fmt(sig.exit_price)}</td>
+      <td>${sig.bars_held}</td>
+      <td>${sig.exit_reason}${openTag}</td>
+      <td class="${pnlClass}">${pctCell(sig.net_pct)}</td>
+    </tr>`;
+  }).join('');
 }
 </script>
 </body>
