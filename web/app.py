@@ -5,6 +5,7 @@ Run with:  python3 web/app.py
 """
 from __future__ import annotations
 
+import calendar
 import json
 import os
 import subprocess
@@ -13,7 +14,9 @@ import tempfile
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
+from datetime import datetime, timedelta
 from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -73,6 +76,10 @@ _dca_models: list = []     # list[dict]  (loaded from dca_models.json)
 
 _layer2_cache: dict = {}   # symbol -> {"data": dict, "ts": float}
 _LAYER2_TTL = 300  # seconds (5 min)
+
+_layer1_cache: dict = {}   # {"data": dict, "ts": float}
+_LAYER1_TTL = 900  # seconds (15 min)
+_btc_dom_history: list = []  # [(timestamp, btc_dominance_pct), ...] rolling 48h window
 
 
 # ── Loaders ───────────────────────────────────────────────────────────────────
@@ -609,6 +616,409 @@ def api_layer2(symbol):
     result["timestamp"] = int(now * 1000)
 
     _layer2_cache[symbol] = {"data": result, "ts": now}
+    return jsonify(result)
+
+
+# ── Routes — Layer 1 (Macro Environment) ───────────────────────────────────────
+
+_FOMC_2026_DATES = [
+    "2026-01-29", "2026-03-19", "2026-05-07", "2026-06-18",
+    "2026-07-30", "2026-09-17", "2026-10-29", "2026-12-10",
+]
+
+
+def _next_fomc_date() -> str:
+    """Next upcoming FOMC meeting date from the published 2026 schedule."""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    for d in _FOMC_2026_DATES:
+        if d >= today:
+            return d
+    return _FOMC_2026_DATES[-1]
+
+
+def _next_monthly_release_date(day: int) -> str:
+    """Next occurrence of `day`-of-month on/after today (UTC)."""
+    today = datetime.utcnow().date()
+    year, month = today.year, today.month
+    candidate = today.replace(day=min(day, calendar.monthrange(year, month)[1]))
+    if candidate < today:
+        month += 1
+        if month > 12:
+            month, year = 1, year + 1
+        candidate = datetime(year, month, min(day, calendar.monthrange(year, month)[1])).date()
+    return candidate.isoformat()
+
+
+def _next_jobs_report_date() -> str:
+    """First Friday of next month (BLS Non-Farm Payrolls schedule)."""
+    today = datetime.utcnow().date()
+    year, month = today.year, today.month + 1
+    if month > 12:
+        month, year = 1, year + 1
+    d = datetime(year, month, 1).date()
+    while d.weekday() != 4:  # Friday
+        d += timedelta(days=1)
+    return d.isoformat()
+
+
+def _layer1_fear_greed() -> dict:
+    """Fear & Greed Index (alternative.me) — contrarian crowd-emotion signal."""
+    import requests
+
+    data = requests.get("https://api.alternative.me/fng/", params={"limit": 30}, timeout=8).json()
+    items = data.get("data") or []
+    if not items:
+        raise ValueError("no fear/greed data")
+
+    values = [int(d["value"]) for d in items]
+    current = values[0]
+    history = list(reversed(values))  # oldest -> newest
+
+    if current <= 24:
+        label, color, signal = "Extreme Fear", "red", 1
+    elif current <= 44:
+        label, color, signal = "Fear", "orange", 1
+    elif current <= 55:
+        label, color, signal = "Neutral", "grey", 0
+    elif current <= 74:
+        label, color, signal = "Greed", "ltgreen", -1
+    else:
+        label, color, signal = "Extreme Greed", "green", -1
+
+    return {
+        "status": "ok",
+        "value": current,
+        "label": label,
+        "color": color,
+        "signal": signal,
+        "history": history,
+    }
+
+
+def _layer1_btc_dominance() -> dict:
+    """BTC Dominance (CoinGecko) — risk-on/off signal within crypto.
+
+    CoinGecko's /global endpoint has no historical dominance series, so a
+    rolling in-memory history of recent samples (capped at 48h) is used to
+    approximate the 24h change."""
+    import requests
+
+    data = requests.get("https://api.coingecko.com/api/v3/global", timeout=8).json()
+    pct = float(data["data"]["market_cap_percentage"]["btc"])
+
+    now = time.time()
+    _btc_dom_history.append((now, pct))
+    cutoff = now - 48 * 3600
+    while _btc_dom_history and _btc_dom_history[0][0] < cutoff:
+        _btc_dom_history.pop(0)
+
+    target = now - 24 * 3600
+    prev_pct = pct
+    for ts, val in _btc_dom_history:
+        if ts <= target:
+            prev_pct = val
+        else:
+            break
+    change_24h = pct - prev_pct
+
+    if change_24h > 0.5:
+        label, color, signal = "BTC Season", "orange", -1
+    elif change_24h < -0.5:
+        label, color, signal = "Altcoin Season", "blue", 1
+    else:
+        label, color, signal = "Neutral", "grey", 0
+
+    return {
+        "status": "ok",
+        "value": pct,
+        "change_24h": change_24h,
+        "label": label,
+        "color": color,
+        "signal": signal,
+    }
+
+
+def _layer1_dxy() -> dict:
+    """DXY (US Dollar Index) via Twelve Data — dollar strength vs. crypto."""
+    key = os.getenv("TWELVE_DATA_API_KEY", "")
+    if not key:
+        return {"status": "no_key"}
+
+    import requests
+
+    data = requests.get(
+        "https://api.twelvedata.com/time_series",
+        params={"symbol": "DXY", "interval": "1day", "outputsize": 30, "apikey": key},
+        timeout=8,
+    ).json()
+    values = data.get("values")
+    if not values:
+        raise ValueError(data.get("message") or "no DXY data")
+
+    closes = [float(v["close"]) for v in reversed(values)]  # oldest -> newest
+    current = closes[-1]
+    prev_7d = closes[-8] if len(closes) >= 8 else closes[0]
+    change_pct = (current - prev_7d) / prev_7d * 100 if prev_7d else 0.0
+
+    if change_pct > 0.5:
+        label, color, signal = "Dollar Strengthening — Headwind", "red", -1
+    elif change_pct < -0.5:
+        label, color, signal = "Dollar Weakening — Tailwind", "green", 1
+    else:
+        label, color, signal = "Neutral", "grey", 0
+
+    return {
+        "status": "ok",
+        "value": current,
+        "change_7d_pct": change_pct,
+        "history": closes,
+        "label": label,
+        "color": color,
+        "signal": signal,
+    }
+
+
+def _fred_observations(series_id: str, limit: int) -> Optional[list]:
+    """Fetch FRED observations as [(date, value), ...] in descending date
+    order, skipping missing ('.') values. Returns None if FRED_API_KEY unset."""
+    key = os.getenv("FRED_API_KEY", "")
+    if not key:
+        return None
+
+    import requests
+
+    data = requests.get(
+        "https://api.stlouisfed.org/fred/series/observations",
+        params={"series_id": series_id, "api_key": key, "sort_order": "desc",
+                "limit": limit, "file_type": "json"},
+        timeout=8,
+    ).json()
+    obs = data.get("observations")
+    if not obs:
+        raise ValueError(data.get("error_message") or f"no {series_id} data")
+
+    parsed = [(o["date"], float(o["value"])) for o in obs if o.get("value") not in (None, ".", "")]
+    if not parsed:
+        raise ValueError(f"no usable {series_id} observations")
+    return parsed
+
+
+def _layer1_fed_funds() -> dict:
+    """Fed Funds Rate (FRED) — current policy stance and cycle direction."""
+    obs = _fred_observations("FEDFUNDS", 3)
+    if obs is None:
+        return {"status": "no_key"}
+
+    values = [v for _, v in obs]
+    current = values[0]
+    if len(values) >= 3 and current > values[2]:
+        cycle, color, signal, label = "Rising Cycle", "red", -1, "Tightening — Risk Off"
+    elif len(values) >= 3 and current < values[2]:
+        cycle, color, signal, label = "Cutting Cycle", "green", 1, "Easing — Risk On"
+    else:
+        cycle, color, signal, label = "Holding", "grey", 0, "On Hold — Watch Direction"
+
+    return {
+        "status": "ok",
+        "value": current,
+        "cycle": cycle,
+        "label": label,
+        "color": color,
+        "signal": signal,
+        "next_fomc": _next_fomc_date(),
+    }
+
+
+def _layer1_yield_10y() -> dict:
+    """US 10-Year Treasury Yield (FRED) — the risk-free rate crypto competes with."""
+    obs = _fred_observations("DGS10", 8)
+    if obs is None:
+        return {"status": "no_key"}
+
+    values = [v for _, v in obs]
+    current = values[0]
+    prev = values[-1]
+    change_7d = current - prev
+
+    if current > 4.5 and change_7d > 0:
+        label, color = "High Yield — Headwind for Crypto", "red"
+    elif current < 3.5:
+        label, color = "Low Yield — Tailwind for Crypto", "green"
+    else:
+        label, color = "Moderate", "grey"
+
+    if change_7d < 0 and current < 4:
+        signal = 1
+    elif change_7d > 0 and current > 4.5:
+        signal = -1
+    else:
+        signal = 0
+
+    return {
+        "status": "ok",
+        "value": current,
+        "change_7d": change_7d,
+        "label": label,
+        "color": color,
+        "signal": signal,
+    }
+
+
+def _layer1_cpi() -> dict:
+    """CPI year-over-year inflation (FRED) — distance from the Fed's 2% target."""
+    obs = _fred_observations("CPIAUCSL", 13)
+    if obs is None:
+        return {"status": "no_key"}
+
+    values = [v for _, v in obs]
+    if len(values) < 13:
+        raise ValueError("insufficient CPI history")
+
+    current, prev_month, year_ago = values[0], values[1], values[12]
+    yoy = (current - year_ago) / year_ago * 100
+    direction = "rising" if current > prev_month else "falling"
+
+    diff = yoy - 2.0
+    if abs(diff) < 0.05:
+        vs_target = "At Fed's 2% target"
+    elif diff > 0:
+        vs_target = f"{diff:.1f}% above Fed's 2% target"
+    else:
+        vs_target = f"{abs(diff):.1f}% below Fed's 2% target"
+
+    if yoy > 4:
+        label, color = "High Inflation — Fed Hawkish", "red"
+    elif yoy >= 2:
+        label, color = "Elevated — Watch Direction", "yellow"
+    else:
+        label, color = "At/Below Target — Fed Dovish", "green"
+
+    if direction == "falling" and yoy < 3:
+        signal = 1
+    elif yoy > 4 or direction == "rising":
+        signal = -1
+    else:
+        signal = 0
+
+    return {
+        "status": "ok",
+        "value": yoy,
+        "direction": direction,
+        "vs_target": vs_target,
+        "label": label,
+        "color": color,
+        "signal": signal,
+        "next_release": _next_monthly_release_date(12),
+    }
+
+
+def _layer1_vix() -> dict:
+    """VIX (Twelve Data) — traditional-market fear gauge, correlated with crypto risk."""
+    key = os.getenv("TWELVE_DATA_API_KEY", "")
+    if not key:
+        return {"status": "no_key"}
+
+    import requests
+
+    data = requests.get(
+        "https://api.twelvedata.com/time_series",
+        params={"symbol": "VIX", "interval": "1day", "outputsize": 7, "apikey": key},
+        timeout=8,
+    ).json()
+    values = data.get("values")
+    if not values:
+        raise ValueError(data.get("message") or "no VIX data")
+
+    closes = [float(v["close"]) for v in reversed(values)]
+    current = closes[-1]
+    change_7d = current - closes[0]
+
+    if current < 15:
+        label, color, signal = "Calm — Risk On", "green", 1
+    elif current <= 25:
+        label, color, signal = "Normal", "grey", 0
+    elif current <= 30:
+        label, color, signal = "Elevated Fear", "yellow", 0
+    elif current <= 40:
+        label, color, signal = "High Fear — Risk Off", "red", -1
+    else:
+        label, color, signal = "Crisis Level", "darkred", -1
+
+    return {
+        "status": "ok",
+        "value": current,
+        "change_7d": change_7d,
+        "history": closes,
+        "label": label,
+        "color": color,
+        "signal": signal,
+    }
+
+
+_LAYER1_INDICATORS = (
+    "fear_greed", "btc_dominance", "dxy", "fed_funds", "yield_10y", "cpi", "vix",
+)
+
+
+def _layer1_verdict(result: dict) -> dict:
+    """Combine the live macro indicators that returned data into one verdict."""
+    signals = [
+        result[key]["signal"]
+        for key in _LAYER1_INDICATORS
+        if result.get(key, {}).get("status") == "ok"
+    ]
+
+    if len(signals) < 3:
+        return {"code": "INSUFFICIENT_DATA", "label": "INSUFFICIENT DATA", "emoji": "⚪", "color": "grey"}
+
+    bullish = sum(1 for s in signals if s > 0)
+    bearish = sum(1 for s in signals if s < 0)
+
+    if bullish >= 4:
+        return {"code": "FAVORABLE", "label": "MACRO FAVORABLE", "emoji": "🟢", "color": "green"}
+    if bearish >= 4:
+        return {"code": "UNFAVORABLE", "label": "MACRO UNFAVORABLE", "emoji": "🔴", "color": "red"}
+    return {"code": "MIXED", "label": "MIXED", "emoji": "🟡", "color": "yellow"}
+
+
+@app.route("/api/layer1")
+def api_layer1():
+    """Layer 1 (Macro Environment): Fear & Greed, BTC Dominance, DXY, Fed
+    Funds Rate, 10Y Treasury Yield, CPI, and VIX, plus a combined macro
+    verdict. Cached for _LAYER1_TTL seconds."""
+    now = time.time()
+    cached = _layer1_cache.get("data")
+    if cached and now - _layer1_cache["ts"] < _LAYER1_TTL:
+        return jsonify(cached)
+
+    fetchers = {
+        "fear_greed":    _layer1_fear_greed,
+        "btc_dominance": _layer1_btc_dominance,
+        "dxy":           _layer1_dxy,
+        "fed_funds":     _layer1_fed_funds,
+        "yield_10y":     _layer1_yield_10y,
+        "cpi":           _layer1_cpi,
+        "vix":           _layer1_vix,
+    }
+
+    result: dict = {}
+    with ThreadPoolExecutor(max_workers=len(fetchers)) as pool:
+        futures = {name: pool.submit(fn) for name, fn in fetchers.items()}
+        for name, fut in futures.items():
+            try:
+                result[name] = fut.result()
+            except Exception as exc:
+                result[name] = {"status": "error", "error": str(exc)}
+
+    result["dates"] = {
+        "next_fomc": _next_fomc_date(),
+        "next_jobs_report": _next_jobs_report_date(),
+    }
+    result["verdict"] = _layer1_verdict(result)
+    result["timestamp"] = int(now * 1000)
+
+    _layer1_cache["data"] = result
+    _layer1_cache["ts"] = now
     return jsonify(result)
 
 
