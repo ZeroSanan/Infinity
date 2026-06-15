@@ -194,6 +194,43 @@
   }
   .ms-l1-retry:hover { background: rgba(0,122,255,.16); }
 
+  .ms-l1-score { font-size: 12px; color: var(--muted); text-align: center; margin-top: 4px; }
+
+  .ms-l1-input-label { font-size: 11px; color: var(--muted); text-align: center; }
+  .ms-l1-input-row { display: flex; gap: 6px; align-items: center; }
+  .ms-l1-input-row input,
+  .ms-l1-input-row select {
+    flex: 1; min-width: 0; font-size: 12px; padding: 6px 8px;
+    border: 1px solid var(--border2); border-radius: 8px;
+    background: var(--surface); color: var(--text); font-family: inherit;
+  }
+  .ms-l1-save-btn {
+    flex-shrink: 0; font-size: 12px; font-weight: 700;
+    color: var(--blue); background: var(--blue-bg); border: none;
+    border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  .ms-l1-save-btn:hover { background: rgba(0,122,255,.16); }
+
+  .ms-l1-toggle-row { display: flex; gap: 4px; justify-content: center; }
+  .ms-l1-toggle {
+    font-size: 11px; font-weight: 600; color: var(--text2); background: var(--surface);
+    border: 1px solid var(--border2); border-radius: 8px; padding: 4px 8px; cursor: pointer;
+  }
+  .ms-l1-toggle.active { background: var(--blue-bg); color: var(--blue); border-color: var(--blue); }
+
+  .ms-l1-stale      { font-size: 10px; text-align: center; }
+  .ms-l1-stale.fresh { color: var(--green); }
+  .ms-l1-stale.warn  { color: var(--orange); }
+  .ms-l1-stale.old   { color: var(--red); }
+
+  .ms-l1-edit-link {
+    display: block; margin: 0 auto; text-align: center; font-size: 11px; font-weight: 600;
+    color: var(--blue); background: none; border: none; cursor: pointer; padding: 2px;
+  }
+  .ms-l1-edit-link:hover { text-decoration: underline; }
+
+  .ms-l1-saved-meta { font-size: 10px; color: var(--muted); text-align: center; }
+
   .ms-info-btn {
     background: none; border: none; cursor: pointer;
     font-size: 16px; line-height: 1; color: var(--muted);
@@ -1738,7 +1775,8 @@
           <div class="ms-verdict-emoji" id="ms-l1-verdict-emoji">—</div>
           <div class="ms-verdict-label" id="ms-l1-verdict-label">Loading…</div>
         </div>
-        <div class="ms-verdict-note">Based on live indicators only. Manual indicators require your own judgment. Always combine with Layer 2 positioning and Layer 3 entry timing.</div>
+        <div class="ms-verdict-note">Combines live indicators with any manual values you enter below. Always combine with Layer 2 positioning and Layer 3 entry timing.</div>
+        <div class="ms-l1-score" id="ms-l1-score"></div>
         <div class="ms-layer1-grid" id="ms-layer1-grid"></div>
       </div>
 
@@ -2136,54 +2174,37 @@ function renderVerdict(v) {
 
 // ── Layer 1 — Macro Environment ───────────────────────────────────────────────
 let _layer1Data = null;
+let _l1ToggleState = {};
+let _l1EditingCards = new Set();
 
 async function loadLayer1() {
   try {
     const data = await api('/api/layer1');
     _layer1Data = data;
-    renderL1Verdict(data.verdict);
     updateL1Timestamp();
-    document.getElementById('ms-layer1-grid').innerHTML = [
-      l1FearGreed(data.fear_greed),
-      l1BtcDominance(data.btc_dominance),
-      l1Dxy(data.dxy),
-      l1FedFunds(data.fed_funds),
-      l1Yield10y(data.yield_10y),
-      l1Cpi(data.cpi),
-      l1Vix(data.vix),
-      l1ManualCard({
-        name: 'CME FedWatch — Rate Probabilities',
-        desc: 'Market-implied probability of Fed rate cuts or hikes at upcoming meetings. The most forward-looking Fed signal available.',
-        link: 'https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html',
-        btnText: 'Check FedWatch →',
-        modalKey: 'fedwatch',
-      }),
-      l1ManualCard({
-        name: 'Jobs Report — Unemployment Rate',
-        desc: 'Monthly employment data. Strong jobs = Fed keeps rates high. Weak jobs = Fed cuts sooner.',
-        link: 'https://www.bls.gov/news.release/empsit.nr0.htm',
-        btnText: 'Latest Jobs Report →',
-        modalKey: 'jobs',
-        extra: `Next release: <strong>${data.dates.next_jobs_report}</strong>`,
-      }),
-      l1ManualCard({
-        name: 'BTC Rainbow Chart — Cycle Position',
-        desc: 'Where Bitcoin sits in its long-term logarithmic growth cycle. Tells you the macro cycle stage, not short-term direction.',
-        link: 'https://www.blockchaincenter.net/en/bitcoin-rainbow-chart/',
-        btnText: 'Check Rainbow Chart →',
-        modalKey: 'rainbow',
-      }),
-      l1ManualCard({
-        name: 'Global M2 Money Supply',
-        desc: 'Total money in the global financial system. Historically Bitcoin follows M2 with a 3-6 month lag.',
-        link: 'https://fred.stlouisfed.org/series/M2SL',
-        btnText: 'Check M2 on FRED →',
-        modalKey: 'm2',
-      }),
-    ].join('');
+    renderLayer1Grid();
+    recalcL1Verdict();
   } catch (e) {
     renderL1Verdict(null);
   }
+}
+
+function renderLayer1Grid() {
+  if (!_layer1Data) return;
+  const data = _layer1Data;
+  document.getElementById('ms-layer1-grid').innerHTML = [
+    l1FearGreed(data.fear_greed),
+    l1BtcDominance(data.btc_dominance),
+    l1Dxy(data.dxy),
+    l1FedFunds(data.fed_funds),
+    l1Yield10y(data.yield_10y),
+    l1Cpi(data.cpi),
+    l1Vix(data.vix),
+    renderManualInputCard('fedwatch'),
+    renderManualInputCard('jobs', `Next release: <strong>${data.dates.next_jobs_report}</strong>`),
+    renderManualInputCard('rainbow'),
+    renderManualInputCard('m2'),
+  ].join('');
 }
 
 function renderL1Verdict(v) {
@@ -2222,16 +2243,394 @@ function l1ErrorCard(name, modalKey) {
     </div>`;
 }
 
-function l1ManualCard({ name, desc, link, btnText, modalKey, extra }) {
-  return `
-    <div class="ms-l1-card manual">
-      <div class="ms-panel-head"><span>${name}</span>${l1InfoBtn(modalKey, name)}</div>
-      <div class="ms-l1-manual-icon">🔗</div>
-      <div class="ms-l1-manual-desc">${desc}</div>
-      ${extra ? `<div class="ms-l1-manual-extra">${extra}</div>` : ''}
-      <a class="ms-l1-link-btn" href="${link}" target="_blank" rel="noopener">${btnText}</a>
-      <div class="ms-l1-manual-label">Manual check — not automated</div>
+// ── Layer 1 manual input cards ────────────────────────────────────────────────
+const L1_MANUAL_SPECS = {
+  dxy: {
+    name: 'DXY — US Dollar Index',
+    modalKey: 'dxy',
+    desc: 'US Dollar strength vs. a basket of major currencies. A rising dollar is historically a headwind for crypto; a falling dollar a tailwind.',
+    link: 'https://www.tradingview.com/symbols/TVC-DXY/',
+    btnText: 'Check DXY Chart →',
+    inputType: 'number',
+    step: '0.01',
+    placeholder: 'e.g. 104.2',
+    compute(saved) {
+      const v = saved.value;
+      if (v > 105) return { signal: -1, color: 'red',   label: 'Strong Dollar — Headwind', display: v.toFixed(2) };
+      if (v < 100) return { signal: 1,  color: 'green', label: 'Weak Dollar — Tailwind',   display: v.toFixed(2) };
+      return            { signal: 0,  color: 'grey',  label: 'Moderate',                 display: v.toFixed(2) };
+    },
+  },
+
+  fedfunds: {
+    name: 'Fed Funds Rate',
+    modalKey: 'fedfunds',
+    desc: "The Fed's benchmark interest rate. Cutting cycles are historically bullish for crypto; hiking cycles bearish.",
+    link: 'https://fred.stlouisfed.org/series/FEDFUNDS',
+    btnText: 'Check Fed Funds Rate →',
+    inputType: 'number-toggle',
+    step: '0.25',
+    placeholder: 'e.g. 5.25',
+    toggleOptions: [
+      { value: 'rising',  label: '↑ Rising'  },
+      { value: 'holding', label: '→ Holding' },
+      { value: 'cutting', label: '↓ Cutting' },
+    ],
+    defaultToggle: 'holding',
+    compute(saved) {
+      const v = saved.value.toFixed(2) + '%';
+      if (saved.direction === 'cutting') return { signal: 1,  color: 'green', label: 'Easing — Risk On',          display: v, sub: 'Cutting Cycle' };
+      if (saved.direction === 'rising')  return { signal: -1, color: 'red',   label: 'Tightening — Risk Off',     display: v, sub: 'Rising Cycle'  };
+      return                                    { signal: 0,  color: 'grey',  label: 'On Hold — Watch Direction', display: v, sub: 'Holding'       };
+    },
+  },
+
+  yield10y: {
+    name: 'US 10-Year Treasury Yield',
+    modalKey: 'yield10y',
+    desc: 'The risk-free benchmark rate crypto competes with for capital. High and rising yields are a headwind; low yields a tailwind.',
+    link: 'https://fred.stlouisfed.org/series/DGS10',
+    btnText: 'Check 10Y Yield →',
+    inputType: 'number',
+    step: '0.01',
+    placeholder: 'e.g. 4.35',
+    compute(saved) {
+      const v = saved.value;
+      if (v < 3.5) return { signal: 1,  color: 'green', label: 'Low — Tailwind',  display: v.toFixed(2) + '%' };
+      if (v > 4.5) return { signal: -1, color: 'red',   label: 'High — Headwind', display: v.toFixed(2) + '%' };
+      return            { signal: 0,  color: 'grey',  label: 'Moderate',        display: v.toFixed(2) + '%' };
+    },
+  },
+
+  cpi: {
+    name: 'CPI — Inflation Rate',
+    modalKey: 'cpi',
+    desc: 'Year-over-year consumer price inflation. High/rising inflation keeps the Fed hawkish; low/falling inflation lets it ease.',
+    link: 'https://fred.stlouisfed.org/series/CPIAUCSL',
+    btnText: 'Check CPI →',
+    inputType: 'number',
+    step: '0.1',
+    placeholder: 'e.g. 3.2 (year-over-year %)',
+    compute(saved) {
+      const v = saved.value;
+      if (v < 2.5) return { signal: 1,  color: 'green',  label: 'At Target',          display: v.toFixed(1) + '% YoY' };
+      if (v > 4)   return { signal: -1, color: 'red',    label: 'High — Fed Hawkish', display: v.toFixed(1) + '% YoY' };
+      return            { signal: 0,  color: 'yellow', label: 'Elevated',           display: v.toFixed(1) + '% YoY' };
+    },
+  },
+
+  vix: {
+    name: 'VIX — Market Fear Index',
+    modalKey: 'vix',
+    desc: 'Wall Street\'s "fear gauge." Calm markets (low VIX) favor risk assets; spikes above 30 often coincide with crypto selloffs.',
+    link: 'https://www.tradingview.com/symbols/CBOE-VIX/',
+    btnText: 'Check VIX →',
+    inputType: 'number',
+    step: '0.1',
+    placeholder: 'e.g. 18.5',
+    compute(saved) {
+      const v = saved.value;
+      if (v < 15) return { signal: 1,  color: 'green',  label: 'Calm — Risk On',  display: v.toFixed(1) };
+      if (v > 30) return { signal: -1, color: 'red',    label: 'Fear — Risk Off', display: v.toFixed(1) };
+      if (v > 25) return { signal: 0,  color: 'yellow', label: 'Elevated',        display: v.toFixed(1) };
+      return            { signal: 0,  color: 'grey',   label: 'Normal',          display: v.toFixed(1) };
+    },
+  },
+
+  fedwatch: {
+    name: 'CME FedWatch — Rate Probabilities',
+    modalKey: 'fedwatch',
+    desc: 'Market-implied probability of Fed rate cuts or hikes at upcoming meetings. The most forward-looking Fed signal available.',
+    link: 'https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html',
+    btnText: 'Check FedWatch →',
+    inputType: 'dual-number',
+    placeholders: ['e.g. 65', 'e.g. 5'],
+    compute(saved) {
+      const { cutProb, hikeProb } = saved;
+      const display = `Cut: ${cutProb}% / Hike: ${hikeProb}%`;
+      if (cutProb > 60)  return { signal: 1,  color: 'green', label: 'Cut Likely — Bullish', display, sub: 'Next meeting probability' };
+      if (hikeProb > 40) return { signal: -1, color: 'red',   label: 'Hike Risk — Bearish',  display, sub: 'Next meeting probability' };
+      return                   { signal: 0,  color: 'grey',  label: 'Balanced',             display, sub: 'Next meeting probability' };
+    },
+  },
+
+  jobs: {
+    name: 'Jobs Report — Unemployment Rate',
+    modalKey: 'jobs',
+    desc: 'Monthly employment data. Strong jobs = Fed keeps rates high. Weak jobs = Fed cuts sooner.',
+    link: 'https://www.bls.gov/news.release/empsit.nr0.htm',
+    btnText: 'Latest Jobs Report →',
+    inputType: 'number-toggle',
+    step: '0.1',
+    placeholder: 'e.g. 4.1 (unemployment %)',
+    toggleOptions: [
+      { value: 'rising',  label: '↑ Rising'  },
+      { value: 'flat',    label: '→ Flat'    },
+      { value: 'falling', label: '↓ Falling' },
+    ],
+    defaultToggle: 'flat',
+    cardNote: 'Rising unemployment = Fed cuts sooner = bullish for crypto (counterintuitive)',
+    compute(saved) {
+      const v = saved.value.toFixed(1) + '%';
+      if (saved.direction === 'rising')  return { signal: 1,  color: 'green', label: 'Rising — Fed Cuts Sooner',    display: v, sub: '↑ Rising'  };
+      if (saved.direction === 'falling') return { signal: -1, color: 'red',   label: 'Falling — Fed Stays Hawkish', display: v, sub: '↓ Falling' };
+      return                                    { signal: 0,  color: 'grey',  label: 'Flat',                       display: v, sub: '→ Flat'    };
+    },
+  },
+
+  rainbow: {
+    name: 'BTC Rainbow Chart — Cycle Position',
+    modalKey: 'rainbow',
+    desc: 'Where Bitcoin sits in its long-term logarithmic growth cycle. Tells you the macro cycle stage, not short-term direction.',
+    link: 'https://www.blockchaincenter.net/en/bitcoin-rainbow-chart/',
+    btnText: 'Check Rainbow Chart →',
+    inputType: 'select',
+    options: [
+      { label: '🔵 Fire Sale — Historic Bottom',   signal: 1,  color: 'blue'   },
+      { label: '🟦 Buy — Deep Value',              signal: 1,  color: 'blue'   },
+      { label: '🟩 Accumulate — Below Fair Value', signal: 1,  color: 'green'  },
+      { label: '🟨 Still Cheap — Fair Value',      signal: 0,  color: 'yellow' },
+      { label: '🟧 HODL — Above Fair Value',       signal: 0,  color: 'orange' },
+      { label: '🟧 Is This a Bubble?',             signal: -1, color: 'orange' },
+      { label: '🔴 FOMO — Bubble Territory',       signal: -1, color: 'red'    },
+      { label: '🔴 Sell Seriously',                signal: -1, color: 'red'    },
+      { label: '🔴 Maximum Bubble Territory',      signal: -1, color: 'red'    },
+    ],
+    compute(saved) {
+      const opt = this.options[saved.band] || this.options[0];
+      return { signal: opt.signal, color: opt.color, label: opt.label, display: opt.label };
+    },
+  },
+
+  m2: {
+    name: 'Global M2 Money Supply',
+    modalKey: 'm2',
+    desc: 'Total money in the global financial system. Historically Bitcoin follows M2 with a 3-6 month lag.',
+    link: 'https://fred.stlouisfed.org/series/M2SL',
+    btnText: 'Check M2 on FRED →',
+    inputType: 'number',
+    step: '0.1',
+    placeholder: 'e.g. 5.2 (YoY growth %)',
+    cardNote: 'Enter the year-over-year growth % you see on the M2 chart',
+    compute(saved) {
+      const v = saved.value;
+      if (v > 5) return { signal: 1,  color: 'green', label: 'Expanding — Tailwind',   display: v.toFixed(1) + '%', sub: 'M2 YoY Growth' };
+      if (v < 0) return { signal: -1, color: 'red',   label: 'Contracting — Headwind', display: v.toFixed(1) + '%', sub: 'M2 YoY Growth' };
+      return           { signal: 0,  color: 'grey',  label: 'Moderate Growth',        display: v.toFixed(1) + '%', sub: 'M2 YoY Growth' };
+    },
+  },
+};
+
+function l1LoadManual(key) {
+  try {
+    const raw = localStorage.getItem('layer1_' + key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function l1SaveManual(key) {
+  const spec = L1_MANUAL_SPECS[key];
+  const data = { ts: Date.now() };
+
+  if (spec.inputType === 'dual-number') {
+    const cut  = parseFloat(document.getElementById(`l1in-${key}-cut`).value);
+    const hike = parseFloat(document.getElementById(`l1in-${key}-hike`).value);
+    if (isNaN(cut) || isNaN(hike)) return;
+    data.cutProb = cut;
+    data.hikeProb = hike;
+  } else if (spec.inputType === 'select') {
+    data.band = parseInt(document.getElementById(`l1in-${key}-value`).value, 10);
+  } else {
+    const v = parseFloat(document.getElementById(`l1in-${key}-value`).value);
+    if (isNaN(v)) return;
+    data.value = v;
+    if (spec.inputType === 'number-toggle') {
+      data.direction = _l1ToggleState[key] || spec.defaultToggle;
+    }
+  }
+
+  localStorage.setItem('layer1_' + key, JSON.stringify(data));
+  _l1EditingCards.delete(key);
+  renderLayer1Grid();
+  recalcL1Verdict();
+}
+
+function l1SetToggle(key, val) {
+  _l1ToggleState[key] = val;
+  const row = document.getElementById(`l1in-${key}-toggle`);
+  if (!row) return;
+  row.querySelectorAll('.ms-l1-toggle').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.val === val);
+  });
+}
+
+function l1ToggleEdit(key) {
+  if (_l1EditingCards.has(key)) _l1EditingCards.delete(key);
+  else _l1EditingCards.add(key);
+  renderLayer1Grid();
+}
+
+function l1AgoText(ts) {
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function l1StalenessHTML(ts) {
+  const hours = (Date.now() - ts) / 3600000;
+  if (hours < 24) {
+    const h = Math.floor(hours);
+    const text = h < 1 ? 'just now' : `${h} hour${h === 1 ? '' : 's'} ago`;
+    return `<div class="ms-l1-stale fresh">✓ Updated ${text}</div>`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 7) {
+    return `<div class="ms-l1-stale warn">⚠️ Entered ${days} day${days === 1 ? '' : 's'} ago — verify current value</div>`;
+  }
+  return `<div class="ms-l1-stale old">⚠️ Value is ${days} days old — likely outdated</div>`;
+}
+
+function renderInputControls(key, spec, saved) {
+  let html = `<div class="ms-l1-input-label">Enter current value:</div>`;
+
+  if (spec.inputType === 'dual-number') {
+    const cutVal  = saved ? saved.cutProb  : '';
+    const hikeVal = saved ? saved.hikeProb : '';
+    html += `
+      <div class="ms-l1-input-row dual">
+        <input type="number" min="0" max="100" step="1" placeholder="${spec.placeholders[0]}" id="l1in-${key}-cut" value="${cutVal}">
+        <input type="number" min="0" max="100" step="1" placeholder="${spec.placeholders[1]}" id="l1in-${key}-hike" value="${hikeVal}">
+        <button type="button" class="ms-l1-save-btn" onclick="l1SaveManual('${key}')">Save</button>
+      </div>`;
+    return html;
+  }
+
+  if (spec.inputType === 'select') {
+    html += `
+      <div class="ms-l1-input-row">
+        <select id="l1in-${key}-value">
+          ${spec.options.map((o, i) => `<option value="${i}" ${saved && saved.band === i ? 'selected' : ''}>${o.label}</option>`).join('')}
+        </select>
+        <button type="button" class="ms-l1-save-btn" onclick="l1SaveManual('${key}')">Save</button>
+      </div>`;
+    return html;
+  }
+
+  const val = saved ? saved.value : '';
+  html += `
+    <div class="ms-l1-input-row">
+      <input type="number" step="${spec.step}" placeholder="${spec.placeholder}" id="l1in-${key}-value" value="${val}">
+      <button type="button" class="ms-l1-save-btn" onclick="l1SaveManual('${key}')">Save</button>
     </div>`;
+
+  if (spec.inputType === 'number-toggle') {
+    const dir = (saved && saved.direction) || _l1ToggleState[key] || spec.defaultToggle;
+    _l1ToggleState[key] = dir;
+    html += `<div class="ms-l1-toggle-row" id="l1in-${key}-toggle">${spec.toggleOptions.map(o =>
+      `<button type="button" class="ms-l1-toggle ${dir === o.value ? 'active' : ''}" data-val="${o.value}" onclick="l1SetToggle('${key}','${o.value}')">${o.label}</button>`
+    ).join('')}</div>`;
+  }
+
+  return html;
+}
+
+function renderManualInputCard(key, extraHtml) {
+  const spec   = L1_MANUAL_SPECS[key];
+  const saved  = l1LoadManual(key);
+  const result = saved ? spec.compute(saved) : null;
+  const editing = !saved || _l1EditingCards.has(key);
+
+  let html = `<div class="ms-l1-card manual">`;
+  html += `<div class="ms-panel-head"><span>${spec.name}</span>${l1InfoBtn(spec.modalKey, spec.name)}</div>`;
+
+  if (result) {
+    html += `<div class="ms-l1-value">${result.display}</div>`;
+    if (result.sub) html += `<div class="ms-l1-sub">${result.sub}</div>`;
+    html += `<span class="ms-pill ${result.color}">${result.label}</span>`;
+    html += l1StalenessHTML(saved.ts);
+  } else {
+    html += `<div class="ms-l1-manual-icon">🔗</div>`;
+    html += `<div class="ms-l1-manual-desc">${spec.desc}</div>`;
+  }
+
+  if (spec.cardNote) html += `<div class="ms-l1-manual-extra">${spec.cardNote}</div>`;
+  if (extraHtml)     html += `<div class="ms-l1-manual-extra">${extraHtml}</div>`;
+
+  if (editing) {
+    if (result) html += `<div class="ms-l1-manual-desc">${spec.desc}</div>`;
+    html += renderInputControls(key, spec, saved);
+    if (result) {
+      html += `<div class="ms-l1-saved-meta">Last saved: ${result.display} (${l1AgoText(saved.ts)})</div>`;
+      html += `<button type="button" class="ms-l1-edit-link" onclick="l1ToggleEdit('${key}')">Cancel</button>`;
+    }
+  } else {
+    html += `<button type="button" class="ms-l1-edit-link" onclick="l1ToggleEdit('${key}')">✏️ Edit</button>`;
+  }
+
+  html += `<a class="ms-l1-link-btn" href="${spec.link}" target="_blank" rel="noopener">${spec.btnText}</a>`;
+  html += `<div class="ms-l1-manual-label">Manual check — not automated</div>`;
+  html += `</div>`;
+  return html;
+}
+
+// ── Layer 1 combined verdict (live + manual signals) ───────────────────────────
+const L1_LIVE_KEYS       = ['fear_greed', 'btc_dominance', 'dxy', 'fed_funds', 'yield_10y', 'cpi', 'vix'];
+const L1_MANUAL_OVERRIDE = { dxy: 'dxy', fed_funds: 'fedfunds', yield_10y: 'yield10y', cpi: 'cpi', vix: 'vix' };
+const L1_ALWAYS_MANUAL_KEYS = ['fedwatch', 'jobs', 'rainbow', 'm2'];
+
+function l1CombinedSignals() {
+  const signals = [];
+  if (_layer1Data) {
+    for (const key of L1_LIVE_KEYS) {
+      const d = _layer1Data[key];
+      if (d && d.status === 'ok') {
+        signals.push(d.signal);
+        continue;
+      }
+      const manualKey = L1_MANUAL_OVERRIDE[key];
+      if (manualKey) {
+        const saved = l1LoadManual(manualKey);
+        if (saved) signals.push(L1_MANUAL_SPECS[manualKey].compute(saved).signal);
+      }
+    }
+  }
+  for (const key of L1_ALWAYS_MANUAL_KEYS) {
+    const saved = l1LoadManual(key);
+    if (saved) signals.push(L1_MANUAL_SPECS[key].compute(saved).signal);
+  }
+  return signals;
+}
+
+function recalcL1Verdict() {
+  const signals = l1CombinedSignals();
+  const total   = signals.length;
+  const bullish = signals.filter(s => s > 0).length;
+  const bearish = signals.filter(s => s < 0).length;
+  const neutral = total - bullish - bearish;
+
+  let verdict;
+  if (total < 3) {
+    verdict = { code: 'INSUFFICIENT_DATA', label: 'INSUFFICIENT DATA', emoji: '⚪', color: 'grey' };
+  } else if (bullish >= 6) {
+    verdict = { code: 'FAVORABLE', label: 'MACRO FAVORABLE', emoji: '🟢', color: 'green' };
+  } else if (bearish >= 6) {
+    verdict = { code: 'UNFAVORABLE', label: 'MACRO UNFAVORABLE', emoji: '🔴', color: 'red' };
+  } else {
+    verdict = { code: 'MIXED', label: 'MIXED', emoji: '🟡', color: 'yellow' };
+  }
+
+  renderL1Verdict(verdict);
+
+  const scoreEl = document.getElementById('ms-l1-score');
+  if (scoreEl) {
+    scoreEl.textContent = `${total} indicator${total === 1 ? '' : 's'} counted — ${bullish} bullish, ${bearish} bearish, ${neutral} neutral`;
+  }
 }
 
 function l1FearGreed(d) {
@@ -2261,15 +2660,7 @@ function l1BtcDominance(d) {
 
 function l1Dxy(d) {
   if (!d || d.status === 'error') return l1ErrorCard('DXY — US Dollar Index', 'dxy');
-  if (d.status === 'no_key') {
-    return l1ManualCard({
-      name: 'DXY — US Dollar Index',
-      desc: 'US Dollar strength vs. a basket of major currencies. A rising dollar is historically a headwind for crypto; a falling dollar a tailwind.',
-      link: 'https://www.tradingview.com/symbols/TVC-DXY/',
-      btnText: 'Check DXY Chart →',
-      modalKey: 'dxy',
-    });
-  }
+  if (d.status === 'no_key') return renderManualInputCard('dxy');
   const arrow = d.change_7d_pct >= 0 ? '↑' : '↓';
   const dir   = d.change_7d_pct >= 0 ? 'up' : 'down';
   return `
@@ -2284,15 +2675,7 @@ function l1Dxy(d) {
 
 function l1FedFunds(d) {
   if (!d || d.status === 'error') return l1ErrorCard('Fed Funds Rate', 'fedfunds');
-  if (d.status === 'no_key') {
-    return l1ManualCard({
-      name: 'Fed Funds Rate',
-      desc: "The Fed's benchmark interest rate. Cutting cycles are historically bullish for crypto; hiking cycles bearish.",
-      link: 'https://fred.stlouisfed.org/series/FEDFUNDS',
-      btnText: 'Check Fed Funds Rate →',
-      modalKey: 'fedfunds',
-    });
-  }
+  if (d.status === 'no_key') return renderManualInputCard('fedfunds');
   return `
     <div class="ms-l1-card">
       <div class="ms-panel-head"><span>Fed Funds Rate</span>${l1InfoBtn('fedfunds', 'Fed Funds Rate')}</div>
@@ -2305,15 +2688,7 @@ function l1FedFunds(d) {
 
 function l1Yield10y(d) {
   if (!d || d.status === 'error') return l1ErrorCard('US 10-Year Treasury Yield', 'yield10y');
-  if (d.status === 'no_key') {
-    return l1ManualCard({
-      name: 'US 10-Year Treasury Yield',
-      desc: 'The risk-free benchmark rate crypto competes with for capital. High and rising yields are a headwind; low yields a tailwind.',
-      link: 'https://fred.stlouisfed.org/series/DGS10',
-      btnText: 'Check 10Y Yield →',
-      modalKey: 'yield10y',
-    });
-  }
+  if (d.status === 'no_key') return renderManualInputCard('yield10y');
   const arrow = d.change_7d >= 0 ? '↑' : '↓';
   const dir   = d.change_7d >= 0 ? 'up' : 'down';
   return `
@@ -2327,15 +2702,7 @@ function l1Yield10y(d) {
 
 function l1Cpi(d) {
   if (!d || d.status === 'error') return l1ErrorCard('CPI — Inflation Rate', 'cpi');
-  if (d.status === 'no_key') {
-    return l1ManualCard({
-      name: 'CPI — Inflation Rate',
-      desc: 'Year-over-year consumer price inflation. High/rising inflation keeps the Fed hawkish; low/falling inflation lets it ease.',
-      link: 'https://fred.stlouisfed.org/series/CPIAUCSL',
-      btnText: 'Check CPI →',
-      modalKey: 'cpi',
-    });
-  }
+  if (d.status === 'no_key') return renderManualInputCard('cpi');
   const dirLabel = d.direction === 'rising' ? '↑ Rising vs. last month' : '↓ Falling vs. last month';
   return `
     <div class="ms-l1-card">
@@ -2350,15 +2717,7 @@ function l1Cpi(d) {
 
 function l1Vix(d) {
   if (!d || d.status === 'error') return l1ErrorCard('VIX — Market Fear Index', 'vix');
-  if (d.status === 'no_key') {
-    return l1ManualCard({
-      name: 'VIX — Market Fear Index',
-      desc: 'Wall Street\'s "fear gauge." Calm markets (low VIX) favor risk assets; spikes above 30 often coincide with crypto selloffs.',
-      link: 'https://www.tradingview.com/symbols/CBOE-VIX/',
-      btnText: 'Check VIX →',
-      modalKey: 'vix',
-    });
-  }
+  if (d.status === 'no_key') return renderManualInputCard('vix');
   const arrow = d.change_7d >= 0 ? '↑' : '↓';
   const dir   = d.change_7d >= 0 ? 'up' : 'down';
   return `
