@@ -61,10 +61,6 @@ def _get_deploy_time() -> str:
 
 _DEPLOY_TIME = _get_deploy_time()
 
-# ── Market signals cache ──────────────────────────────────────────────────────
-_market_signals_cache: dict = {"data": None, "ts": 0.0}
-_SIGNALS_TTL = 900  # seconds (15 min)
-
 # ── In-memory state ───────────────────────────────────────────────────────────
 _clients: dict = {}          # account_id -> BinanceSpotClient
 _futures_clients: dict = {}  # account_id -> BinanceFuturesClient
@@ -74,6 +70,9 @@ _price_lock = threading.Lock()
 _coin_configs: list = []   # list[CoinConfig]
 _accounts: list = []       # list[dict]  (loaded from accounts.json)
 _dca_models: list = []     # list[dict]  (loaded from dca_models.json)
+
+_layer2_cache: dict = {}   # symbol -> {"data": dict, "ts": float}
+_LAYER2_TTL = 300  # seconds (5 min)
 
 
 # ── Loaders ───────────────────────────────────────────────────────────────────
@@ -382,327 +381,6 @@ def api_status():
     })
 
 
-def _compute_market_signals(force: bool = False) -> dict:
-    """Bull/bear regime signals for BTC, ETH, XRP, SOL, ZEC, SUI
-    (Binance) plus XAU (gold) and NVDA (Twelve Data).
-
-    Cached for _SIGNALS_TTL seconds. Called both by the /api/market/signals
-    route and by the background _signal_poller, so Signal History keeps
-    accumulating even when nobody has the dashboard open.
-    """
-    import datetime as _dt
-    global _market_signals_cache
-    now = time.time()
-    if not force and _market_signals_cache["data"] and now - _market_signals_cache["ts"] < _SIGNALS_TTL:
-        return _market_signals_cache["data"]
-
-    from core.market_data import fetch_klines
-
-    # Preset level suggestions keyed by (regime, score).
-    # Levels are stored as positive magnitudes; direction depends on regime.
-    _PRESETS = {
-        ("BULL", 4): {"name": "Conservative",  "levels": [6, 10, 15],          "tp": 5.0},
-        ("BULL", 3): {"name": "Standard",       "levels": [8, 12, 18, 24],      "tp": 8.0},
-        ("NEUTRAL",2):{"name": "Cautious",      "levels": [8, 12, 18],          "tp": 6.0},
-        ("BEAR", 1): {"name": "Standard Short", "levels": [6, 10, 15],          "tp": 5.0},
-        ("BEAR", 0): {"name": "Aggressive Short","levels": [8, 12, 18, 24],     "tp": 8.0},
-    }
-
-    # Load user-saved strategies from coins.json
-    try:
-        with open(COINS_PATH) as _f:
-            _raw = json.load(_f).get("coins", [])
-    except Exception:
-        _raw = []
-
-    def _best_saved(coin_name: str, regime: str):
-        """Return the best matching saved strategy dict, or None."""
-        matches = [s for s in _raw if s.get("coin", "").upper() == coin_name.upper()]
-        if not matches:
-            return None
-        for s in matches:
-            lvls = s.get("dump_levels", [])
-            is_long  = lvls and all(l < 0 for l in lvls)
-            is_short = lvls and all(l > 0 for l in lvls)
-            if regime == "BULL"    and is_long:  return s
-            if regime == "BEAR"    and is_short: return s
-            if regime == "NEUTRAL":              return s
-        return matches[0]
-
-    coins = [
-        ("BTC",  "BTCUSDT",  "binance"),
-        ("ETH",  "ETHUSDT",  "binance"),
-        ("XRP",  "XRPUSDT",  "binance"),
-        ("SOL",  "SOLUSDT",  "binance"),
-        ("ZEC",  "ZECUSDT",  "binance"),
-        ("SUI",  "SUIUSDT",  "binance"),
-        ("XAU",  "XAU/USD",  "twelvedata"),
-        ("NVDA", "NVDA",     "twelvedata"),
-    ]
-
-    def _ema(data: list, period: int) -> list:
-        k = 2.0 / (period + 1)
-        out = [data[0]]
-        for p in data[1:]:
-            out.append(p * k + out[-1] * (1 - k))
-        return out
-
-    def _rsi(closes: list, period: int = 14) -> float:
-        diffs  = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
-        gains  = [max(d, 0) for d in diffs[-period:]]
-        losses = [max(-d, 0) for d in diffs[-period:]]
-        ag = sum(gains) / period
-        al = sum(losses) / period
-        return 100.0 - (100.0 / (1 + ag / al)) if al else 100.0
-
-    def _fib_target(closes, highs, lows, price, direction):
-        """Nearest Fibonacci retracement/extension level in the given
-        direction ('up' or 'down') relative to current price, or None."""
-        try:
-            from core.fibonacci import compute_fibonacci
-            candles = [{"high": h, "low": l, "close": c} for c, h, l in zip(closes, highs, lows)]
-            levels = compute_fibonacci(candles, lookback=100).levels
-        except Exception:
-            return None
-
-        if direction == "down":
-            candidates = [lv for lv in levels if lv.price < price]
-            best = max(candidates, key=lambda lv: lv.price) if candidates else None
-        else:
-            candidates = [lv for lv in levels if lv.price > price]
-            best = min(candidates, key=lambda lv: lv.price) if candidates else None
-
-        if best is None:
-            return None
-        return {
-            "price":     best.price,
-            "pct":       best.label.split(" — ")[0].replace("Fib ", ""),
-            "kind":      best.kind,
-            "direction": direction,
-        }
-
-    def _atr(closes: list, highs: list, lows: list, period: int = 14) -> float:
-        """Average True Range over the last `period` candles."""
-        if len(closes) < period + 1:
-            return 0.0
-        trs = [
-            max(highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i]  - closes[i - 1]))
-            for i in range(1, len(closes))
-        ]
-        return sum(trs[-period:]) / period
-
-    signals = []
-    for coin, symbol, source in coins:
-        try:
-            closes, highs, lows = fetch_klines(source, symbol)
-            price   = closes[-1]
-            dec     = 4 if price < 10 else (2 if price < 1000 else 0)
-            e50     = _ema(closes, 50)[-1]
-            e200    = _ema(closes, 200)[-1]
-            rsi     = _rsi(closes)
-            n7      = min(42, len(closes) - 1)
-            week_ret = (price - closes[-n7 - 1]) / closes[-n7 - 1] * 100
-
-            # ATR over the last 7 and 14 days (4h candles -> 6/day)
-            atr_7d  = _atr(closes, highs, lows, period=42)
-            atr_14d = _atr(closes, highs, lows, period=84)
-
-            # Range % = (highest high - lowest low) / highest high, over the same windows
-            hh7, ll7   = max(highs[-42:]), min(lows[-42:])
-            hh14, ll14 = max(highs[-84:]), min(lows[-84:])
-            range_pct_7d  = (hh7  - ll7)  / hh7  * 100
-            range_pct_14d = (hh14 - ll14) / hh14 * 100
-
-            s1 = price > e50
-            s2 = e50   > e200
-            s3 = rsi   > 55
-            s4 = week_ret > 0
-
-            score = int(s1) + int(s2) + int(s3) + int(s4)
-            if   score >= 3: regime, rec = "BULL",    "Long DCA"
-            elif score <= 1: regime, rec = "BEAR",    "Short DCA"
-            else:            regime, rec = "NEUTRAL", "Mixed DCA"
-
-            # ── Entry readiness ───────────────────────────────────────
-            # Trend alone is not enough — RSI timing determines readiness
-            if regime == "BULL":
-                if rsi < 40:
-                    action, entry_ready = "LONG NOW",  True
-                    condition = f"RSI oversold at {rsi:.0f} — strong dip entry"
-                elif rsi < 50:
-                    action, entry_ready = "LONG NOW",  True
-                    condition = f"RSI {rsi:.0f} — decent dip, good entry"
-                elif rsi < 60:
-                    action, entry_ready = "WATCH",     False
-                    condition = f"Wait for RSI to dip below 50 (now {rsi:.0f})"
-                else:
-                    action, entry_ready = "WAIT",      False
-                    condition = f"RSI too high for long entry — wait for pullback to RSI 50 (now {rsi:.0f})"
-            elif regime == "BEAR":
-                if rsi > 65:
-                    action, entry_ready = "SHORT NOW", True
-                    condition = f"RSI overbought at {rsi:.0f} — strong pump to short into"
-                elif rsi > 55:
-                    action, entry_ready = "SHORT NOW", True
-                    condition = f"RSI {rsi:.0f} — elevated, decent short entry"
-                elif rsi > 45:
-                    action, entry_ready = "WATCH",     False
-                    condition = f"Wait for RSI to rise above 55 (now {rsi:.0f})"
-                else:
-                    action, entry_ready = "WAIT",      False
-                    condition = f"RSI too low for short — wait for bounce to RSI 55+ (now {rsi:.0f})"
-            else:  # NEUTRAL
-                action, entry_ready = "WATCH",     False
-                condition = "No clear trend — wait for BULL or BEAR confirmation"
-
-            # Pending action — the LONG NOW / SHORT NOW signal that would
-            # follow once a WATCH/WAIT condition resolves. BULL regimes only
-            # ever resolve to a long entry, BEAR regimes to a short entry;
-            # NEUTRAL regimes can break either way, so it's left undetermined.
-            if action in ("LONG NOW", "SHORT NOW"):
-                pending_action = None
-            elif regime == "BULL":
-                pending_action = "LONG NOW"
-            elif regime == "BEAR":
-                pending_action = "SHORT NOW"
-            else:
-                pending_action = None
-
-            # Probable targets — prices to wait for in the direction the
-            # current (or pending) signal expects price to move.
-            if action == "SHORT NOW" or pending_action == "SHORT NOW":
-                target_dir = "down"
-            elif action == "LONG NOW" or pending_action == "LONG NOW":
-                target_dir = "up"
-            else:
-                target_dir = None
-
-            if target_dir:
-                fib_target = _fib_target(closes, highs, lows, price, target_dir)
-
-                atr = _atr(closes, highs, lows)
-                vol_price = price - atr if target_dir == "down" else price + atr
-                vol_target = {"price": round(vol_price, dec), "direction": target_dir} if atr > 0 else None
-
-                profit_pct   = 0.98 if target_dir == "down" else 1.02
-                profit_target = {"price": round(price * profit_pct, dec), "direction": target_dir}
-            else:
-                fib_target    = None
-                vol_target    = None
-                profit_target = None
-
-            # Strategy recommendation: prefer saved, fall back to preset
-            saved = _best_saved(coin, regime)
-            if saved:
-                strat_name   = saved.get("name", coin + " Strategy")
-                strat_levels = [abs(l) for l in saved.get("dump_levels", [])]
-                strat_tp     = saved.get("take_profit_percent", 5.0)
-                strat_source = "saved"
-            else:
-                preset_key   = (regime, score)
-                preset       = _PRESETS.get(preset_key, _PRESETS.get(("BULL" if regime == "BULL" else "BEAR", 3 if regime == "BULL" else 1)))
-                strat_name   = preset["name"]
-                strat_levels = preset["levels"]
-                strat_tp     = preset["tp"]
-                strat_source = "suggested"
-
-            # Suggested anchor = highest HIGH of last 14 days (84 × 4h candles)
-            anchor = max(highs[-min(84, len(highs)):])
-
-            # DCA trigger prices based on anchor + recommended levels
-            trigger_prices = [
-                round(anchor * (1 - lvl / 100), dec)
-                for lvl in strat_levels
-            ]
-
-            # Levels already passed = trigger price is above current price
-            # (price has already fallen through them)
-            levels_passed = sum(1 for tp in trigger_prices if tp > price)
-
-            # ── ML models ────────────────────────────────────────────
-            try:
-                from core.ml_signals import predict_direction, classify_regime, score_entry
-                ml_dir    = predict_direction(closes, highs, lows)
-                ml_regime = classify_regime(closes, highs, lows, score, regime)
-                ml_entry  = score_entry(closes, highs, lows, rec)
-            except Exception:
-                ml_dir    = {"direction": "UNKNOWN", "confidence": 0.0}
-                ml_regime = {"regime": regime, "confidence": 50.0, "agrees_with_rules": True}
-                ml_entry  = {"score": 50, "grade": "C", "factors": []}
-
-            signals.append({
-                "coin":           coin,
-                "price":          round(price, dec),
-                "ema50":          round(e50,  2),
-                "ema200":         round(e200, 2),
-                "rsi":            round(rsi,  1),
-                "week_ret":       round(week_ret, 2),
-                "atr_7d":         round(atr_7d, dec),
-                "atr_14d":        round(atr_14d, dec),
-                "range_pct_7d":   round(range_pct_7d, 2),
-                "range_pct_14d":  round(range_pct_14d, 2),
-                "score":          score,
-                "regime":         regime,
-                "rec":            rec,
-                "s1": s1, "s2": s2, "s3": s3, "s4": s4,
-                "strat_name":     strat_name,
-                "strat_levels":   strat_levels,
-                "strat_tp":       strat_tp,
-                "strat_source":   strat_source,
-                "anchor":         round(anchor, dec),
-                "trigger_prices": trigger_prices,
-                "levels_passed":  levels_passed,
-                "ml_direction":   ml_dir,
-                "ml_regime":      ml_regime,
-                "ml_entry":       ml_entry,
-                "action":         action,
-                "entry_ready":    entry_ready,
-                "condition":      condition,
-                "pending_action": pending_action,
-                "fib_target":     fib_target,
-                "vol_target":     vol_target,
-                "profit_target":  profit_target,
-            })
-        except Exception as exc:
-            signals.append({
-                "coin": coin, "regime": "UNKNOWN", "rec": "—",
-                "score": 0, "error": str(exc),
-            })
-
-    result = {
-        "signals":   signals,
-        "timestamp": _dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
-    }
-    _market_signals_cache = {"data": result, "ts": now}
-
-    # Persist to history DB (only on fresh computes, not cache hits)
-    try:
-        from core.signal_history import save_signals
-        save_signals(signals)
-    except Exception:
-        pass
-
-    # Telegram alert on newly actionable (LONG NOW / SHORT NOW) signals
-    try:
-        from core.telegram_notifier import notify_actionable_signals
-        notify_actionable_signals(signals)
-    except Exception:
-        pass
-
-    return result
-
-
-@app.route("/api/market/signals")
-def api_market_signals():
-    force = "bust" in request.args
-    result = _compute_market_signals(force=force)
-    if "signals" not in result:
-        return jsonify(result), 500
-    return jsonify(result)
-
-
 @app.route("/api/telegram/test", methods=["POST"])
 def api_telegram_test():
     """Send a test message to verify TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID."""
@@ -715,64 +393,223 @@ def api_telegram_test():
     return jsonify({"ok": True})
 
 
-_FIB_SYMBOLS = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "XRP": "XRPUSDT", "SOL": "SOLUSDT"}
+# ── Routes — Layer 2 (Market Positioning) ─────────────────────────────────────
+
+_BINANCE_FAPI = "https://fapi.binance.com"
 
 
-@app.route("/api/fibonacci")
-def api_fibonacci():
-    """Fibonacci retracement/extension levels for a coin, from recent 4h klines."""
-    coin = request.args.get("coin", "BTC").upper()
-    symbol = _FIB_SYMBOLS.get(coin)
-    if not symbol:
-        return jsonify({"error": f"unknown coin '{coin}'"}), 400
+def _layer2_funding(symbol: str) -> dict:
+    """Current funding rate, sparkline history, and next-funding countdown."""
+    import requests
+    from datetime import datetime, timedelta
+
+    data = requests.get(
+        f"{_BINANCE_FAPI}/fapi/v1/fundingRate",
+        params={"symbol": symbol, "limit": 90}, timeout=8,
+    ).json()
+    if not isinstance(data, list) or not data:
+        raise ValueError("no funding rate data")
+
+    rates = [float(d["fundingRate"]) for d in data]
+    current = rates[-1]
+
+    if current > 0.0005:
+        label, color = "HIGH — Longs Crowded", "red"
+    elif current >= 0.0001:
+        label, color = "Elevated", "yellow"
+    elif current >= -0.0001:
+        label, color = "Neutral", "green"
+    else:
+        label, color = "Negative — Shorts Crowded", "blue"
+
+    # Funding settles every 8h at 00:00 / 08:00 / 16:00 UTC
+    now_utc = datetime.utcnow()
+    boundary_hour = ((now_utc.hour // 8) + 1) * 8
+    next_funding = (now_utc + timedelta(days=boundary_hour // 24)).replace(
+        hour=boundary_hour % 24, minute=0, second=0, microsecond=0)
+    seconds_until = (next_funding - now_utc).total_seconds()
+
+    return {
+        "current": current,
+        "current_pct": current * 100,
+        "history": rates[-30:],
+        "next_funding_time": next_funding.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "seconds_until_next": int(seconds_until),
+        "label": label,
+        "color": color,
+    }
+
+
+def _layer2_open_interest(symbol: str) -> dict:
+    """Current open interest (USD), 24h change, and price/OI direction combo."""
+    import requests
+
+    oi_data = requests.get(
+        f"{_BINANCE_FAPI}/futures/data/openInterestHist",
+        params={"symbol": symbol, "contractType": "PERPETUAL", "period": "1h", "limit": 48},
+        timeout=8,
+    ).json()
+    if not isinstance(oi_data, list) or not oi_data:
+        raise ValueError("no open interest data")
+
+    oi_values = [float(d["sumOpenInterestValue"]) for d in oi_data]
+    current = oi_values[-1]
+    prev = oi_values[-25] if len(oi_values) >= 25 else oi_values[0]
+    change_pct = ((current - prev) / prev * 100) if prev else 0.0
+    oi_direction = "up" if change_pct >= 0 else "down"
+
+    klines = requests.get(
+        f"{_BINANCE_FAPI}/fapi/v1/klines",
+        params={"symbol": symbol, "interval": "1h", "limit": 48},
+        timeout=8,
+    ).json()
+    prices = [float(k[4]) for k in klines] if isinstance(klines, list) else []
+    if prices:
+        price_prev = prices[-25] if len(prices) >= 25 else prices[0]
+        price_direction = "up" if prices[-1] >= price_prev else "down"
+    else:
+        price_direction = None
+
+    if price_direction == "up" and oi_direction == "up":
+        label, color = "Strong — New Money Entering", "green"
+    elif price_direction == "up" and oi_direction == "down":
+        label, color = "Weak — Short Covering Only", "orange"
+    elif price_direction == "down" and oi_direction == "up":
+        label, color = "Strong Selling — New Shorts", "red"
+    elif price_direction == "down" and oi_direction == "down":
+        label, color = "Exhaustion — Longs Closing", "yellow"
+    else:
+        label, color = "Unavailable", "grey"
+
+    return {
+        "current_usd": current,
+        "current_billions": current / 1e9,
+        "change_24h_pct": change_pct,
+        "direction": oi_direction,
+        "price_direction": price_direction,
+        "history": oi_values,
+        "price_history": prices,
+        "label": label,
+        "color": color,
+    }
+
+
+def _layer2_long_short(symbol: str) -> dict:
+    """Global retail and top-trader long/short account ratios."""
+    import requests
+
+    global_data = requests.get(
+        f"{_BINANCE_FAPI}/futures/data/globalLongShortAccountRatio",
+        params={"symbol": symbol, "period": "1h", "limit": 48}, timeout=8,
+    ).json()
+    top_data = requests.get(
+        f"{_BINANCE_FAPI}/futures/data/topLongShortAccountRatio",
+        params={"symbol": symbol, "period": "1h", "limit": 48}, timeout=8,
+    ).json()
+    if not isinstance(global_data, list) or not global_data:
+        raise ValueError("no global long/short ratio data")
+    if not isinstance(top_data, list) or not top_data:
+        raise ValueError("no top trader long/short ratio data")
+
+    g, t = global_data[-1], top_data[-1]
+    global_long = float(g["longAccount"]) * 100
+    global_short = float(g["shortAccount"]) * 100
+    top_long = float(t["longAccount"]) * 100
+    top_short = float(t["shortAccount"]) * 100
+
+    def _crowd_label(long_pct, short_pct):
+        if long_pct > 65:
+            return "Longs Crowded", "red"
+        if short_pct > 65:
+            return "Shorts Crowded", "blue"
+        if 45 <= long_pct <= 55:
+            return "Balanced", "green"
+        return "Neutral", "grey"
+
+    global_label, global_color = _crowd_label(global_long, global_short)
+    top_label, top_color = _crowd_label(top_long, top_short)
+
+    divergence = False
+    divergence_message = None
+    if abs(global_long - top_long) > 10 and (global_long - 50) * (top_long - 50) < 0:
+        divergence = True
+        divergence_message = "Top traders positioned opposite to retail"
+
+    return {
+        "global": {"long_pct": global_long, "short_pct": global_short,
+                    "label": global_label, "color": global_color},
+        "top": {"long_pct": top_long, "short_pct": top_short,
+                "label": top_label, "color": top_color},
+        "divergence": divergence,
+        "divergence_message": divergence_message,
+    }
+
+
+def _layer2_verdict(funding: Optional[dict], oi: Optional[dict], ls: Optional[dict]) -> dict:
+    """Combine funding, open interest, and long/short ratio into one verdict."""
+    funding_high = bool(funding and funding["current"] > 0.0005)
+    funding_negative = bool(funding and funding["current"] < -0.0001)
+    longs_crowded = bool(ls and ls["global"]["long_pct"] > 65)
+    shorts_crowded = bool(ls and ls["global"]["short_pct"] > 65)
+
+    if funding_high and longs_crowded:
+        return {"code": "CAUTION_LONG", "label": "CAUTION LONG", "emoji": "🔴", "color": "red"}
+    if funding_negative and shorts_crowded:
+        return {"code": "CAUTION_SHORT", "label": "CAUTION SHORT", "emoji": "🔵", "color": "blue"}
+
+    bullish = sum([
+        funding_negative,
+        shorts_crowded,
+        bool(oi and oi["label"].startswith("Strong —")),
+    ])
+    bearish = sum([
+        funding_high,
+        longs_crowded,
+        bool(oi and oi["label"].startswith("Strong Selling")),
+    ])
+
+    if bullish and bearish:
+        return {"code": "MIXED", "label": "MIXED", "emoji": "🟡", "color": "yellow"}
+    return {"code": "NEUTRAL", "label": "NEUTRAL", "emoji": "🟢", "color": "green"}
+
+
+@app.route("/api/layer2/<symbol>")
+def api_layer2(symbol):
+    """Layer 2 (Market Positioning): funding rate, open interest, and
+    long/short ratios from Binance public futures data, plus a combined
+    verdict. Cached per symbol for _LAYER2_TTL seconds."""
+    symbol = symbol.upper()
+    now = time.time()
+    cached = _layer2_cache.get(symbol)
+    if cached and now - cached["ts"] < _LAYER2_TTL:
+        return jsonify(cached["data"])
+
+    result: dict = {"symbol": symbol}
 
     try:
-        window = int(request.args.get("window", 100))
-    except ValueError:
-        return jsonify({"error": "window must be an integer"}), 400
-
-    try:
-        import requests as _req
-        from core.fibonacci import compute_fibonacci, from_binance_klines
-
-        resp = _req.get(
-            "https://api.binance.com/api/v3/klines",
-            params={"symbol": symbol, "interval": "4h", "limit": 200},
-            timeout=8,
-        )
-        klines = resp.json()
-        if not isinstance(klines, list) or len(klines) < 2:
-            raise ValueError("insufficient kline data")
-
-        candles  = from_binance_klines(klines)
-        analysis = compute_fibonacci(candles, lookback=window)
-        result = analysis.to_dict()
-        result["coin"] = coin
-        return jsonify(result)
+        result["funding"] = _layer2_funding(symbol)
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        result["funding"] = {"error": str(exc)}
 
+    try:
+        result["open_interest"] = _layer2_open_interest(symbol)
+    except Exception as exc:
+        result["open_interest"] = {"error": str(exc)}
 
-def _signal_poller():
-    """Background thread: recompute & persist market signals roughly every
-    _SIGNALS_TTL seconds, independent of dashboard activity."""
-    while True:
-        try:
-            _compute_market_signals()
-        except Exception:
-            pass
-        time.sleep(_SIGNALS_TTL)
+    try:
+        result["long_short"] = _layer2_long_short(symbol)
+    except Exception as exc:
+        result["long_short"] = {"error": str(exc)}
 
+    result["verdict"] = _layer2_verdict(
+        result["funding"] if "error" not in result["funding"] else None,
+        result["open_interest"] if "error" not in result["open_interest"] else None,
+        result["long_short"] if "error" not in result["long_short"] else None,
+    )
+    result["timestamp"] = int(now * 1000)
 
-@app.route("/api/signals/history")
-def api_signals_history():
-    """Return persisted signal history for charting and analysis."""
-    from core.signal_history import get_history, get_summary
-    coin = request.args.get("coin")          # optional filter
-    days = int(request.args.get("days", 7))
-    rows = get_history(coin=coin, days=days)
-    summary = get_summary(days=days)
-    return jsonify({"rows": rows, "summary": summary, "days": days})
+    _layer2_cache[symbol] = {"data": result, "ts": now}
+    return jsonify(result)
 
 
 @app.route("/api/running")
@@ -2390,9 +2227,6 @@ def start():
     # Start price poller
     threading.Thread(target=_price_poller, daemon=True).start()
 
-    # Start market signals poller (keeps Signal History updated continuously)
-    threading.Thread(target=_signal_poller, daemon=True).start()
-
     # Pre-warm price cache
     for cfg in _coin_configs:
         if cfg.symbol in _price_cache:
@@ -2424,7 +2258,6 @@ for _acct in _accounts:
     except Exception:
         pass
 threading.Thread(target=_price_poller, daemon=True).start()
-threading.Thread(target=_signal_poller, daemon=True).start()
 
 
 if __name__ == "__main__":
