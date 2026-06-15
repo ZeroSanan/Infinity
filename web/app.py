@@ -2109,6 +2109,144 @@ def api_backtest_replay():
         return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
 
 
+def _sanitize_floats(d: dict) -> dict:
+    """Replace inf/-inf/nan with None so jsonify's output stays valid JSON
+    (JSON has no Infinity/NaN literals — JS JSON.parse would choke on
+    signal_lab.harness's profit_factor=inf when there are no losing trades)."""
+    import math
+    return {
+        k: (None if isinstance(v, float) and not math.isfinite(v) else v)
+        for k, v in d.items()
+    }
+
+
+@app.route("/api/backtest/signal-scan", methods=["POST"])
+def api_backtest_signal_scan():
+    """Signal Scan: walk the live signal logic (signal_lab.signal_fn, via
+    signal_lab.harness.run_walk) candle-by-candle over a historical date
+    range — at each step only candles[0:i+1] are visible, exactly mirroring
+    the live engine's point-in-time view (no look-ahead). Every LONG_NOW /
+    SHORT_NOW verdict opens one fixed-size TP/SL/horizon trade while flat.
+    Returns each signal/trade plus summary stats vs. inverted / random /
+    buy-and-hold baselines. Pure research tool — does not touch the live
+    engines, config, or core/regime_live.py."""
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from signal_lab import harness
+    from signal_lab.klines import fetch_candle_range, INTERVAL_MS
+
+    try:
+        params = request.json or {}
+        symbol = (params.get("symbol") or "").strip().upper()
+        interval = params.get("interval") or "4h"
+        start_str = params.get("start_date")
+        end_str = params.get("end_date")
+        tp = float(params.get("tp_pct") or 3.0)
+        sl = float(params.get("sl_pct") or 2.0)
+        horizon = int(params.get("horizon") or 12)
+
+        if not symbol:
+            return jsonify({"error": "symbol is required"}), 400
+        if interval not in INTERVAL_MS:
+            return jsonify({"error": f"Unsupported interval: {interval}. Choose one of {sorted(INTERVAL_MS)}"}), 400
+        if not start_str or not end_str:
+            return jsonify({"error": "start_date and end_date are required"}), 400
+        if not (0 < tp <= 50):
+            return jsonify({"error": "tp_pct must be between 0 and 50"}), 400
+        if not (0 < sl <= 50):
+            return jsonify({"error": "sl_pct must be between 0 and 50"}), 400
+        if not (1 <= horizon <= 500):
+            return jsonify({"error": "horizon must be between 1 and 500"}), 400
+
+        try:
+            start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"error": f"Invalid start_date/end_date: {start_str!r} / {end_str!r}"}), 400
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+        start_ms = int(start_dt.timestamp() * 1000)
+        end_ms = int(end_dt.timestamp() * 1000)
+
+        # ── fetch_candle_range fetches [start_ms - warmup*step, end_ms] so the
+        # walk has a full EMA-200 warmup before the requested range begins.
+        candles = fetch_candle_range(symbol, interval, start_ms, end_ms)
+        n = len(candles["close"])
+        if n <= harness.WARMUP_CANDLES:
+            return jsonify({
+                "error": f"Only {n} candles available for this range — need more than "
+                         f"{harness.WARMUP_CANDLES} (EMA-200 warmup). Pick a longer range "
+                         f"or a smaller interval.",
+            }), 400
+
+        args = SimpleNamespace(
+            rsi_overbought=70.0, rsi_oversold=30.0, atr_period=14,
+            tp=tp, sl=sl, horizon=horizon, exit_mode="tpsl", fee=0.1,
+            random_seeds=200, ml_filter=False, quiet=True,
+        )
+
+        # ── No-look-ahead: run_walk() calls get_verdict() on candles[0:i+1] at
+        # each step i — identical point-in-time discipline to fetch_replay_window.
+        walk = harness.run_walk(candles, args)
+        trades = walk["trades"]
+        complete = [t for t in trades if not t["incomplete"]]
+
+        summary = harness._summarize(complete)
+        inverted = harness.inverted_baseline(candles, complete, args)
+        rnd = harness.random_baseline(candles, complete, args)
+        start_idx = complete[0]["entry_index"] if complete else (harness.WARMUP_CANDLES - 1)
+        bh = harness.buy_and_hold(candles, start_idx, n - 1, args.fee)
+
+        close_times = candles["close_time"]
+
+        def iso(ms: int) -> str:
+            return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+
+        signals = [{
+            "entry_time": iso(close_times[t["entry_index"]]),
+            "exit_time": iso(close_times[t["exit_index"]]),
+            "direction": t["direction"],
+            "entry_price": t["entry_price"],
+            "exit_price": t["exit_price"],
+            "exit_reason": t["exit_reason"],
+            "net_pct": t["net_pct"],
+            "bars_held": t["bars_held"],
+            "regime": t["regime"],
+            "incomplete": t["incomplete"],
+        } for t in trades]
+
+        return jsonify({
+            "ok": True,
+            "symbol": symbol,
+            "interval": interval,
+            "candles_used": n,
+            "walked": walk["n_walked"],
+            "range_start_iso": iso(close_times[0]),
+            "range_end_iso": iso(close_times[-1]),
+            "verdict_counts": walk["verdict_counts"],
+            "overlap_same": walk["overlap_same"],
+            "overlap_opp": walk["overlap_opp"],
+            "signals": signals,
+            "signal_count": len(trades),
+            "complete_count": len(complete),
+            "low_sample_size": len(complete) < 20,
+            "summary": _sanitize_floats(summary),
+            "baselines": {
+                "inverted": _sanitize_floats(inverted),
+                "random": _sanitize_floats(rnd),
+                "buy_and_hold": bh,
+            },
+        })
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
+
+
 # ── Routes — Settings (API keys stored in .env) ───────────────────────────────
 
 ENV_PATH = os.path.join(ROOT, ".env")
