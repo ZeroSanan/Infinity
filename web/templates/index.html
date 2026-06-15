@@ -76,7 +76,7 @@
     padding: 14px;
     display: flex; flex-direction: column; gap: 10px;
   }
-  .ms-panel-head { font-size: 12px; font-weight: 600; color: var(--text2); }
+  .ms-panel-head { font-size: 12px; font-weight: 600; color: var(--text2); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
   .ms-stat-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .ms-stat-value { font-size: 22px; font-weight: 700; letter-spacing: -.4px; font-variant-numeric: tabular-nums; }
@@ -127,6 +127,66 @@
   .ms-verdict.yellow { background: rgba(255,204,0,.18);   color: #9a7600; }
   .ms-verdict.green  { background: rgba(52,199,89,.12);   color: #1d8a3b; }
   .ms-verdict.grey   { background: rgba(142,142,147,.10); color: var(--muted); }
+
+  .ms-verdict-note {
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+    font-style: italic;
+    margin-top: 10px;
+    padding: 0 8px;
+  }
+
+  .ms-info-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 16px; line-height: 1; color: var(--muted);
+    padding: 2px; margin: 0; flex-shrink: 0;
+  }
+  .ms-info-btn:hover { color: var(--blue); }
+
+  /* ── Market Signals info modal ── */
+  .ms-modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 600;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .2s ease, visibility .2s ease;
+  }
+  .ms-modal-overlay.open { opacity: 1; visibility: visible; }
+
+  .ms-modal-card {
+    background: var(--surface);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    padding: 24px;
+    max-width: 520px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+  }
+  @media (max-width: 600px) { .ms-modal-card { width: 92%; max-width: none; } }
+
+  .ms-modal-close {
+    position: absolute; top: 10px; right: 10px;
+    background: none; border: none; cursor: pointer;
+    font-size: 26px; line-height: 1; color: var(--muted);
+    padding: 6px 10px; border-radius: 99px;
+  }
+  .ms-modal-close:hover { color: var(--text); background: var(--surface2); }
+
+  .ms-modal-title {
+    font-size: 19px; font-weight: 700; letter-spacing: -.3px;
+    color: var(--text); margin: 0 32px 14px 0;
+  }
+
+  .ms-modal-content { font-size: 15px; line-height: 1.6; color: var(--text2); }
+  .ms-modal-content p { margin-bottom: 12px; }
+  .ms-modal-content p:last-child { margin-bottom: 0; }
+  .ms-modal-content strong { color: var(--text); }
 
   /* ── HEADER ─────────────────────────────────────────────────── */
   header {
@@ -1624,7 +1684,7 @@
 
           <!-- Funding Rate -->
           <div class="ms-panel">
-            <div class="ms-panel-head">Funding Rate</div>
+            <div class="ms-panel-head"><span>Funding Rate</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.funding.title, MS_MODAL.funding.body)" aria-label="About Funding Rate" title="About Funding Rate">ⓘ</button></div>
             <div class="ms-stat-row">
               <div class="ms-stat-value" id="ms-funding-value">—</div>
               <span class="ms-pill grey" id="ms-funding-pill">—</span>
@@ -1635,7 +1695,7 @@
 
           <!-- Open Interest -->
           <div class="ms-panel">
-            <div class="ms-panel-head">Open Interest</div>
+            <div class="ms-panel-head"><span>Open Interest</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.oi.title, MS_MODAL.oi.body)" aria-label="About Open Interest" title="About Open Interest">ⓘ</button></div>
             <div class="ms-stat-row">
               <div class="ms-stat-value" id="ms-oi-value">—</div>
               <span class="ms-stat-change" id="ms-oi-change">—</span>
@@ -1647,7 +1707,7 @@
 
           <!-- Long / Short Ratio -->
           <div class="ms-panel">
-            <div class="ms-panel-head">Long / Short Ratio</div>
+            <div class="ms-panel-head"><span>Long / Short Ratio</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.longshort.title, MS_MODAL.longshort.body)" aria-label="About Long/Short Ratio" title="About Long/Short Ratio">ⓘ</button></div>
             <div class="ms-bar-group">
               <div class="ms-bar-label">Global (Retail)</div>
               <div class="ms-bar"><div class="ms-bar-long" id="ms-global-long-bar" style="width:50%"></div><div class="ms-bar-short" id="ms-global-short-bar" style="width:50%"></div></div>
@@ -1670,12 +1730,22 @@
           <div class="ms-verdict-emoji" id="ms-verdict-emoji">—</div>
           <div class="ms-verdict-label" id="ms-verdict-label">Loading…</div>
         </div>
+        <div class="ms-verdict-note">Combines Funding Rate, Open Interest, and Long/Short Ratio signals. Reflects crowd positioning only — not a trade recommendation. Check Layer 1 (macro) and Layer 3 (entry timing) before acting.</div>
       </div>
 
       <!-- LAYER 3 — ENTRY TIMING -->
       <div class="section-label" style="margin:24px 0 10px">LAYER 3 — ENTRY TIMING</div>
       <div class="ms-placeholder">Coming soon — Volume divergence, Price structure, Liquidity levels</div>
 
+    </div>
+
+    <!-- Shared info modal -->
+    <div class="ms-modal-overlay" id="ms-modal-overlay" onclick="if(event.target===this) closeMsModal()">
+      <div class="ms-modal-card">
+        <button class="ms-modal-close" onclick="closeMsModal()" aria-label="Close">&times;</button>
+        <div class="ms-modal-title" id="ms-modal-title"></div>
+        <div class="ms-modal-content" id="ms-modal-content"></div>
+      </div>
     </div>
 
   </div><!-- /page-market-signals -->
@@ -1998,6 +2068,68 @@ function renderVerdict(v) {
   box.className = 'ms-verdict ' + v.color;
   emoji.textContent = v.emoji; label.textContent = v.label;
 }
+
+// ── Market Signals info modal ─────────────────────────────────────────────────
+const MS_MODAL = {
+  funding: {
+    title: 'Funding Rate — What It Means',
+    body: `
+      <p>Every 8 hours, a payment is exchanged between traders holding long positions and traders holding short positions.</p>
+      <p><strong>POSITIVE FUNDING → Longs paying Shorts</strong><br>More traders want to be long than short. The long side is getting crowded.</p>
+      <p><strong>NEGATIVE FUNDING → Shorts paying Longs</strong><br>More traders want to be short than long. The short side is getting crowded.</p>
+      <p><strong>WHY IT MATTERS</strong><br>When funding is very high and positive, everyone who wanted to buy has already bought. Market makers see an overcrowded long side and push price down to trigger forced closures — a long squeeze cascade.</p>
+      <p>When funding is very negative, the opposite happens. Overcrowded shorts get squeezed upward.</p>
+      <p><strong>HOW TO READ THE COLOR ON THIS CARD</strong></p>
+      <p>🔴 <strong>HIGH (above +0.05%) — Longs Crowded</strong><br>Caution on new long positions. Squeeze conditions are building. The crowd is paying heavily to stay long.</p>
+      <p>🟡 <strong>ELEVATED (+0.01% to +0.05%) — Watch</strong><br>Longs are building. Not extreme yet but trending toward crowded. Monitor for further increases.</p>
+      <p>🟢 <strong>NEUTRAL (-0.01% to +0.01%) — Balanced</strong><br>No extreme positioning. Neither side is crowded. No contrarian signal from funding alone.</p>
+      <p>🔵 <strong>NEGATIVE (below -0.01%) — Shorts Crowded</strong><br>Caution on new short positions. Short squeeze conditions may be building.</p>
+      <p><strong>THE SPARKLINE CHART</strong><br>Shows the last 30 funding periods (~10 days). A funding rate that has been consistently rising over multiple periods is a stronger signal than a single spike that may reverse next period.</p>
+    `
+  },
+  oi: {
+    title: 'Open Interest — What It Means',
+    body: `
+      <p>Open Interest is the total money currently locked in open leveraged futures positions — both longs and shorts combined.</p>
+      <p>Think of it as: how many bets are on the table right now.</p>
+      <p>The number itself matters less than the <strong>direction of change</strong> combined with what price is doing at the same time. This combination tells you who is driving the move and whether it has real conviction.</p>
+      <p><strong>THE FOUR COMBINATIONS</strong></p>
+      <p>✅ <strong>Price ↑ + OI ↑ — Strong Move</strong><br>New money entering the market. Fresh buyers are opening positions, not just old shorts closing. Real conviction. Move more likely to continue.</p>
+      <p>⚠️ <strong>Price ↑ + OI ↓ — Weak Move</strong><br>No new buyers — old shorts are being forced to close (short squeeze). Once those shorts finish closing, buying pressure disappears. Move likely to stall or reverse. Do not chase this rally.</p>
+      <p>🔴 <strong>Price ↓ + OI ↑ — Strong Selling</strong><br>New short positions opening. Bears are confident enough to put fresh money in. Move has conviction downward. More likely to continue falling.</p>
+      <p>🟡 <strong>Price ↓ + OI ↓ — Exhaustion</strong><br>Existing longs are closing in panic or being force-liquidated. Once the cascade exhausts itself and OI stabilizes, selling pressure disappears. Often marks a local bottom — the selling is running out of fuel.</p>
+      <p><strong>THE CHART</strong><br>Shows OI (solid line) alongside price (dashed line) over the last 48 hours. The key pattern to watch: when price makes a new high but OI does not follow, the move is losing conviction and may reverse.</p>
+    `
+  },
+  longshort: {
+    title: 'Long/Short Ratio — What It Means',
+    body: `
+      <p>Shows the percentage of traders currently holding long positions versus short positions. This is real data from actual trader accounts — not a survey.</p>
+      <p><strong>TWO RATIOS SHOWN</strong></p>
+      <p><strong>Global (Retail)</strong><br>All trader accounts on the exchange. Represents the general retail crowd behavior.</p>
+      <p><strong>Top Traders</strong><br>The largest accounts by margin balance — more sophisticated participants with more capital at stake.</p>
+      <p><strong>WHY THE CROWD IS WRONG AT EXTREMES</strong><br>When 70% of traders are long, think about what already happened: all those people already bought. Their buying pushed price to current levels. Who is left to push it higher? Only the 30% who chose NOT to buy — because they're skeptical.</p>
+      <p>Meanwhile all 70% are on the same side of a trade. A small price drop causes some to close in panic. That selling triggers more closures. All 70% rush for the same exit simultaneously. The exit is narrow — price drops fast.</p>
+      <p>Market makers see this setup and deliberately push price down to trigger the cascade, then buy back at lower prices for profit.</p>
+      <p><strong>HOW TO READ THE BARS</strong></p>
+      <p>🔴 <strong>Longs above 65% — Crowd Heavily Long</strong><br>Contrarian caution. Conditions favor a downward squeeze. Do not open new longs with the crowd.</p>
+      <p>🔵 <strong>Shorts above 65% — Crowd Heavily Short</strong><br>Contrarian caution. Conditions favor an upward squeeze. Do not open new shorts with the crowd.</p>
+      <p>🟢 <strong>45% to 55% either way — Balanced</strong><br>No extreme signal from positioning alone.</p>
+      <p><strong>WHEN TOP TRADERS DIFFER FROM RETAIL</strong><br>If retail is 70% long but top traders are only 45% long — sophisticated money is not following the crowd. This divergence is one of the strongest warning signals on this card. Smart money sees something retail does not.</p>
+    `
+  }
+};
+
+function openMsModal(title, contentHtml) {
+  document.getElementById('ms-modal-title').textContent = title;
+  document.getElementById('ms-modal-content').innerHTML = contentHtml;
+  document.getElementById('ms-modal-overlay').classList.add('open');
+}
+
+function closeMsModal() {
+  document.getElementById('ms-modal-overlay').classList.remove('open');
+}
+
 // ── Page tabs ─────────────────────────────────────────────────────────────────
 function showPage(id, btn){
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
