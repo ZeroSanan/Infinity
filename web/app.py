@@ -2025,6 +2025,90 @@ def api_backtest_realism():
             os.unlink(tmp_path)
 
 
+@app.route("/api/backtest/replay", methods=["POST"])
+def api_backtest_replay():
+    """Signal Replay: ask the live signal logic (via the standalone
+    signal_lab.signal_fn copy of core.regime_live) for a LONG/SHORT/WAIT
+    verdict at a chosen historical moment T, using only candles that closed
+    at or before T, then reveal what price actually did over the next N
+    candles. Pure research tool — does not touch the live engines, config,
+    or core/regime_live.py."""
+    from datetime import datetime, timezone
+    from signal_lab.signal_fn import get_verdict
+    from signal_lab.klines import fetch_replay_window, INTERVAL_MS
+
+    try:
+        params = request.json or {}
+        symbol = (params.get("symbol") or "").strip().upper()
+        interval = params.get("interval") or "4h"
+        dt_str = params.get("datetime")
+        lookahead_n = int(params.get("lookahead_n") or 6)
+
+        if not symbol:
+            return jsonify({"error": "symbol is required"}), 400
+        if interval not in INTERVAL_MS:
+            return jsonify({"error": f"Unsupported interval: {interval}. Choose one of {sorted(INTERVAL_MS)}"}), 400
+        if not dt_str:
+            return jsonify({"error": "datetime is required"}), 400
+        if not (1 <= lookahead_n <= 100):
+            return jsonify({"error": "lookahead_n must be between 1 and 100"}), 400
+
+        try:
+            t = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"error": f"Invalid datetime: {dt_str!r}"}), 400
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        t_ms = int(t.timestamp() * 1000)
+
+        # ── No-look-ahead: history = candles closed at/before T, future =
+        # candles opening at/after T. fetch_replay_window() performs and
+        # asserts this split by timestamp before returning either half.
+        history, future = fetch_replay_window(symbol, interval, t_ms, lookahead_n)
+
+        result = get_verdict(history)
+        verdict = {"LONG_NOW": "LONG", "SHORT_NOW": "SHORT", "WATCH": "WAIT", "WAIT": "WAIT"}[result["verdict"]]
+
+        price_at_t = history["close"][-1]
+        outcome = None
+        if future["close"]:
+            price_at_t_plus_n = future["close"][-1]
+            pct_move = (price_at_t_plus_n - price_at_t) / price_at_t * 100.0
+            outcome = {
+                "price_at_t": price_at_t,
+                "price_at_t_plus_n": price_at_t_plus_n,
+                "pct_move": round(pct_move, 3),
+                "candles_available": len(future["close"]),
+                "candles_requested": lookahead_n,
+                "long_correct": pct_move > 0,
+                "short_correct": pct_move < 0,
+            }
+
+        return jsonify({
+            "ok": True,
+            "symbol": symbol,
+            "interval": interval,
+            "t_iso": t.astimezone(timezone.utc).isoformat(),
+            "t_actual_close_iso": datetime.fromtimestamp(history["close_time"][-1] / 1000, tz=timezone.utc).isoformat(),
+            "history_candles": len(history["close"]),
+            "warmup_ok": result["warmup_ok"],
+            "verdict": verdict,
+            "verdict_raw": result["verdict"],
+            "regime": result["regime"],
+            "active_mode": result["active_mode"],
+            "score": result["score"],
+            "entry_score": result["entry_score"],
+            "entry_signals": result["entry_signals"],
+            "outcome": outcome,
+        })
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
+
+
 # ── Routes — Settings (API keys stored in .env) ───────────────────────────────
 
 ENV_PATH = os.path.join(ROOT, ".env")

@@ -427,6 +427,33 @@
   }
   .warnings-box strong { color: var(--orange); }
 
+  /* ── SIGNAL REPLAY ── */
+  .replay-guess-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .replay-guess-btn {
+    flex: 1; min-width: 120px; padding: 14px;
+    border-radius: var(--radius); border: 1.5px solid var(--border2);
+    cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;
+    background: var(--surface); color: var(--text); transition: all .15s;
+  }
+  .replay-guess-btn:hover { opacity: .8; }
+  .replay-guess-btn.long  { color: var(--blue);  border-color: var(--blue); }
+  .replay-guess-btn.short { color: var(--red);   border-color: var(--red); }
+  .replay-guess-btn.wait  { color: var(--muted); border-color: var(--border2); }
+  .replay-guess-btn.selected.long  { background: var(--blue-bg); }
+  .replay-guess-btn.selected.short { background: var(--red-bg); }
+  .replay-guess-btn.selected.wait  { background: var(--surface2); }
+  .replay-verdict-badge {
+    display: inline-block; padding: 6px 16px; border-radius: 99px;
+    font-size: 18px; font-weight: 700; letter-spacing: .3px; margin: 4px 0 2px;
+  }
+  .replay-verdict-badge.long  { background: var(--blue-bg);  color: var(--blue); }
+  .replay-verdict-badge.short { background: var(--red-bg);   color: var(--red); }
+  .replay-verdict-badge.wait  { background: var(--surface2); color: var(--muted); }
+  .replay-summary-line {
+    font-size: 13px; padding: 14px 16px; border-radius: var(--radius);
+    background: var(--surface2); line-height: 1.7;
+  }
+
   /* ── ENTRY INDICATOR TOGGLE ── */
   .indicator-toggle-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -849,6 +876,7 @@
         <div class="mode-toggle">
           <button class="mode-btn active" id="tab-btn-results" onclick="setResultsTab('results')">Results</button>
           <button class="mode-btn" id="tab-btn-realism" onclick="setResultsTab('realism')">&#129518;&ensp;Realism Check</button>
+          <button class="mode-btn" id="tab-btn-replay" onclick="setResultsTab('replay')">&#128260;&ensp;Signal Replay</button>
         </div>
       </div>
 
@@ -1025,6 +1053,90 @@
           <div class="section-title">Risk Metrics (Net of Fees)</div>
           <div class="stats-grid" id="realism-risk-grid"></div>
 
+        </div>
+      </div>
+
+      <!-- ══ SIGNAL REPLAY SECTION ══ -->
+      <div id="replay-section" style="display:none">
+        <div class="panel">
+          <div class="panel-head">Signal Replay Settings</div>
+          <div class="panel-body">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+              Pick a historical moment T. The system verdict is computed using <strong>only</strong>
+              candles that closed at or before T (this is core.regime_live's live signal logic,
+              replayed via signal_lab/signal_fn.py) — no future data is ever used.
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Symbol</label>
+                <input type="text" id="replay-symbol" value="BTCUSDT" placeholder="BTCUSDT">
+              </div>
+              <div class="form-group">
+                <label>Interval</label>
+                <select id="replay-interval">
+                  <option value="1h">1h</option>
+                  <option value="2h">2h</option>
+                  <option value="4h" selected>4h</option>
+                  <option value="6h">6h</option>
+                  <option value="12h">12h</option>
+                  <option value="1d">1d</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Moment T (date &amp; time, UTC)</label>
+                <input type="datetime-local" id="replay-datetime">
+              </div>
+              <div class="form-group">
+                <label>Lookahead (candles after T)</label>
+                <input type="number" id="replay-lookahead" value="6" min="1" max="100">
+              </div>
+            </div>
+
+            <button class="run-btn" id="replay-run-btn" onclick="runReplay()" style="margin-bottom:0">
+              <span id="replay-run-btn-text">&#9654;&ensp;Get Verdict</span>
+              <div class="spinner" id="replay-spinner" style="display:none"></div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Replay Error Banner -->
+        <div class="error-banner" id="replay-error" style="display:none"></div>
+
+        <!-- Step A — your guess -->
+        <div class="panel" id="replay-guess-panel" style="display:none">
+          <div class="panel-head">Step 1 &mdash; What's Your Call?</div>
+          <div class="panel-body">
+            <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+              Using only data up to and including <strong id="replay-t-label"></strong>, what would you do?
+            </div>
+            <div class="replay-guess-row">
+              <button class="replay-guess-btn long" id="replay-guess-long" onclick="recordGuess('LONG')">I'd go LONG</button>
+              <button class="replay-guess-btn short" id="replay-guess-short" onclick="recordGuess('SHORT')">I'd go SHORT</button>
+              <button class="replay-guess-btn wait" id="replay-guess-wait" onclick="recordGuess('WAIT')">I'd WAIT</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step B — system verdict -->
+        <div class="panel" id="replay-verdict-panel" style="display:none">
+          <div class="panel-head">Step 2 &mdash; System Verdict</div>
+          <div class="panel-body">
+            <div class="stats-grid" id="replay-verdict-grid"></div>
+            <button class="run-btn" id="replay-reveal-btn" onclick="revealOutcome()" style="margin-top:14px;margin-bottom:0">
+              &#128065;&ensp;Reveal Outcome
+            </button>
+          </div>
+        </div>
+
+        <!-- Step C — outcome -->
+        <div class="panel" id="replay-outcome-panel" style="display:none">
+          <div class="panel-head">Step 3 &mdash; What Actually Happened</div>
+          <div class="panel-body">
+            <div class="stats-grid" id="replay-outcome-grid"></div>
+            <div id="replay-summary" style="margin-top:14px"></div>
+          </div>
         </div>
       </div>
 
@@ -2361,25 +2473,31 @@ function renderTradesTable() {
 function setResultsTab(tab) {
   document.getElementById('tab-btn-results').classList.toggle('active', tab === 'results');
   document.getElementById('tab-btn-realism').classList.toggle('active', tab === 'realism');
+  document.getElementById('tab-btn-replay').classList.toggle('active', tab === 'replay');
 
   const resultsEl    = document.getElementById('results-section');
   const comparisonEl = document.getElementById('comparison-panel');
   const realismEl    = document.getElementById('realism-section');
+  const replayEl     = document.getElementById('replay-section');
 
-  if (tab === 'realism') {
-    resultsEl.dataset.realismHidden    = resultsEl.style.display;
-    comparisonEl.dataset.realismHidden = comparisonEl.style.display;
-    resultsEl.style.display    = 'none';
-    comparisonEl.style.display = 'none';
-    realismEl.style.display    = 'block';
-  } else {
+  if (tab === 'results') {
     realismEl.style.display = 'none';
+    replayEl.style.display  = 'none';
     if (resultsEl.dataset.realismHidden !== undefined) {
       resultsEl.style.display = resultsEl.dataset.realismHidden;
     }
     if (comparisonEl.dataset.realismHidden !== undefined) {
       comparisonEl.style.display = comparisonEl.dataset.realismHidden;
     }
+  } else {
+    if (resultsEl.style.display !== 'none') {
+      resultsEl.dataset.realismHidden    = resultsEl.style.display;
+      comparisonEl.dataset.realismHidden = comparisonEl.style.display;
+    }
+    resultsEl.style.display    = 'none';
+    comparisonEl.style.display = 'none';
+    realismEl.style.display = (tab === 'realism') ? 'block' : 'none';
+    replayEl.style.display  = (tab === 'replay')  ? 'block' : 'none';
   }
 }
 
@@ -2607,6 +2725,174 @@ function renderRealismResults(data) {
       <div class="stat-sub">From an equity peak until recovered</div>
     </div>
   `;
+}
+
+// ── Signal Replay (test core.regime_live's signal logic at a point in time) ─
+let replayResult = null;
+let replayGuess  = null;
+
+function setReplayStep(step) {
+  document.getElementById('replay-guess-panel').style.display   = step >= 1 ? 'block' : 'none';
+  document.getElementById('replay-verdict-panel').style.display = step >= 2 ? 'block' : 'none';
+  document.getElementById('replay-outcome-panel').style.display = step >= 3 ? 'block' : 'none';
+}
+
+async function runReplay() {
+  const btn     = document.getElementById('replay-run-btn');
+  const spinner = document.getElementById('replay-spinner');
+  const btnText = document.getElementById('replay-run-btn-text');
+  const errEl   = document.getElementById('replay-error');
+  errEl.style.display = 'none';
+  setReplayStep(0);
+  replayResult = null;
+  replayGuess  = null;
+  document.querySelectorAll('.replay-guess-btn').forEach(b => b.classList.remove('selected'));
+
+  const symbol      = document.getElementById('replay-symbol').value.trim().toUpperCase();
+  const interval    = document.getElementById('replay-interval').value;
+  const dtVal       = document.getElementById('replay-datetime').value; // "YYYY-MM-DDTHH:MM"
+  const lookaheadN  = parseInt(document.getElementById('replay-lookahead').value, 10) || 6;
+
+  if (!symbol) {
+    errEl.textContent = 'Please enter a symbol (e.g. BTCUSDT).';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (!dtVal) {
+    errEl.textContent = 'Please pick a date and time for moment T.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btnText.textContent = 'Fetching…';
+  spinner.style.display = 'block';
+
+  try {
+    const res = await fetch('/api/backtest/replay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol,
+        interval,
+        datetime: dtVal + ':00Z',  // datetime-local has no TZ — treat the picked value as UTC
+        lookahead_n: lookaheadN,
+      }),
+    });
+
+    const raw = await res.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (_) {
+      errEl.textContent = 'Server error (non-JSON response). The server may be restarting or missing a dependency.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!res.ok || !data.ok) {
+      errEl.textContent = data.error || 'Replay failed.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    replayResult = data;
+    document.getElementById('replay-t-label').textContent = new Date(data.t_actual_close_iso).toUTCString();
+    setReplayStep(1);
+  } catch (e) {
+    errEl.textContent = 'Request failed: ' + e.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = '▶ Get Verdict';
+    spinner.style.display = 'none';
+  }
+}
+
+function recordGuess(choice) {
+  if (!replayResult) return;
+  replayGuess = choice;
+  document.querySelectorAll('.replay-guess-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('replay-guess-' + choice.toLowerCase()).classList.add('selected');
+
+  const v = replayResult.verdict; // 'LONG' | 'SHORT' | 'WAIT'
+  const vClass = v.toLowerCase();
+  const vCardColor = v === 'LONG' ? 'blue' : (v === 'SHORT' ? 'red' : '');
+
+  document.getElementById('replay-verdict-grid').innerHTML = `
+    <div class="stat-card ${vCardColor}">
+      <div class="stat-label">System Verdict</div>
+      <div class="replay-verdict-badge ${vClass}">${v}</div>
+      <div class="stat-sub">${replayResult.regime} regime &bull; mode ${replayResult.active_mode}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Entry Score</div>
+      <div class="stat-val">${replayResult.entry_score} / 5</div>
+      <div class="stat-sub">${replayResult.entry_signals.length ? replayResult.entry_signals.join(', ') : 'no entry signals fired'}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Regime Score</div>
+      <div class="stat-val">${replayResult.score}</div>
+      <div class="stat-sub">${replayResult.warmup_ok ? `${replayResult.history_candles} candles of history used` : 'WARMUP — fewer than 200 candles available'}</div>
+    </div>
+  `;
+  setReplayStep(2);
+}
+
+function verdictOutcomeCorrect(verdict, outcome) {
+  if (verdict === 'LONG')  return outcome.long_correct;
+  if (verdict === 'SHORT') return outcome.short_correct;
+  return null; // WAIT — no directional call to grade
+}
+
+function revealOutcome() {
+  if (!replayResult) return;
+  const o     = replayResult.outcome;
+  const grid  = document.getElementById('replay-outcome-grid');
+  const summary = document.getElementById('replay-summary');
+
+  if (!o) {
+    grid.innerHTML = `<div class="stat-card"><div class="stat-sub">Not enough candles after T are available yet to reveal an outcome.</div></div>`;
+    summary.innerHTML = '';
+    setReplayStep(3);
+    return;
+  }
+
+  const sign      = o.pct_move >= 0 ? '+' : '-';
+  const direction = o.pct_move > 0 ? 'UP' : (o.pct_move < 0 ? 'DOWN' : 'FLAT');
+  const moveClass = o.pct_move > 0 ? 'green' : (o.pct_move < 0 ? 'red' : '');
+
+  grid.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Price at T</div>
+      <div class="stat-val">$${fmt(o.price_at_t)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Price at T+${o.candles_available}</div>
+      <div class="stat-val">$${fmt(o.price_at_t_plus_n)}</div>
+      <div class="stat-sub">${o.candles_available < o.candles_requested ? `only ${o.candles_available}/${o.candles_requested} candles available so far` : `${o.candles_available} candles after T`}</div>
+    </div>
+    <div class="stat-card ${moveClass}">
+      <div class="stat-label">Move</div>
+      <div class="stat-val ${moveClass}">${sign}${fmt(Math.abs(o.pct_move))}%</div>
+      <div class="stat-sub">${direction}</div>
+    </div>
+  `;
+
+  const v = replayResult.verdict;
+  const agree = (replayGuess === v);
+  const sysCorrect   = verdictOutcomeCorrect(v, o);
+  const guessCorrect = verdictOutcomeCorrect(replayGuess, o);
+  const describe = (c) => c === null ? 'made no directional call (WAIT)' : (c ? 'was directionally <strong>correct</strong>' : 'was directionally <strong>wrong</strong>');
+
+  summary.innerHTML = `
+    <div class="replay-summary-line">
+      You guessed <strong>${replayGuess}</strong>, the system said <strong>${v}</strong> &mdash;
+      you ${agree ? '<strong>agreed</strong>' : '<strong>disagreed</strong>'} with the system.<br>
+      Price moved <strong>${sign}${fmt(Math.abs(o.pct_move))}%</strong> (${direction}) over the next ${o.candles_available} candle(s):
+      the system ${describe(sysCorrect)}, your guess ${describe(guessCorrect)}.
+    </div>
+  `;
+  setReplayStep(3);
 }
 </script>
 </body>
