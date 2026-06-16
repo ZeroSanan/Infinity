@@ -1001,6 +1001,41 @@ def api_ai_analysis():
                 lines.append(f"  DCA implication: {atr['dca_note']}")
     lines.extend(["", "Please provide your professional analysis."])
 
+    # DCA model levels (if provided by the visualizer panel)
+    dca = payload.get("dca_model")
+    if dca:
+        dca_lines: list[str] = [
+            "",
+            f"SELECTED DCA MODEL: {dca.get('name', 'Unknown')} ({dca.get('side', 'long').upper()} side)",
+            f"ATR MULTIPLIER: {dca.get('multiplier', 1.5)}×",
+            "",
+            "CALCULATED ENTRY LEVELS:",
+        ]
+        for step in dca.get("steps", []):
+            cw  = f"  {step['cluster_warning']}" if step.get("cluster_warning") else ""
+            dca_lines.append(
+                f"- Step {step['index']}: ${step.get('price', 0):,.2f}"
+                f" ({step.get('pct_from_anchor', 0):+.2f}%)"
+                f" — ${step.get('size_usdt', 0):,.0f} USDT{cw}"
+            )
+        tp = dca.get("tp_price")
+        if tp:
+            dca_lines.append(
+                f"- Take Profit: ${tp:,.2f}"
+                f" ({dca.get('tp_pct_from_avg', 0):+.1f}% from avg entry,"
+                f" {dca.get('tp_pct_from_current', 0):+.1f}% from current)"
+            )
+        dca_lines.extend([
+            f"- Total capital if all filled: ${dca.get('total_capital', 0):,.0f}",
+            f"- Avg entry if all steps fill: ${dca.get('avg_entry', 0):,.2f}",
+        ])
+        if dca.get("suggested_multiplier"):
+            dca_lines.extend(["",
+                f"CLUSTER INTERACTION: Consider {dca['suggested_multiplier']}× multiplier "
+                f"to place steps below liquidation clusters."])
+        # Insert before the "Please provide..." line that was already added
+        lines = lines[:-2] + dca_lines + ["", "Please provide your professional analysis."]
+
     user_msg = "\n".join(lines)
 
     system_prompt = (
@@ -1037,6 +1072,15 @@ def api_ai_analysis():
         "You make the final call.\""
     )
 
+    if dca:
+        system_prompt += (
+            "\n\nWhen DCA model levels are provided, incorporate them specifically into your "
+            "SUGGESTION section. Comment on whether the step placement makes sense given "
+            "the current ATR and any liquidation clusters. Flag any step sitting above a "
+            "cluster and recommend the adjusted multiplier. Reference specific dollar "
+            "levels ('$65,785'), not vague descriptions."
+        )
+
     try:
         client = _anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         msg    = client.messages.create(
@@ -1048,6 +1092,117 @@ def api_ai_analysis():
         return jsonify({"ok": True, "text": msg.content[0].text})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+# ── DCA Model Level Visualizer route ──────────────────────────────────────────
+
+@app.route("/api/market/dca-levels", methods=["POST"])
+def api_market_dca_levels():
+    """Calculate ATR-calibrated DCA entry levels anchored to live price.
+    No caching — real-time price on every call."""
+    import requests as _req
+
+    payload    = request.get_json(force=True, silent=True) or {}
+    symbol     = payload.get("symbol", "BTCUSDT").upper()
+    model_id   = payload.get("model_id", "")
+    side       = payload.get("side", "long").lower()
+    multiplier = float(payload.get("multiplier", 1.5))
+    liq_below  = payload.get("liq_cluster_below")
+    liq_above  = payload.get("liq_cluster_above")
+
+    model = next((m for m in _dca_models if m.get("id") == model_id), None)
+    if not model:
+        return jsonify({"error": "Model not found"}), 404
+
+    # Live price
+    try:
+        r = _req.get(
+            f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
+            timeout=6,
+        )
+        r.raise_for_status()
+        current_price = float(r.json()["price"])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    # ATR from 4h klines (reuse Layer 3 helper)
+    try:
+        klines   = _layer3_klines(symbol, limit=15)
+        atr_data = _layer3_atr(klines)
+        atr      = atr_data["atr"]
+        atr_pct  = atr_data["atr_pct"]
+    except Exception as exc:
+        return jsonify({"error": f"ATR: {exc}"}), 502
+
+    if side == "long":
+        order_sizes = model.get("bull_order_sizes", [])
+        tp_pct      = float(model.get("bull_take_profit_percent", 5.0))
+        direction   = -1
+    else:
+        order_sizes = model.get("bear_order_sizes", [])
+        tp_pct      = float(model.get("bear_take_profit_percent", 5.0))
+        direction   = 1
+
+    if not order_sizes:
+        return jsonify({"error": f"Model has no {side} order sizes"}), 400
+
+    steps: list[dict] = []
+    for i, size in enumerate(order_sizes):
+        step_pct   = (i + 1) * atr_pct * multiplier
+        step_price = round(current_price * (1 + direction * step_pct / 100), 2)
+        pct_from   = round((step_price - current_price) / current_price * 100, 2)
+
+        warning = None
+        if side == "long" and liq_below is not None:
+            lb = float(liq_below)
+            if lb > 0:
+                if step_price > lb:
+                    warning = f"⚠️ Above ${lb:,.0f} cluster"
+                elif step_price >= lb * 0.995:
+                    warning = f"🎯 Just below ${lb:,.0f} cluster"
+        if side == "short" and liq_above is not None:
+            la = float(liq_above)
+            if la > 0:
+                if step_price < la:
+                    warning = f"⚠️ Below ${la:,.0f} cluster"
+                elif step_price <= la * 1.005:
+                    warning = f"🎯 Just above ${la:,.0f} cluster"
+
+        steps.append({
+            "index": i + 1, "price": step_price,
+            "pct_from_anchor": pct_from, "size_usdt": size,
+            "cluster_warning": warning,
+        })
+
+    total_capital = sum(s["size_usdt"] for s in steps)
+    total_coins   = sum(s["size_usdt"] / s["price"] for s in steps if s["price"] > 0)
+    avg_entry     = round(total_capital / total_coins, 2) if total_coins > 0 else current_price
+    tp_sign       = 1 if side == "long" else -1
+    tp_price      = round(avg_entry * (1 + tp_sign * tp_pct / 100), 2)
+    tp_from_avg   = round(tp_sign * tp_pct, 2)
+    tp_from_cur   = round((tp_price - current_price) / current_price * 100, 2)
+
+    warn_steps = [s for s in steps if s.get("cluster_warning", "").startswith("⚠️")]
+    suggested  = None
+    if warn_steps and atr_pct > 0:
+        if side == "long" and liq_below:
+            lb = float(liq_below)
+            target_pct = (current_price - lb * 0.995) / current_price * 100
+            suggested  = round(max(0.5, min(3.0, target_pct / atr_pct)), 1)
+        elif side == "short" and liq_above:
+            la = float(liq_above)
+            target_pct = (la * 1.005 - current_price) / current_price * 100
+            suggested  = round(max(0.5, min(3.0, target_pct / atr_pct)), 1)
+
+    return jsonify({
+        "current_price": current_price, "atr": round(atr, 2),
+        "atr_pct": round(atr_pct, 4), "anchor": current_price,
+        "side": side, "multiplier": multiplier, "steps": steps,
+        "avg_entry": avg_entry, "tp_price": tp_price,
+        "tp_pct_from_avg": tp_from_avg, "tp_pct_from_current": tp_from_cur,
+        "total_capital": total_capital,
+        "cluster_warnings": warn_steps, "suggested_multiplier": suggested,
+    })
 
 
 # ── Routes — Layer 1 (Macro Environment) ───────────────────────────────────────
