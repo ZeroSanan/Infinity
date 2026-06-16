@@ -77,6 +77,9 @@ _dca_models: list = []     # list[dict]  (loaded from dca_models.json)
 _layer2_cache: dict = {}   # symbol -> {"data": dict, "ts": float}
 _LAYER2_TTL = 300  # seconds (5 min)
 
+_layer3_cache: dict = {}   # symbol -> {"data": dict, "ts": float}
+_LAYER3_TTL = 120  # seconds (2 min)
+
 _layer1_cache: dict = {}   # {"data": dict, "ts": float}
 _LAYER1_TTL = 900  # seconds (15 min)
 _btc_dom_history: list = []  # [(timestamp, btc_dominance_pct), ...] rolling 48h window
@@ -616,6 +619,289 @@ def api_layer2(symbol):
     result["timestamp"] = int(now * 1000)
 
     _layer2_cache[symbol] = {"data": result, "ts": now}
+    return jsonify(result)
+
+
+# ── Routes — Layer 3 (Entry Timing) ────────────────────────────────────────────
+
+def _layer3_klines(symbol: str, limit: int = 21) -> list:
+    """Fetch 4h klines from Binance spot public API (no auth required)."""
+    import requests
+    url = (f"https://api.binance.com/api/v3/klines"
+           f"?symbol={symbol}&interval=4h&limit={limit}")
+    resp = requests.get(url, timeout=8)
+    resp.raise_for_status()
+    return [
+        {
+            "open":   float(k[1]),
+            "high":   float(k[2]),
+            "low":    float(k[3]),
+            "close":  float(k[4]),
+            "volume": float(k[5]),
+        }
+        for k in resp.json()
+    ]
+
+
+def _layer3_volume_divergence(klines: list) -> dict:
+    """Volume vs 20-period average with price direction verdict."""
+    if len(klines) < 21:
+        return {"error": "insufficient data"}
+    avg_vol  = sum(k["volume"] for k in klines[:20]) / 20
+    curr     = klines[20]
+    curr_vol = curr["volume"]
+    ratio    = curr_vol / avg_vol if avg_vol > 0 else 1.0
+    price_up = curr["close"] >= curr["open"]
+
+    if ratio > 1.2:
+        if price_up:
+            signal, color, label = 1,  "green",  "Confirmed Move — Real Buyers"
+        else:
+            signal, color, label = -1, "red",    "Confirmed Selling — Real Pressure"
+    elif ratio < 0.8:
+        if price_up:
+            signal, color, label = -1, "orange", "Weak Move — Low Conviction"
+        else:
+            signal, color, label = 1,  "yellow", "Exhaustion — Move Losing Steam"
+    else:
+        signal, color, label = 0, "grey", "Normal Volume — No Strong Signal"
+
+    return {
+        "ratio":    round(ratio, 2),
+        "price_up": price_up,
+        "label":    label,
+        "color":    color,
+        "signal":   signal,
+    }
+
+
+def _layer3_price_structure(klines: list) -> dict:
+    """Higher lows / lower highs structure from last 10 candles."""
+    if len(klines) < 10:
+        return {"error": "insufficient data"}
+    recent = klines[-10:]
+    lows   = [k["low"]  for k in recent]
+    highs  = [k["high"] for k in recent]
+
+    hl_run = lh_run = 0
+    for i in range(1, len(lows)):
+        hl_run = hl_run + 1 if lows[i]  > lows[i-1]  else 0
+        lh_run = lh_run + 1 if highs[i] < highs[i-1] else 0
+
+    higher_lows = hl_run >= 2
+    lower_highs = lh_run >= 2
+
+    if higher_lows and lower_highs:
+        signal, color, label = 0,  "yellow", "Compression — Breakout Pending"
+    elif higher_lows:
+        signal, color, label = 1,  "green",  "Higher Lows — Buyers Getting Aggressive"
+    elif lower_highs:
+        signal, color, label = -1, "red",    "Lower Highs — Sellers Getting Aggressive"
+    else:
+        signal, color, label = 0,  "grey",   "No Clear Structure"
+
+    return {
+        "label":       label,
+        "color":       color,
+        "signal":      signal,
+        "higher_lows": higher_lows,
+        "lower_highs": lower_highs,
+        "lows":        [round(v, 4) for v in lows],
+        "highs":       [round(v, 4) for v in highs],
+    }
+
+
+def _layer3_momentum(klines: list) -> dict:
+    """Rate of Change (6 and 14 period) momentum on 4h closes."""
+    if len(klines) < 15:
+        return {"error": "insufficient data"}
+    closes = [k["close"] for k in klines[-15:]]
+    roc6   = (closes[-1] - closes[-7]) / closes[-7]  * 100 if closes[-7]  else 0
+    roc14  = (closes[-1] - closes[0])  / closes[0]   * 100 if closes[0]   else 0
+
+    positive     = roc6 > 0
+    near_zero    = abs(roc6) < 0.5
+    accelerating = abs(roc6) > abs(roc14 / 2)
+
+    if near_zero:
+        signal, color, label = 0,  "grey",   "No Momentum"
+    elif positive and accelerating:
+        signal, color, label = 1,  "green",  "Bullish Momentum Building"
+    elif positive:
+        signal, color, label = 0,  "yellow", "Rally Slowing — Watch for Reversal"
+    elif not positive and accelerating:
+        signal, color, label = -1, "red",    "Bearish Momentum Building"
+    else:
+        signal, color, label = 0,  "yellow", "Selling Slowing — Watch for Recovery"
+
+    return {
+        "roc6":         round(roc6,  2),
+        "roc14":        round(roc14, 2),
+        "label":        label,
+        "color":        color,
+        "signal":       signal,
+        "accelerating": accelerating,
+    }
+
+
+def _layer3_order_book(symbol: str) -> dict:
+    """Order book bid/ask imbalance from top 20 levels (spot)."""
+    import requests
+    url  = f"https://api.binance.com/api/v3/depth?symbol={symbol}&limit=20"
+    resp = requests.get(url, timeout=8)
+    resp.raise_for_status()
+    data = resp.json()
+
+    bid_val = sum(float(p) * float(q) for p, q in data["bids"])
+    ask_val = sum(float(p) * float(q) for p, q in data["asks"])
+    total   = bid_val + ask_val
+    bid_pct = bid_val / total * 100 if total > 0 else 50
+
+    if bid_pct > 60:
+        signal, color, label = 1,  "green", "Buy Pressure Dominant"
+    elif bid_pct < 40:
+        signal, color, label = -1, "red",   "Sell Pressure Dominant"
+    else:
+        signal, color, label = 0,  "grey",  "Balanced Order Book"
+
+    def _fmt(v: float) -> str:
+        return f"${v/1_000_000:.1f}M" if v >= 1_000_000 else f"${v/1_000:.0f}K"
+
+    return {
+        "bid_pct": round(bid_pct, 1),
+        "ask_pct": round(100 - bid_pct, 1),
+        "bid_val": _fmt(bid_val),
+        "ask_val": _fmt(ask_val),
+        "label":   label,
+        "color":   color,
+        "signal":  signal,
+    }
+
+
+def _layer3_atr(klines: list) -> dict:
+    """ATR(14) volatility context — no directional signal, DCA sizing guide."""
+    if len(klines) < 15:
+        return {"error": "insufficient data"}
+    recent = klines[-15:]
+    trs    = []
+    for i in range(1, len(recent)):
+        prev  = recent[i-1]["close"]
+        h, lo = recent[i]["high"], recent[i]["low"]
+        trs.append(max(h - lo, abs(h - prev), abs(lo - prev)))
+
+    atr     = sum(trs[-14:]) / 14
+    price   = recent[-1]["close"]
+    atr_pct = atr / price * 100 if price > 0 else 0
+
+    if atr_pct < 1:
+        color, label = "blue",   "Very Calm"
+        dca_note     = "DCA steps: use tight spacing (3–5% steps)"
+        vol_flag     = "😴 Low Volatility — tight DCA steps ok"
+    elif atr_pct < 2:
+        color, label = "green",  "Normal"
+        dca_note     = "DCA steps: use standard spacing (5–10% steps)"
+        vol_flag     = ""
+    elif atr_pct < 4:
+        color, label = "yellow", "Elevated"
+        dca_note     = "DCA steps: use wider spacing (10–15% steps)"
+        vol_flag     = ""
+    else:
+        color, label = "red",    "High Volatility"
+        dca_note     = "DCA steps: use very wide spacing (15%+ steps) or wait for volatility to settle"
+        vol_flag     = "⚡ High Volatility — wider DCA steps recommended"
+
+    def _fmt_usd(v: float) -> str:
+        return f"${v:,.0f}" if v >= 1000 else f"${v:.2f}"
+
+    return {
+        "atr":         round(atr, 2),
+        "atr_usd":     _fmt_usd(atr),
+        "atr_pct":     round(atr_pct, 2),
+        "label":       label,
+        "color":       color,
+        "dca_note":    dca_note,
+        "vol_flag":    vol_flag,
+        "atr_history": [round(t, 4) for t in trs[-14:]],
+        "signal":      0,
+    }
+
+
+def _layer3_verdict_calc(vol: Optional[dict], structure: Optional[dict],
+                          momentum: Optional[dict], ob: Optional[dict]) -> dict:
+    """Combine 4 directional Layer 3 signals into a verdict."""
+    signals = [
+        d["signal"] for d in [vol, structure, momentum, ob]
+        if d and "error" not in d
+    ]
+    total   = len(signals)
+    bullish = signals.count(1)
+    bearish = signals.count(-1)
+    neutral = total - bullish - bearish
+    score   = sum(signals)
+
+    if total == 0:
+        v = {"code": "UNKNOWN",     "label": "Unavailable", "emoji": "—",  "color": "grey"}
+    elif score >= 2:
+        v = {"code": "LONG",        "label": "LONG SIGNAL",  "emoji": "🟢", "color": "green"}
+    elif score <= -2:
+        v = {"code": "SHORT",       "label": "SHORT SIGNAL", "emoji": "🔴", "color": "red"}
+    elif score == 1:
+        v = {"code": "WEAK_LONG",   "label": "WEAK LONG",    "emoji": "🟡", "color": "yellow"}
+    elif score == -1:
+        v = {"code": "WEAK_SHORT",  "label": "WEAK SHORT",   "emoji": "🟡", "color": "yellow"}
+    else:
+        v = {"code": "NEUTRAL",     "label": "NEUTRAL",      "emoji": "⚪", "color": "grey"}
+
+    v.update({"bullish": bullish, "bearish": bearish, "neutral": neutral, "total": total})
+    return v
+
+
+@app.route("/api/layer3/<symbol>")
+def api_layer3(symbol):
+    """Layer 3 (Entry Timing): volume divergence, price structure, momentum,
+    order book imbalance, and ATR volatility from Binance public API.
+    Cached per symbol for _LAYER3_TTL seconds."""
+    symbol = symbol.upper()
+    now    = time.time()
+    cached = _layer3_cache.get(symbol)
+    if cached and now - cached["ts"] < _LAYER3_TTL:
+        return jsonify(cached["data"])
+
+    result: dict = {"symbol": symbol}
+
+    try:
+        klines = _layer3_klines(symbol, limit=21)
+    except Exception as exc:
+        result["error"]     = str(exc)
+        result["timestamp"] = int(now * 1000)
+        return jsonify(result)
+
+    for key, fn in [
+        ("volume_divergence", lambda: _layer3_volume_divergence(klines)),
+        ("price_structure",   lambda: _layer3_price_structure(klines)),
+        ("momentum",          lambda: _layer3_momentum(klines)),
+        ("atr",               lambda: _layer3_atr(klines)),
+    ]:
+        try:
+            result[key] = fn()
+        except Exception as exc:
+            result[key] = {"error": str(exc)}
+
+    try:
+        result["order_book"] = _layer3_order_book(symbol)
+    except Exception as exc:
+        result["order_book"] = {"error": str(exc)}
+
+    def _ok(k):
+        return result.get(k) if result.get(k) and "error" not in result[k] else None
+
+    result["verdict"]   = _layer3_verdict_calc(
+        _ok("volume_divergence"), _ok("price_structure"),
+        _ok("momentum"),          _ok("order_book"),
+    )
+    result["timestamp"] = int(now * 1000)
+
+    _layer3_cache[symbol] = {"data": result, "ts": now}
     return jsonify(result)
 
 
