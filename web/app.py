@@ -1182,7 +1182,7 @@ def api_market_dca_levels():
     tp_from_avg   = round(tp_sign * tp_pct, 2)
     tp_from_cur   = round((tp_price - current_price) / current_price * 100, 2)
 
-    warn_steps = [s for s in steps if s.get("cluster_warning", "").startswith("⚠️")]
+    warn_steps = [s for s in steps if (s.get("cluster_warning") or "").startswith("⚠️")]
     suggested  = None
     if warn_steps and atr_pct > 0:
         if side == "long" and liq_below:
