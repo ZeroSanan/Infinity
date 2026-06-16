@@ -258,6 +258,56 @@
   }
   .ms-info-btn:hover { color: var(--blue); }
 
+  /* ── Collapsible layer headers ── */
+  .ms-layer-hdr {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 0; cursor: pointer; user-select: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .ms-layer-hdr:not(:first-child) { margin-top: 20px; }
+  .ms-layer-hdr:hover .ms-layer-title { color: var(--text); }
+  .ms-layer-arrow { font-size: 10px; color: var(--muted); transition: transform 0.25s ease; display: inline-block; flex-shrink: 0; }
+  .ms-layer-arrow.ms-collapsed { transform: rotate(-90deg); }
+  .ms-layer-title { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--text2); flex: 1; }
+  .ms-layer-badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+  .ms-layer-badge.green  { background: rgba(52,199,89,.12);   color: #1d8a3b; }
+  .ms-layer-badge.red    { background: rgba(255,59,48,.12);   color: #c41f1f; }
+  .ms-layer-badge.yellow { background: rgba(255,204,0,.18);   color: #9a7600; }
+  .ms-layer-badge.blue   { background: rgba(0,122,255,.10);   color: #0a5dc2; }
+  .ms-layer-badge.grey   { background: rgba(142,142,147,.10); color: var(--muted); }
+
+  .ms-layer-body { overflow: hidden; max-height: 9999px; opacity: 1; padding-top: 14px; transition: max-height 0.4s ease-in, opacity 0.3s ease; }
+  .ms-layer-body.ms-collapsed { max-height: 0 !important; opacity: 0; padding-top: 0; overflow: hidden; transition: max-height 0.3s ease-out, opacity 0.2s ease; pointer-events: none; }
+
+  /* ── Master summary bar ── */
+  .ms-master-bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 10px 16px; margin-bottom: 6px;
+  }
+  .ms-master-coin { font-size: 13px; font-weight: 800; color: var(--text); min-width: 36px; }
+  .ms-master-layers { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; font-size: 11px; font-weight: 600; color: var(--text2); }
+  .ms-master-sep { color: var(--border2); }
+  .ms-master-verdict { font-size: 12px; font-weight: 700; }
+  .ms-master-verdict.green  { color: #1d8a3b; }
+  .ms-master-verdict.red    { color: #c41f1f; }
+  .ms-master-verdict.yellow { color: #9a7600; }
+  .ms-master-verdict.orange { color: #a05c00; }
+  .ms-master-verdict.grey   { color: var(--muted); }
+
+  /* ── Layer 3 cards ── */
+  .ms-l3-vol-flag { font-size: 12px; font-weight: 600; text-align: center; margin: 4px 0; }
+  .ms-l3-atr-panel { background: color-mix(in srgb, var(--surface2) 50%, var(--blue-bg) 50%) !important; }
+  .ms-l3-vol-bar { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--border2); margin: 4px 0; }
+  .ms-l3-vol-bar-fill { transition: width 0.3s; }
+  .ms-ob-bar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--border2); margin: 4px 0; }
+  .ms-ob-bar-bid { background: #1d8a3b; }
+  .ms-ob-bar-ask { background: #c41f1f; }
+  .ms-ob-pct { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; }
+  .ms-ob-pct .bid { color: #1d8a3b; }
+  .ms-ob-pct .ask { color: #c41f1f; }
+  .ms-l3-dca-note { font-style: italic; margin-top: 4px; }
+
   /* ── Market Signals info modal ── */
   .ms-modal-overlay {
     position: fixed; inset: 0;
@@ -1787,9 +1837,26 @@
     <!-- Three-layer card -->
     <div class="card card-padded">
 
+      <!-- Master summary bar -->
+      <div class="ms-master-bar">
+        <div class="ms-master-coin" id="ms-master-coin">BTC</div>
+        <div class="ms-master-layers">
+          <span>L1: <span id="ms-master-l1">⚪ —</span></span>
+          <span class="ms-master-sep">│</span>
+          <span>L2: <span id="ms-master-l2">⚪ —</span></span>
+          <span class="ms-master-sep">│</span>
+          <span>L3: <span id="ms-master-l3">⚪ —</span></span>
+        </div>
+        <div class="ms-master-verdict grey" id="ms-master-verdict">⚪ WAIT — Layers not aligned</div>
+      </div>
+
       <!-- LAYER 1 — MACRO ENVIRONMENT -->
-      <div class="section-label" style="margin-bottom:10px">LAYER 1 — MACRO ENVIRONMENT</div>
-      <div id="ms-layer1-body">
+      <div class="ms-layer-hdr" onclick="toggleLayer(1)">
+        <span class="ms-layer-arrow" id="ms-l1-arrow">▼</span>
+        <span class="ms-layer-title">LAYER 1 — MACRO ENVIRONMENT</span>
+        <span class="ms-layer-badge grey" id="ms-l1-badge">⚪ Loading</span>
+      </div>
+      <div class="ms-layer-body" id="ms-layer1-body">
         <div class="ms-l1-timestamp" id="ms-l1-timestamp">Last updated: —</div>
         <div class="ms-verdict grey" id="ms-l1-verdict">
           <div class="ms-verdict-emoji" id="ms-l1-verdict-emoji">—</div>
@@ -1801,8 +1868,12 @@
       </div>
 
       <!-- LAYER 2 — MARKET POSITIONING -->
-      <div class="section-label" style="margin:24px 0 10px">LAYER 2 — MARKET POSITIONING</div>
-      <div id="ms-layer2-body">
+      <div class="ms-layer-hdr" onclick="toggleLayer(2)">
+        <span class="ms-layer-arrow" id="ms-l2-arrow">▼</span>
+        <span class="ms-layer-title">LAYER 2 — MARKET POSITIONING</span>
+        <span class="ms-layer-badge grey" id="ms-l2-badge">⚪ Loading</span>
+      </div>
+      <div class="ms-layer-body" id="ms-layer2-body">
         <div class="ms-layer2-grid">
 
           <!-- Funding Rate -->
@@ -1857,8 +1928,73 @@
       </div>
 
       <!-- LAYER 3 — ENTRY TIMING -->
-      <div class="section-label" style="margin:24px 0 10px">LAYER 3 — ENTRY TIMING</div>
-      <div class="ms-placeholder">Coming soon — Volume divergence, Price structure, Liquidity levels</div>
+      <div class="ms-layer-hdr" onclick="toggleLayer(3)">
+        <span class="ms-layer-arrow" id="ms-l3-arrow">▼</span>
+        <span class="ms-layer-title">LAYER 3 — ENTRY TIMING</span>
+        <span class="ms-layer-badge grey" id="ms-l3-badge">⚪ Loading</span>
+      </div>
+      <div class="ms-layer-body" id="ms-layer3-body">
+        <div class="ms-l1-timestamp" id="ms-l3-timestamp">Last updated: —</div>
+        <div class="ms-verdict grey" id="ms-l3-verdict">
+          <div class="ms-verdict-emoji" id="ms-l3-verdict-emoji">—</div>
+          <div class="ms-verdict-label" id="ms-l3-verdict-label">Loading…</div>
+        </div>
+        <div class="ms-l1-score" id="ms-l3-score"></div>
+        <div class="ms-l3-vol-flag" id="ms-l3-vol-flag"></div>
+        <div class="ms-verdict-note">Layer 3 confirms WHEN to enter after Layer 1 (environment) and Layer 2 (positioning) are already favorable. A strong Layer 3 signal without Layer 1 and Layer 2 alignment is not sufficient on its own.</div>
+        <div class="ms-layer2-grid" id="ms-layer3-grid">
+
+          <!-- Volume Divergence -->
+          <div class="ms-panel">
+            <div class="ms-panel-head"><span>Volume Divergence</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.l3vol.title, MS_MODAL.l3vol.body)" aria-label="About Volume Divergence" title="About Volume Divergence">ⓘ</button></div>
+            <div class="ms-stat-value" id="ms-l3-vol-value" style="font-size:18px">—</div>
+            <div class="ms-stat-sub" id="ms-l3-vol-dir"></div>
+            <span class="ms-pill grey" id="ms-l3-vol-pill">—</span>
+            <div id="ms-l3-vol-bar-wrap"></div>
+          </div>
+
+          <!-- Price Structure -->
+          <div class="ms-panel">
+            <div class="ms-panel-head"><span>Price Structure</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.l3structure.title, MS_MODAL.l3structure.body)" aria-label="About Price Structure" title="About Price Structure">ⓘ</button></div>
+            <span class="ms-pill grey" id="ms-l3-structure-pill">—</span>
+            <svg id="ms-l3-structure-chart" class="ms-chart" viewBox="0 0 300 64" preserveAspectRatio="none"></svg>
+            <div class="ms-stat-sub" id="ms-l3-structure-sub"></div>
+          </div>
+
+          <!-- Momentum -->
+          <div class="ms-panel">
+            <div class="ms-panel-head"><span>Momentum (ROC)</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.l3momentum.title, MS_MODAL.l3momentum.body)" aria-label="About Momentum" title="About Momentum">ⓘ</button></div>
+            <div class="ms-stat-row" style="align-items:flex-start">
+              <div><div class="ms-stat-sub">24h (6c)</div><div class="ms-stat-value" id="ms-l3-roc6" style="font-size:16px">—</div></div>
+              <div><div class="ms-stat-sub">56h (14c)</div><div class="ms-stat-value" id="ms-l3-roc14" style="font-size:16px">—</div></div>
+            </div>
+            <span class="ms-pill grey" id="ms-l3-momentum-pill">—</span>
+          </div>
+
+          <!-- Order Book Imbalance -->
+          <div class="ms-panel">
+            <div class="ms-panel-head"><span>Order Book</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.l3ob.title, MS_MODAL.l3ob.body)" aria-label="About Order Book" title="About Order Book">ⓘ</button></div>
+            <div class="ms-ob-bar"><div id="ms-ob-bid-bar" class="ms-ob-bar-bid" style="width:50%"></div><div id="ms-ob-ask-bar" class="ms-ob-bar-ask" style="width:50%"></div></div>
+            <div class="ms-ob-pct"><span class="bid" id="ms-ob-bid-pct">—</span><span class="ask" id="ms-ob-ask-pct">—</span></div>
+            <div class="ms-stat-sub" id="ms-ob-vals"></div>
+            <span class="ms-pill grey" id="ms-l3-ob-pill">—</span>
+            <div class="ms-stat-sub" style="color:var(--muted)">Updates every 2 minutes</div>
+          </div>
+
+          <!-- ATR — Volatility Context -->
+          <div class="ms-panel ms-l3-atr-panel">
+            <div class="ms-panel-head"><span>ATR — Volatility</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.l3atr.title, MS_MODAL.l3atr.body)" aria-label="About ATR" title="About ATR">ⓘ</button></div>
+            <div class="ms-stat-row">
+              <div class="ms-stat-value" id="ms-l3-atr-usd" style="font-size:18px">—</div>
+              <span class="ms-pill grey" id="ms-l3-atr-pill">—</span>
+            </div>
+            <div class="ms-stat-sub" id="ms-l3-atr-pct">—</div>
+            <svg id="ms-l3-atr-spark" class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none"></svg>
+            <div class="ms-stat-sub ms-l3-dca-note" id="ms-l3-dca-note"></div>
+          </div>
+
+        </div>
+      </div>
 
     </div>
 
@@ -2059,7 +2195,10 @@ function selectMsCoin(coin, btn) {
   msCoin = coin;
   document.querySelectorAll('#ms-coin-tabs .strat-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
+  const mc = document.getElementById('ms-master-coin');
+  if (mc) mc.textContent = coin;
   loadLayer2();
+  loadLayer3();
 }
 
 async function loadLayer2() {
@@ -2179,17 +2318,30 @@ function renderLongShort(ls) {
   }
 }
 
+let _l1VerdictCode = null, _l2VerdictCode = null, _l3VerdictCode = null;
+
 function renderVerdict(v) {
   const box   = document.getElementById('ms-verdict');
   const emoji = document.getElementById('ms-verdict-emoji');
   const label = document.getElementById('ms-verdict-label');
+  const badge = document.getElementById('ms-l2-badge');
+  const mstr  = document.getElementById('ms-master-l2');
   if (!v) {
-    box.className = 'ms-verdict grey';
-    emoji.textContent = '—'; label.textContent = 'Unable to load';
+    if (box) box.className = 'ms-verdict grey';
+    if (emoji) emoji.textContent = '—';
+    if (label) label.textContent = 'Unable to load';
+    if (badge) { badge.textContent = '— Error'; badge.className = 'ms-layer-badge grey'; }
+    _l2VerdictCode = null;
+    updateMasterSummary();
     return;
   }
-  box.className = 'ms-verdict ' + v.color;
-  emoji.textContent = v.emoji; label.textContent = v.label;
+  if (box)   box.className   = 'ms-verdict ' + v.color;
+  if (emoji) emoji.textContent = v.emoji;
+  if (label) label.textContent = v.label;
+  if (badge) { badge.textContent = v.emoji + ' ' + v.label; badge.className = 'ms-layer-badge ' + v.color; }
+  if (mstr)  mstr.textContent  = v.emoji + ' ' + v.label;
+  _l2VerdictCode = v.code;
+  updateMasterSummary();
 }
 
 // ── Layer 1 — Macro Environment ───────────────────────────────────────────────
@@ -2662,6 +2814,14 @@ function recalcL1Verdict() {
   if (scoreEl) {
     scoreEl.textContent = `${total} indicator${total === 1 ? '' : 's'} counted — ${bullish} bullish, ${bearish} bearish, ${neutral} neutral`;
   }
+
+  const badge = document.getElementById('ms-l1-badge');
+  const mstr  = document.getElementById('ms-master-l1');
+  const shortLabel = verdict.code === 'INSUFFICIENT_DATA' ? 'INSUFFICIENT' : verdict.label;
+  if (badge) { badge.textContent = verdict.emoji + ' ' + shortLabel; badge.className = 'ms-layer-badge ' + verdict.color; }
+  if (mstr)  mstr.textContent = verdict.emoji + ' ' + shortLabel;
+  _l1VerdictCode = verdict.code;
+  updateMasterSummary();
 }
 
 function l1FearGreed(d) {
@@ -2973,6 +3133,79 @@ const MS_MODAL = {
       <p>This is a slow-moving, long-term signal — not for weekly trading decisions. Use it to understand the macro liquidity environment over quarters.</p>
       <p>Note: The FRED link shows US M2. True global M2 requires combining multiple central bank data sources — check Twitter/X for 'Global M2 Bitcoin' charts which traders compile and share regularly.</p>
     `
+  },
+
+  l3vol: {
+    title: 'Volume Divergence',
+    body: `
+      <p>Volume is the footprint of money. Price movement tells you where price went. Volume tells you how many people participated and whether they believed in it.</p>
+      <p>Think of it like a vote: price is the result, volume is how many people voted.</p>
+      <p>A price move with high volume = many people participated = real conviction = likely to continue.<br>A price move with low volume = few people participated = the move is thin = likely to reverse or stall.</p>
+      <p><strong>THE FOUR COMBINATIONS:</strong></p>
+      <p>✅ <strong>Price ↑ + High Volume — Confirmed Move</strong><br>Real buyers showing up with real money. The move has participants. More likely to continue.</p>
+      <p>⚠️ <strong>Price ↑ + Low Volume — Weak Move</strong><br>Price drifting up but nobody is really buying. Could be a temporary squeeze or thin market conditions. Do not chase this move.</p>
+      <p>🔴 <strong>Price ↓ + High Volume — Confirmed Selling</strong><br>Real sellers with conviction. Bears are active. Move more likely to continue downward.</p>
+      <p>🟡 <strong>Price ↓ + Low Volume — Exhaustion</strong><br>The selling is running out of participants. Once the few remaining sellers finish, the pressure disappears. Often precedes a recovery.</p>
+      <p><strong>HOW TO USE:</strong><br>This card tells you whether the CURRENT 4h candle has conviction behind it. Use it to decide whether to act on a signal from Layer 1 and Layer 2, or wait for a stronger candle. Never enter on a weak-volume move — wait for the next candle with volume confirmation.</p>
+    `
+  },
+
+  l3structure: {
+    title: 'Price Structure',
+    body: `
+      <p>Price structure is the pattern of highs and lows over recent candles. It tells you who is winning the fight between buyers and sellers — not from a smoothed indicator that lags, but from the raw behavior of price itself.</p>
+      <p><strong>HIGHER LOWS — Buyers Getting Aggressive:</strong><br>Each time price dips, buyers step in sooner and at a higher price than the last dip. They are not waiting for lower prices — they are eager to buy. This shows increasing buyer conviction.</p>
+      <p>Imagine an auction where each bidder raises their hand earlier and at a higher price each round. The buyers want it more with each passing moment.</p>
+      <p><strong>LOWER HIGHS — Sellers Getting Aggressive:</strong><br>Each time price rallies, sellers appear sooner and at a lower price than the last rally. They are not waiting for higher prices — they are eager to sell.</p>
+      <p><strong>COMPRESSION (Both at Once):</strong><br>Higher lows AND lower highs simultaneously means the price is being squeezed into a tighter range. Like a coiled spring — the longer it compresses, the more violent the eventual breakout. Direction unknown until it breaks.</p>
+      <p><strong>NO CLEAR STRUCTURE:</strong><br>Price is moving randomly with no consistent pattern. Choppy market. Wait for a clearer pattern to form.</p>
+      <p><strong>HOW TO USE:</strong><br>Price structure is the most honest signal in Layer 3 — it cannot be manipulated by a single large order and it does not lag. It simply shows whether buyers or sellers are behaving with increasing urgency over the last 10 candles.</p>
+    `
+  },
+
+  l3momentum: {
+    title: 'Momentum — Rate of Change',
+    body: `
+      <p>Momentum measures how fast price is moving and whether that speed is increasing or decreasing. Think of it like a car:</p>
+      <p>Speed = how much price moved (ROC value)<br>Acceleration = is it speeding up or slowing down?</p>
+      <p>A car going 60mph that is accelerating will reach 80mph soon. A car going 60mph that is decelerating will stop eventually. The speed alone doesn't tell you what happens next — the acceleration does.</p>
+      <p><strong>TWO TIMEFRAMES ARE SHOWN:</strong></p>
+      <p>24h (6 candles): Short-term momentum. What has price done in the last day?</p>
+      <p>56h (14 candles): Medium-term momentum. What has price done in the last 2.3 days?</p>
+      <p>Comparing them tells you acceleration: If 24h momentum is stronger than half of 56h momentum (in the same direction) → the move is accelerating → conviction building. If weaker → decelerating → starting to run out of fuel.</p>
+      <p><strong>BULLISH MOMENTUM BUILDING:</strong><br>Price rising faster now than it was yesterday. Buyers are becoming more aggressive over time. Good conditions for entry.</p>
+      <p><strong>RALLY SLOWING:</strong><br>Price still rising but the rate is declining. The rally is losing energy. Not the time to chase.</p>
+      <p><strong>BEARISH MOMENTUM BUILDING:</strong><br>Price falling faster now than recently. Sellers are becoming more aggressive. Avoid new longs.</p>
+      <p><strong>SELLING SLOWING:</strong><br>Price still falling but the rate is declining. Start watching for a potential bottom — but wait for confirmation from price structure before acting.</p>
+    `
+  },
+
+  l3ob: {
+    title: 'Order Book Imbalance',
+    body: `
+      <p>The order book shows all the buy orders (bids) and sell orders (asks) currently sitting on the exchange waiting to be filled.</p>
+      <p>Think of it as two lines of people at a market:<br><strong>LEFT LINE (Bids):</strong> People waiting to BUY at various prices below the current price.<br><strong>RIGHT LINE (Asks):</strong> People waiting to SELL at various prices above the current price.</p>
+      <p>If the left line (buyers) is much larger — price tends to move upward because there is more demand than supply at current levels. If the right line (sellers) dominates — price tends to move downward.</p>
+      <p>The bar shows the balance of money (not just number of orders) in the top 20 price levels on each side.</p>
+      <p>🟢 <strong>Bid dominant (above 60%):</strong> More buying power sitting in the order book. Immediate price direction favors upward.</p>
+      <p>🔴 <strong>Ask dominant (below 40% bids):</strong> More selling pressure. Immediate price direction favors downward.</p>
+      <p>⚪ <strong>Balanced (40–60%):</strong> Neither side dominates. No order book signal.</p>
+      <p><strong>IMPORTANT LIMITATION:</strong><br>Large players can place and cancel fake orders (spoofing) to manipulate the order book's appearance. Treat this signal as a real-time snapshot, not a guaranteed predictor. Most reliable when combined with the other Layer 3 signals pointing in the same direction.</p>
+      <p>This is the most real-time signal in Layer 3 — it shows what is happening RIGHT NOW, not what happened in recent candles.</p>
+    `
+  },
+
+  l3atr: {
+    title: 'ATR — Volatility Context',
+    body: `
+      <p>ATR (Average True Range) measures how much the asset typically moves per candle — its natural breathing room. It is NOT a directional signal. It tells you the SIZE of moves, not their direction.</p>
+      <p>Think of it like measuring the waves at a beach before deciding how far to swim:</p>
+      <p><strong>Calm day (low ATR%):</strong> Small moves, predictable conditions. Swim close to shore.<br><strong>Rough day (high ATR%):</strong> Large moves, less predictable. Need to go much further out to avoid being knocked around.</p>
+      <p><strong>WHY THIS MATTERS FOR DCA:</strong><br>Your DCA system places buy orders at fixed percentage intervals below the current price. If ATR is 1% and your first DCA step is at -3%, that is 3 normal daily moves away — unlikely to trigger on noise. If ATR is 4% and your step is at -3%, a single normal candle can trigger your first buy accidentally — on noise, not a real dip.</p>
+      <p><strong>ATR-CALIBRATED STEP SIZING:</strong><br>The rule of thumb: set DCA steps at a minimum of 2–3× the current ATR%. This ensures your steps only trigger on meaningful moves.</p>
+      <p>ATR% = 1.5% → minimum step spacing = 3–4.5%<br>ATR% = 3% → minimum step spacing = 6–9%<br>ATR% = 5% → minimum step spacing = 10–15%</p>
+      <p><strong>RISING VS FALLING ATR:</strong><br>The sparkline shows whether volatility is expanding or contracting. Rising ATR → market becoming more explosive, widen your steps. Falling ATR → market calming down, tighter steps become appropriate again.</p>
+    `
   }
 };
 
@@ -2996,7 +3229,7 @@ function showPage(id, btn){
   if(id === 'strategies'){ loadAccounts(); loadStrategies(); }
   if(id === 'dca-models') { loadDCAModels(); }
   if(id === 'regime')     loadRegimeState();
-  if(id === 'market-signals') { loadLayer2(); loadLayer1(); }
+  if(id === 'market-signals') { loadLayer2(); loadLayer1(); loadLayer3(); }
 }
 
 // ── Strategy tabs ─────────────────────────────────────────────────────────────
@@ -4246,15 +4479,240 @@ async function loadRegimeState(){
   } catch(e){ /* silently ignore */ }
 }
 
+// ── Layer 3 — Entry Timing ────────────────────────────────────────────────────
+async function loadLayer3() {
+  try {
+    const data = await api(`/api/layer3/${MS_SYMBOLS[msCoin]}`);
+    if (data.error) { renderL3FallbackError(); return; }
+    renderL3VolDivergence(data.volume_divergence);
+    renderL3PriceStructure(data.price_structure);
+    renderL3Momentum(data.momentum);
+    renderL3OrderBook(data.order_book);
+    renderL3Atr(data.atr);
+    renderL3Verdict(data.verdict, data.atr);
+    updateL3Timestamp(data.timestamp);
+  } catch(e) {
+    renderL3FallbackError();
+  }
+}
+
+function renderL3VolDivergence(d) {
+  const val  = document.getElementById('ms-l3-vol-value');
+  const dir  = document.getElementById('ms-l3-vol-dir');
+  const pill = document.getElementById('ms-l3-vol-pill');
+  const wrap = document.getElementById('ms-l3-vol-bar-wrap');
+  if (!d || d.error) {
+    if (val)  val.textContent  = '—';
+    if (pill) { pill.textContent = 'Unavailable'; pill.className = 'ms-pill grey'; }
+    return;
+  }
+  if (val)  val.textContent  = d.ratio.toFixed(2) + '× avg volume';
+  if (dir)  dir.textContent  = d.price_up ? '↑ Price up this candle' : '↓ Price down this candle';
+  if (pill) { pill.textContent = d.label; pill.className = 'ms-pill ' + d.color; }
+  if (wrap) {
+    const pct   = Math.min(Math.round(d.ratio * 50), 100);
+    const color = d.signal > 0 ? 'var(--green)' : d.signal < 0 ? 'var(--red)' : 'var(--muted)';
+    wrap.innerHTML = `<div class="ms-l3-vol-bar"><div class="ms-l3-vol-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted)"><span>0</span><span>1× avg</span><span>2×</span></div>`;
+  }
+}
+
+function renderL3PriceStructure(d) {
+  const pill = document.getElementById('ms-l3-structure-pill');
+  const svg  = document.getElementById('ms-l3-structure-chart');
+  const sub  = document.getElementById('ms-l3-structure-sub');
+  if (!d || d.error) {
+    if (pill) { pill.textContent = 'Unavailable'; pill.className = 'ms-pill grey'; }
+    return;
+  }
+  if (pill) { pill.textContent = d.label; pill.className = 'ms-pill ' + d.color; }
+  if (sub)  sub.textContent  = (d.higher_lows ? '✓ Higher Lows' : '') + (d.higher_lows && d.lower_highs ? '  ' : '') + (d.lower_highs ? '✓ Lower Highs' : '');
+
+  if (svg && d.highs && d.lows) {
+    const all = [...d.highs, ...d.lows];
+    const min = Math.min(...all), max = Math.max(...all);
+    const rng = (max - min) || 1;
+    const n = d.highs.length, W = 300, H = 64;
+    const xs = d.highs.map((_, i) => Math.round(i / (n - 1) * W));
+    const yH = d.highs.map(v => H - 4 - Math.round(((v - min) / rng) * (H - 10)));
+    const yL = d.lows.map(v  => H - 4 - Math.round(((v - min) / rng) * (H - 10)));
+    const hc = d.lower_highs ? '#c41f1f' : '#8e8e93';
+    const lc = d.higher_lows ? '#1d8a3b' : '#8e8e93';
+    svg.innerHTML =
+      `<polyline points="${xs.map((x,i)=>x+','+yH[i]).join(' ')}" fill="none" stroke="${hc}" stroke-width="1.5" opacity="0.8"/>` +
+      `<polyline points="${xs.map((x,i)=>x+','+yL[i]).join(' ')}" fill="none" stroke="${lc}" stroke-width="1.5" opacity="0.8"/>` +
+      xs.map((x,i)=>`<circle cx="${x}" cy="${yH[i]}" r="2.5" fill="${hc}"/><circle cx="${x}" cy="${yL[i]}" r="2.5" fill="${lc}"/>`).join('');
+  }
+}
+
+function renderL3Momentum(d) {
+  const roc6  = document.getElementById('ms-l3-roc6');
+  const roc14 = document.getElementById('ms-l3-roc14');
+  const pill  = document.getElementById('ms-l3-momentum-pill');
+  if (!d || d.error) {
+    if (roc6)  roc6.textContent  = '—';
+    if (roc14) roc14.textContent = '—';
+    if (pill)  { pill.textContent = 'Unavailable'; pill.className = 'ms-pill grey'; }
+    return;
+  }
+  if (roc6)  roc6.textContent  = (d.roc6  >= 0 ? '+' : '') + d.roc6.toFixed(2)  + '%';
+  if (roc14) roc14.textContent = (d.roc14 >= 0 ? '+' : '') + d.roc14.toFixed(2) + '%';
+  if (pill)  { pill.textContent = d.label; pill.className = 'ms-pill ' + d.color; }
+}
+
+function renderL3OrderBook(d) {
+  const bidBar = document.getElementById('ms-ob-bid-bar');
+  const askBar = document.getElementById('ms-ob-ask-bar');
+  const bidPct = document.getElementById('ms-ob-bid-pct');
+  const askPct = document.getElementById('ms-ob-ask-pct');
+  const vals   = document.getElementById('ms-ob-vals');
+  const pill   = document.getElementById('ms-l3-ob-pill');
+  if (!d || d.error) {
+    if (pill) { pill.textContent = 'Unavailable'; pill.className = 'ms-pill grey'; }
+    return;
+  }
+  if (bidBar) bidBar.style.width = d.bid_pct + '%';
+  if (askBar) askBar.style.width = d.ask_pct + '%';
+  if (bidPct) bidPct.textContent = 'Bids ' + d.bid_pct + '%';
+  if (askPct) askPct.textContent = 'Asks ' + d.ask_pct + '%';
+  if (vals)   vals.textContent   = d.bid_val + ' bids / ' + d.ask_val + ' asks';
+  if (pill)   { pill.textContent = d.label; pill.className = 'ms-pill ' + d.color; }
+}
+
+function renderL3Atr(d) {
+  const usd  = document.getElementById('ms-l3-atr-usd');
+  const pct  = document.getElementById('ms-l3-atr-pct');
+  const pill = document.getElementById('ms-l3-atr-pill');
+  const spk  = document.getElementById('ms-l3-atr-spark');
+  const note = document.getElementById('ms-l3-dca-note');
+  if (!d || d.error) {
+    if (usd)  usd.textContent  = '—';
+    if (pill) { pill.textContent = 'Unavailable'; pill.className = 'ms-pill grey'; }
+    return;
+  }
+  if (usd)  usd.textContent  = d.atr_usd;
+  if (pct)  pct.textContent  = 'ATR: ' + d.atr_pct + '% of price';
+  if (pill) { pill.textContent = d.label; pill.className = 'ms-pill ' + d.color; }
+  if (note) note.textContent  = d.dca_note;
+  if (spk && d.atr_history && d.atr_history.length > 1) spk.innerHTML = msSparkline(d.atr_history);
+}
+
+function renderL3Verdict(v, atr) {
+  const box   = document.getElementById('ms-l3-verdict');
+  const emoji = document.getElementById('ms-l3-verdict-emoji');
+  const label = document.getElementById('ms-l3-verdict-label');
+  const score = document.getElementById('ms-l3-score');
+  const flag  = document.getElementById('ms-l3-vol-flag');
+  const badge = document.getElementById('ms-l3-badge');
+  const mstr  = document.getElementById('ms-master-l3');
+  if (!v || v.code === 'UNKNOWN') {
+    if (box)   box.className   = 'ms-verdict grey';
+    if (emoji) emoji.textContent = '—';
+    if (label) label.textContent = 'Unavailable';
+    if (badge) { badge.textContent = '— —'; badge.className = 'ms-layer-badge grey'; }
+    _l3VerdictCode = null;
+    updateMasterSummary();
+    return;
+  }
+  if (box)   box.className   = 'ms-verdict ' + v.color;
+  if (emoji) emoji.textContent = v.emoji;
+  if (label) label.textContent = v.label;
+  if (score) score.textContent = `${v.total} signal${v.total !== 1 ? 's' : ''} counted — ${v.bullish} bullish, ${v.bearish} bearish, ${v.neutral} neutral`;
+  if (badge) { badge.textContent = v.emoji + ' ' + v.label; badge.className = 'ms-layer-badge ' + v.color; }
+  if (mstr)  mstr.textContent  = v.emoji + ' ' + v.label;
+  if (flag && atr && !atr.error) {
+    flag.textContent = atr.vol_flag || '';
+    flag.style.color = atr.vol_flag ? (atr.atr_pct >= 4 ? 'var(--red)' : 'var(--muted)') : '';
+  }
+  _l3VerdictCode = v.code;
+  updateMasterSummary();
+}
+
+function renderL3FallbackError() {
+  const badge = document.getElementById('ms-l3-badge');
+  if (badge) { badge.textContent = '— Error'; badge.className = 'ms-layer-badge grey'; }
+  const box = document.getElementById('ms-l3-verdict');
+  if (box) box.className = 'ms-verdict grey';
+  const lbl = document.getElementById('ms-l3-verdict-label');
+  if (lbl) lbl.textContent = 'Unable to load';
+  _l3VerdictCode = null;
+  updateMasterSummary();
+}
+
+function updateL3Timestamp(ts) {
+  const el = document.getElementById('ms-l3-timestamp');
+  if (!el || !ts) return;
+  const mins = Math.max(0, Math.round((Date.now() - ts) / 60000));
+  el.textContent = mins < 1 ? 'Last updated: just now'
+    : mins === 1 ? 'Last updated: 1 minute ago'
+    : `Last updated: ${mins} minutes ago`;
+}
+
+// ── Collapsible layer headers ─────────────────────────────────────────────────
+function toggleLayer(n) {
+  const body  = document.getElementById('ms-layer' + n + '-body');
+  const arrow = document.getElementById('ms-l' + n + '-arrow');
+  if (!body) return;
+  const collapsed = body.classList.toggle('ms-collapsed');
+  if (arrow) arrow.classList.toggle('ms-collapsed', collapsed);
+  try { localStorage.setItem('ms_layer' + n + '_collapsed', collapsed ? '1' : '0'); } catch(e) {}
+}
+
+function initLayerCollapseState() {
+  [1, 2, 3].forEach(n => {
+    const body  = document.getElementById('ms-layer' + n + '-body');
+    const arrow = document.getElementById('ms-l' + n + '-arrow');
+    if (!body) return;
+    try {
+      if (localStorage.getItem('ms_layer' + n + '_collapsed') === '1') {
+        body.classList.add('ms-collapsed');
+        if (arrow) arrow.classList.add('ms-collapsed');
+      }
+    } catch(e) {}
+  });
+}
+
+// ── Master summary bar ────────────────────────────────────────────────────────
+function updateMasterSummary() {
+  const el = document.getElementById('ms-master-verdict');
+  if (!el) return;
+  const l1 = _l1VerdictCode, l2 = _l2VerdictCode, l3 = _l3VerdictCode;
+  const l1Bull = l1 === 'FAVORABLE';
+  const l1Bear = l1 === 'UNFAVORABLE';
+  const l2Bear = l2 === 'CAUTION_LONG';
+  const l2Bull = l2 === 'NEUTRAL' || l2 === 'CAUTION_SHORT';
+  const l3Bull = l3 === 'LONG' || l3 === 'WEAK_LONG';
+  const l3Bear = l3 === 'SHORT' || l3 === 'WEAK_SHORT';
+  let text, cls;
+  if (l1Bull && l2Bull && l3Bull) {
+    text = '🟢 ALIGNED LONG — All layers bullish'; cls = 'green';
+  } else if (l1Bear && l2Bear && l3Bear) {
+    text = '🔴 ALIGNED SHORT — All layers bearish'; cls = 'red';
+  } else if (l1Bull && l3Bull && !l2Bear) {
+    text = '🟡 DEVELOPING — Missing L2 confirmation'; cls = 'yellow';
+  } else if (l1 === 'MIXED' || l1 === 'INSUFFICIENT_DATA') {
+    text = '🟡 MIXED — Macro not fully clear'; cls = 'yellow';
+  } else if (l2Bear || l3Bear) {
+    text = '🟠 CAUTION — Check individual layers'; cls = 'orange';
+  } else {
+    text = '⚪ WAIT — Layers not aligned'; cls = 'grey';
+  }
+  el.textContent = text;
+  el.className   = 'ms-master-verdict ' + cls;
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 refresh();
 loadLayer2();
 loadLayer1();
+loadLayer3();
+initLayerCollapseState();
 refreshRunning();
 setInterval(refresh, 5000);
 setInterval(refreshRunning, 5000);
 setInterval(() => loadLayer2(), 300000);
 setInterval(() => loadLayer1(), 900000);
+setInterval(() => loadLayer3(), 120000);
 setInterval(updateL1Timestamp, 60000);
 </script>
 </body>
