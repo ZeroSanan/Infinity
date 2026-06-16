@@ -148,47 +148,67 @@
   }
 
   .ms-layer1-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     margin: 14px 0 4px;
   }
-  @media (max-width: 1024px) { .ms-layer1-grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 640px)  { .ms-layer1-grid { grid-template-columns: 1fr; } }
 
   .ms-l1-card {
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 14px;
-    display: flex; flex-direction: column; gap: 8px;
-    min-height: 184px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
   .ms-l1-card.manual {
     border-style: dashed;
     border-color: var(--border2);
   }
 
-  .ms-l1-value  { font-size: 26px; font-weight: 800; letter-spacing: -.4px; text-align: center; font-variant-numeric: tabular-nums; }
+  .ms-l1-head {
+    flex: 1.4 1 220px;
+    min-width: 180px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .ms-l1-body {
+    flex: 1 1 140px;
+    min-width: 120px;
+    display: flex; flex-direction: column; gap: 6px; align-items: center;
+  }
+  .ms-l1-action {
+    flex: 2 1 300px;
+    min-width: 240px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  @media (max-width: 860px) {
+    .ms-l1-card { flex-direction: column; align-items: stretch; }
+    .ms-l1-head, .ms-l1-body, .ms-l1-action { flex: 1 1 auto; width: 100%; min-width: 0; }
+    .ms-l1-body { align-items: center; }
+  }
+
+  .ms-l1-value  { font-size: 22px; font-weight: 800; letter-spacing: -.4px; text-align: center; font-variant-numeric: tabular-nums; width: 100%; overflow-wrap: anywhere; }
   .ms-l1-change { font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
   .ms-l1-change.up   { color: var(--green); }
   .ms-l1-change.down { color: var(--red); }
   .ms-l1-sub  { font-size: 11px; color: var(--muted); text-align: center; }
-  .ms-l1-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: auto; }
+  .ms-l1-note { font-size: 11px; color: var(--muted); }
   .ms-l1-card .ms-pill { margin: 0 auto; }
 
   .ms-l1-manual-icon  { font-size: 24px; text-align: center; color: var(--muted); }
-  .ms-l1-manual-desc  { font-size: 11.5px; color: var(--text2); text-align: center; line-height: 1.45; }
-  .ms-l1-manual-extra { font-size: 11px; color: var(--muted); text-align: center; }
+  .ms-l1-desc { font-size: 11.5px; color: var(--text2); line-height: 1.45; }
+  .ms-l1-manual-extra { font-size: 11px; color: var(--muted); }
   .ms-l1-link-btn {
     display: block; text-align: center; font-size: 12px; font-weight: 700;
     color: var(--blue); text-decoration: none; padding: 8px; border-radius: 8px;
-    background: var(--blue-bg); margin-top: auto;
+    background: var(--blue-bg);
   }
   .ms-l1-link-btn:hover { background: rgba(0,122,255,.16); }
   .ms-l1-manual-label { font-size: 10px; color: var(--muted); text-align: center; font-style: italic; }
   .ms-l1-retry {
-    display: block; margin: 0 auto; text-align: center; font-size: 12px; font-weight: 700;
+    display: block; text-align: center; font-size: 12px; font-weight: 700;
     color: var(--blue); background: var(--blue-bg); border: none; border-radius: 8px;
     padding: 6px 14px; cursor: pointer;
   }
@@ -196,7 +216,7 @@
 
   .ms-l1-score { font-size: 12px; color: var(--muted); text-align: center; margin-top: 4px; }
 
-  .ms-l1-input-label { font-size: 11px; color: var(--muted); text-align: center; }
+  .ms-l1-input-label { font-size: 11px; color: var(--muted); }
   .ms-l1-input-row { display: flex; gap: 6px; align-items: center; }
   .ms-l1-input-row input,
   .ms-l1-input-row select {
@@ -211,7 +231,7 @@
   }
   .ms-l1-save-btn:hover { background: rgba(0,122,255,.16); }
 
-  .ms-l1-toggle-row { display: flex; gap: 4px; justify-content: center; }
+  .ms-l1-toggle-row { display: flex; gap: 4px; }
   .ms-l1-toggle {
     font-size: 11px; font-weight: 600; color: var(--text2); background: var(--surface);
     border: 1px solid var(--border2); border-radius: 8px; padding: 4px 8px; cursor: pointer;
@@ -224,7 +244,7 @@
   .ms-l1-stale.old   { color: var(--red); }
 
   .ms-l1-edit-link {
-    display: block; margin: 0 auto; text-align: center; font-size: 11px; font-weight: 600;
+    display: block; text-align: center; font-size: 11px; font-weight: 600;
     color: var(--blue); background: none; border: none; cursor: pointer; padding: 2px;
   }
   .ms-l1-edit-link:hover { text-decoration: underline; }
@@ -2236,10 +2256,12 @@ function l1InfoBtn(key, label) {
 function l1ErrorCard(name, modalKey) {
   return `
     <div class="ms-l1-card">
-      <div class="ms-panel-head"><span>${name}</span>${l1InfoBtn(modalKey, name)}</div>
-      <div class="ms-l1-value">—</div>
-      <span class="ms-pill grey">Data unavailable</span>
-      <button class="ms-l1-retry" onclick="loadLayer1()">Retry</button>
+      <div class="ms-l1-head"><div class="ms-panel-head"><span>${name}</span>${l1InfoBtn(modalKey, name)}</div></div>
+      <div class="ms-l1-body">
+        <div class="ms-l1-value">—</div>
+        <span class="ms-pill grey">Data unavailable</span>
+      </div>
+      <div class="ms-l1-action"><button class="ms-l1-retry" onclick="loadLayer1()">Retry</button></div>
     </div>`;
 }
 
@@ -2547,8 +2569,17 @@ function renderManualInputCard(key, extraHtml) {
   const editing = !saved || _l1EditingCards.has(key);
 
   let html = `<div class="ms-l1-card manual">`;
-  html += `<div class="ms-panel-head"><span>${spec.name}</span>${l1InfoBtn(spec.modalKey, spec.name)}</div>`;
 
+  // Head — title, description, notes
+  html += `<div class="ms-l1-head">`;
+  html += `<div class="ms-panel-head"><span>${spec.name}</span>${l1InfoBtn(spec.modalKey, spec.name)}</div>`;
+  html += `<div class="ms-l1-desc">${spec.desc}</div>`;
+  if (spec.cardNote) html += `<div class="ms-l1-manual-extra">${spec.cardNote}</div>`;
+  if (extraHtml)     html += `<div class="ms-l1-manual-extra">${extraHtml}</div>`;
+  html += `</div>`;
+
+  // Body — current status
+  html += `<div class="ms-l1-body">`;
   if (result) {
     html += `<div class="ms-l1-value">${result.display}</div>`;
     if (result.sub) html += `<div class="ms-l1-sub">${result.sub}</div>`;
@@ -2556,14 +2587,13 @@ function renderManualInputCard(key, extraHtml) {
     html += l1StalenessHTML(saved.ts);
   } else {
     html += `<div class="ms-l1-manual-icon">🔗</div>`;
-    html += `<div class="ms-l1-manual-desc">${spec.desc}</div>`;
+    html += `<div class="ms-l1-sub">Not yet entered</div>`;
   }
+  html += `</div>`;
 
-  if (spec.cardNote) html += `<div class="ms-l1-manual-extra">${spec.cardNote}</div>`;
-  if (extraHtml)     html += `<div class="ms-l1-manual-extra">${extraHtml}</div>`;
-
+  // Action — input controls, edit link, external link
+  html += `<div class="ms-l1-action">`;
   if (editing) {
-    if (result) html += `<div class="ms-l1-manual-desc">${spec.desc}</div>`;
     html += renderInputControls(key, spec, saved);
     if (result) {
       html += `<div class="ms-l1-saved-meta">Last saved: ${result.display} (${l1AgoText(saved.ts)})</div>`;
@@ -2572,9 +2602,10 @@ function renderManualInputCard(key, extraHtml) {
   } else {
     html += `<button type="button" class="ms-l1-edit-link" onclick="l1ToggleEdit('${key}')">✏️ Edit</button>`;
   }
-
   html += `<a class="ms-l1-link-btn" href="${spec.link}" target="_blank" rel="noopener">${spec.btnText}</a>`;
   html += `<div class="ms-l1-manual-label">Manual check — not automated</div>`;
+  html += `</div>`;
+
   html += `</div>`;
   return html;
 }
@@ -2637,10 +2668,12 @@ function l1FearGreed(d) {
   if (!d || d.status === 'error') return l1ErrorCard('Fear &amp; Greed Index', 'fng');
   return `
     <div class="ms-l1-card">
-      <div class="ms-panel-head"><span>Fear &amp; Greed Index</span>${l1InfoBtn('fng', 'Fear and Greed Index')}</div>
-      <div class="ms-l1-value">${d.value}</div>
-      <span class="ms-pill ${d.color}">${d.label}</span>
-      <svg class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">${msSparkline(d.history)}</svg>
+      <div class="ms-l1-head"><div class="ms-panel-head"><span>Fear &amp; Greed Index</span>${l1InfoBtn('fng', 'Fear and Greed Index')}</div></div>
+      <div class="ms-l1-body">
+        <div class="ms-l1-value">${d.value}</div>
+        <span class="ms-pill ${d.color}">${d.label}</span>
+      </div>
+      <div class="ms-l1-action"><svg class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">${msSparkline(d.history)}</svg></div>
     </div>`;
 }
 
@@ -2650,11 +2683,13 @@ function l1BtcDominance(d) {
   const dir   = d.change_24h >= 0 ? 'up' : 'down';
   return `
     <div class="ms-l1-card">
-      <div class="ms-panel-head"><span>BTC Dominance</span>${l1InfoBtn('btcdom', 'BTC Dominance')}</div>
-      <div class="ms-l1-value">${d.value.toFixed(1)}%</div>
-      <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_24h).toFixed(2)}% (24h)</div>
-      <span class="ms-pill ${d.color}">${d.label}</span>
-      <div class="ms-l1-note">Bullish for alts when falling. Neutral for BTC.</div>
+      <div class="ms-l1-head"><div class="ms-panel-head"><span>BTC Dominance</span>${l1InfoBtn('btcdom', 'BTC Dominance')}</div></div>
+      <div class="ms-l1-body">
+        <div class="ms-l1-value">${d.value.toFixed(1)}%</div>
+        <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_24h).toFixed(2)}% (24h)</div>
+        <span class="ms-pill ${d.color}">${d.label}</span>
+      </div>
+      <div class="ms-l1-action"><div class="ms-l1-note">Bullish for alts when falling. Neutral for BTC.</div></div>
     </div>`;
 }
 
@@ -2665,11 +2700,13 @@ function l1Dxy(d) {
   const dir   = d.change_7d_pct >= 0 ? 'up' : 'down';
   return `
     <div class="ms-l1-card">
-      <div class="ms-panel-head"><span>DXY — US Dollar</span>${l1InfoBtn('dxy', 'DXY — US Dollar Index')}</div>
-      <div class="ms-l1-value">${d.value.toFixed(2)}</div>
-      <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_7d_pct).toFixed(2)}% (7d)</div>
-      <span class="ms-pill ${d.color}">${d.label}</span>
-      <svg class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">${msSparkline(d.history)}</svg>
+      <div class="ms-l1-head"><div class="ms-panel-head"><span>DXY — US Dollar</span>${l1InfoBtn('dxy', 'DXY — US Dollar Index')}</div></div>
+      <div class="ms-l1-body">
+        <div class="ms-l1-value">${d.value.toFixed(2)}</div>
+        <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_7d_pct).toFixed(2)}% (7d)</div>
+        <span class="ms-pill ${d.color}">${d.label}</span>
+      </div>
+      <div class="ms-l1-action"><svg class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">${msSparkline(d.history)}</svg></div>
     </div>`;
 }
 
@@ -2678,11 +2715,13 @@ function l1FedFunds(d) {
   if (d.status === 'no_key') return renderManualInputCard('fedfunds');
   return `
     <div class="ms-l1-card">
-      <div class="ms-panel-head"><span>Fed Funds Rate</span>${l1InfoBtn('fedfunds', 'Fed Funds Rate')}</div>
-      <div class="ms-l1-value">${d.value.toFixed(2)}%</div>
-      <span class="ms-pill ${d.color}">${d.cycle}</span>
-      <div class="ms-l1-sub">${d.label}</div>
-      <div class="ms-l1-note">Next FOMC: <strong>${d.next_fomc}</strong></div>
+      <div class="ms-l1-head"><div class="ms-panel-head"><span>Fed Funds Rate</span>${l1InfoBtn('fedfunds', 'Fed Funds Rate')}</div></div>
+      <div class="ms-l1-body">
+        <div class="ms-l1-value">${d.value.toFixed(2)}%</div>
+        <span class="ms-pill ${d.color}">${d.cycle}</span>
+        <div class="ms-l1-sub">${d.label}</div>
+      </div>
+      <div class="ms-l1-action"><div class="ms-l1-note">Next FOMC: <strong>${d.next_fomc}</strong></div></div>
     </div>`;
 }
 
@@ -2693,10 +2732,12 @@ function l1Yield10y(d) {
   const dir   = d.change_7d >= 0 ? 'up' : 'down';
   return `
     <div class="ms-l1-card">
-      <div class="ms-panel-head"><span>US 10-Year Yield</span>${l1InfoBtn('yield10y', 'US 10-Year Treasury Yield')}</div>
-      <div class="ms-l1-value">${d.value.toFixed(2)}%</div>
-      <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_7d).toFixed(2)}pp (7d)</div>
-      <span class="ms-pill ${d.color}">${d.label}</span>
+      <div class="ms-l1-head"><div class="ms-panel-head"><span>US 10-Year Yield</span>${l1InfoBtn('yield10y', 'US 10-Year Treasury Yield')}</div></div>
+      <div class="ms-l1-body">
+        <div class="ms-l1-value">${d.value.toFixed(2)}%</div>
+        <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_7d).toFixed(2)}pp (7d)</div>
+        <span class="ms-pill ${d.color}">${d.label}</span>
+      </div>
     </div>`;
 }
 
@@ -2706,12 +2747,14 @@ function l1Cpi(d) {
   const dirLabel = d.direction === 'rising' ? '↑ Rising vs. last month' : '↓ Falling vs. last month';
   return `
     <div class="ms-l1-card">
-      <div class="ms-panel-head"><span>CPI — Inflation</span>${l1InfoBtn('cpi', 'CPI — Inflation Rate')}</div>
-      <div class="ms-l1-value">${d.value.toFixed(1)}%</div>
-      <div class="ms-l1-sub">${dirLabel}</div>
-      <span class="ms-pill ${d.color}">${d.label}</span>
-      <div class="ms-l1-sub">${d.vs_target}</div>
-      <div class="ms-l1-note">Next release: <strong>${d.next_release}</strong></div>
+      <div class="ms-l1-head"><div class="ms-panel-head"><span>CPI — Inflation</span>${l1InfoBtn('cpi', 'CPI — Inflation Rate')}</div></div>
+      <div class="ms-l1-body">
+        <div class="ms-l1-value">${d.value.toFixed(1)}%</div>
+        <div class="ms-l1-sub">${dirLabel}</div>
+        <span class="ms-pill ${d.color}">${d.label}</span>
+        <div class="ms-l1-sub">${d.vs_target}</div>
+      </div>
+      <div class="ms-l1-action"><div class="ms-l1-note">Next release: <strong>${d.next_release}</strong></div></div>
     </div>`;
 }
 
@@ -2722,11 +2765,13 @@ function l1Vix(d) {
   const dir   = d.change_7d >= 0 ? 'up' : 'down';
   return `
     <div class="ms-l1-card">
-      <div class="ms-panel-head"><span>VIX — Fear Index</span>${l1InfoBtn('vix', 'VIX — Market Fear Index')}</div>
-      <div class="ms-l1-value">${d.value.toFixed(1)}</div>
-      <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_7d).toFixed(1)} (7d)</div>
-      <span class="ms-pill ${d.color}">${d.label}</span>
-      <svg class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">${msSparkline(d.history)}</svg>
+      <div class="ms-l1-head"><div class="ms-panel-head"><span>VIX — Fear Index</span>${l1InfoBtn('vix', 'VIX — Market Fear Index')}</div></div>
+      <div class="ms-l1-body">
+        <div class="ms-l1-value">${d.value.toFixed(1)}</div>
+        <div class="ms-l1-change ${dir}">${arrow} ${Math.abs(d.change_7d).toFixed(1)} (7d)</div>
+        <span class="ms-pill ${d.color}">${d.label}</span>
+      </div>
+      <div class="ms-l1-action"><svg class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">${msSparkline(d.history)}</svg></div>
     </div>`;
 }
 
