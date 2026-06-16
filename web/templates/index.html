@@ -4094,7 +4094,7 @@ function rebuildStepRows(steps){
 }
 
 function addStep(){
-  const rows = document.querySelectorAll('.builder-row');
+  const rows = document.querySelectorAll('#steps-builder .builder-row');
   const lastDump = rows.length ? parseFloat(rows[rows.length-1].querySelector('.dump-inp').value) || 0 : 0;
   addStepRow(Math.min(lastDump - 5, -5), 1000);
   updateStepPreview();
@@ -4114,7 +4114,7 @@ function addStepRow(dump='', size=''){
 function removeStep(btn){ btn.closest('.builder-row').remove(); updateStepPreview(); }
 
 function updateStepPreview(){
-  const rows  = [...document.querySelectorAll('.builder-row')];
+  const rows  = [...document.querySelectorAll('#steps-builder .builder-row')];
   const steps = rows.map(r => ({
     dump: parseFloat(r.querySelector('.dump-inp').value) || 0,
     size: parseFloat(r.querySelector('.size-inp').value) || 0
@@ -4140,7 +4140,7 @@ async function saveStrategy(){
   const tp      = parseFloat(document.getElementById('sf-tp').value);
   const ref     = parseFloat(document.getElementById('sf-ref').value) || null;
   const enabled = document.getElementById('sf-enabled').checked;
-  const rows    = [...document.querySelectorAll('.builder-row')];
+  const rows    = [...document.querySelectorAll('#steps-builder .builder-row')];
 
   if(!coinVal || !symbol){ setFeedback('strat-feedback','Coin and Symbol are required.','err'); return; }
   if(!tp || tp <= 0)      { setFeedback('strat-feedback','Take profit % must be > 0.','err'); return; }
