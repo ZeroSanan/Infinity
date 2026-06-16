@@ -305,6 +305,12 @@
   .ms-ob-bar-ask { background: #c41f1f; }
   .ms-ob-pct { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; }
   .ms-ob-pct .bid { color: #1d8a3b; }
+  /* ── Liquidation Heatmap card ── */
+  .ms-liq-wrap { position: relative; height: 400px; border-radius: calc(var(--radius) - 2px); overflow: hidden; background: var(--surface); }
+  .ms-liq-wrap iframe { width: 100%; height: 100%; border: none; display: block; }
+  .ms-liq-na { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 13px; font-style: italic; }
+  .ms-liq-ext { font-size: 11px; color: var(--accent); text-decoration: none; margin-left: auto; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--accent); white-space: nowrap; }
+  .ms-liq-ext:hover { background: var(--accent); color: #fff; }
   .ms-ob-pct .ask { color: #c41f1f; }
   .ms-l3-dca-note { font-style: italic; margin-top: 4px; }
 
@@ -1919,6 +1925,20 @@
 
         </div>
 
+        <!-- Liquidation Heatmap -->
+        <div class="ms-panel" id="ms-liq-panel" style="margin-bottom:16px">
+          <div class="ms-panel-head">
+            <span>Liquidation Heatmap</span>
+            <a id="ms-liq-ext-link" href="https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=BTC" target="_blank" rel="noopener" class="ms-liq-ext">↗ Open</a>
+            <button class="ms-info-btn" onclick="openMsModal(MS_MODAL.liqheatmap.title, MS_MODAL.liqheatmap.body)" aria-label="About Liquidation Heatmap" title="About Liquidation Heatmap">ⓘ</button>
+          </div>
+          <div class="ms-liq-wrap">
+            <iframe id="ms-liq-iframe" src="https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=BTC" loading="lazy" referrerpolicy="no-referrer"></iframe>
+            <div class="ms-liq-na" id="ms-liq-na" style="display:none">Liquidation heatmap not available for this coin</div>
+          </div>
+          <div class="ms-stat-sub" style="color:var(--muted)">Context only — not a directional signal. Shows price levels where large liquidations are clustered.</div>
+        </div>
+
         <!-- Combined verdict -->
         <div class="ms-verdict grey" id="ms-verdict">
           <div class="ms-verdict-emoji" id="ms-verdict-emoji">—</div>
@@ -2189,6 +2209,13 @@ function setFeedback(id, msg, type='ok'){
 
 // ── Market Signals (Layer Framework) ──────────────────────────────────────────
 const MS_SYMBOLS = { BTC: 'BTCUSDT', ETH: 'ETHUSDT', SOL: 'SOLUSDT', ZEC: 'ZECUSDT', XAUT: 'XAUTUSDT' };
+const LIQ_HEATMAP_URLS = {
+  BTC:  'https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=BTC',
+  ETH:  'https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=ETH',
+  SOL:  'https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=SOL',
+  ZEC:  null,
+  XAUT: null,
+};
 let msCoin = 'BTC';
 
 function selectMsCoin(coin, btn) {
@@ -2199,6 +2226,23 @@ function selectMsCoin(coin, btn) {
   if (mc) mc.textContent = coin;
   loadLayer2();
   loadLayer3();
+  updateLiqHeatmap();
+}
+
+function updateLiqHeatmap() {
+  const url  = LIQ_HEATMAP_URLS[msCoin] || null;
+  const fr   = document.getElementById('ms-liq-iframe');
+  const na   = document.getElementById('ms-liq-na');
+  const link = document.getElementById('ms-liq-ext-link');
+  if (!url) {
+    if (fr)   fr.style.display = 'none';
+    if (na)   na.style.display = '';
+    if (link) link.style.display = 'none';
+    return;
+  }
+  if (fr)   { fr.style.display = ''; fr.src = url; }
+  if (na)   na.style.display = 'none';
+  if (link) { link.style.display = ''; link.href = url; }
 }
 
 async function loadLayer2() {
@@ -3206,6 +3250,20 @@ const MS_MODAL = {
       <p>ATR% = 1.5% → minimum step spacing = 3–4.5%<br>ATR% = 3% → minimum step spacing = 6–9%<br>ATR% = 5% → minimum step spacing = 10–15%</p>
       <p><strong>RISING VS FALLING ATR:</strong><br>The sparkline shows whether volatility is expanding or contracting. Rising ATR → market becoming more explosive, widen your steps. Falling ATR → market calming down, tighter steps become appropriate again.</p>
     `
+  },
+
+  liqheatmap: {
+    title: 'Liquidation Heatmap — What It Means',
+    body: `
+      <p>A Liquidation Heatmap visualises price levels where large numbers of leveraged positions will be forcibly closed (liquidated) if price reaches those levels.</p>
+      <p>Each price level is coloured by the density of liquidation orders stacked there — brighter or hotter colours mean more positions get liquidated at that price.</p>
+      <p><strong>WHY IT MATTERS</strong><br>Large liquidation clusters act as price magnets. Market makers can see where forced closures are concentrated and often push price toward those levels to trigger cascades — generating volume and letting them fill larger orders against panicked liquidation flow.</p>
+      <p><strong>HOW TO READ IT</strong></p>
+      <p>🔴 <strong>Dense cluster ABOVE current price</strong><br>A zone where many short positions will be liquidated if price rises there. This creates a natural squeeze target — once reached, the cascade of forced short-covering can accelerate price sharply upward before it reverses. Acts as a magnet during rallies.</p>
+      <p>🟢 <strong>Dense cluster BELOW current price</strong><br>A zone where many long positions will be liquidated if price falls there. Forced long closures add downward momentum. Acts as a magnet during pullbacks and a potential support level after the flush completes.</p>
+      <p><strong>PRACTICAL USE</strong><br>Before entering, check whether a large liquidation cluster sits just above your entry (potential squeeze that traps longs) or just below (potential wick target before any reversal). The heatmap does not predict direction — it shows where forced exits are waiting.</p>
+      <p><strong>IMPORTANT</strong><br>Context only — not a directional signal. Always combine with Layer 1 (macro environment), Layer 2 (market positioning), and Layer 3 (entry timing) before making any decision.</p>
+    `
   }
 };
 
@@ -3229,7 +3287,7 @@ function showPage(id, btn){
   if(id === 'strategies'){ loadAccounts(); loadStrategies(); }
   if(id === 'dca-models') { loadDCAModels(); }
   if(id === 'regime')     loadRegimeState();
-  if(id === 'market-signals') { loadLayer2(); loadLayer1(); loadLayer3(); }
+  if(id === 'market-signals') { loadLayer2(); loadLayer1(); loadLayer3(); updateLiqHeatmap(); }
 }
 
 // ── Strategy tabs ─────────────────────────────────────────────────────────────
@@ -4706,6 +4764,7 @@ refresh();
 loadLayer2();
 loadLayer1();
 loadLayer3();
+updateLiqHeatmap();
 initLayerCollapseState();
 refreshRunning();
 setInterval(refresh, 5000);
