@@ -311,6 +311,44 @@
   .ms-liq-na { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 13px; font-style: italic; }
   .ms-liq-ext { font-size: 11px; color: var(--accent); text-decoration: none; margin-left: auto; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--accent); white-space: nowrap; }
   .ms-liq-ext:hover { background: var(--accent); color: #fff; }
+  /* ── AI Analysis panel ── */
+  .ms-ai-panel { margin-top: 24px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .ms-ai-title { font-size: 15px; font-weight: 700; }
+  .ms-ai-subtitle { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+  .ms-ai-liq-section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin: 14px 0; }
+  .ms-ai-liq-title { font-size: 10px; font-weight: 700; letter-spacing: .6px; color: var(--muted); margin-bottom: 10px; }
+  .ms-ai-liq-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .ms-ai-liq-label { font-size: 12px; color: var(--text2); flex: 1; min-width: 160px; }
+  .ms-ai-liq-row input[type=number] { width: 130px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 13px; }
+  .ms-ai-liq-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .ms-ai-liq-link { color: var(--accent); text-decoration: none; }
+  .ms-ai-liq-link:hover { text-decoration: underline; }
+  .ms-ai-low-warn { background: rgba(255,149,0,.10); border: 1px solid rgba(255,149,0,.30); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #9a5c00; margin-bottom: 12px; }
+  .ms-ai-gen-btn { width: 100%; padding: 13px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); font-size: 15px; font-weight: 700; cursor: pointer; transition: opacity .15s; letter-spacing: .2px; }
+  .ms-ai-gen-btn:hover:not(:disabled) { opacity: .88; }
+  .ms-ai-gen-btn:disabled { opacity: .55; cursor: not-allowed; }
+  .ms-ai-output-wrap { position: relative; margin-top: 18px; }
+  .ms-ai-output { display: none; }
+  .ms-ai-output.visible { display: block; }
+  .ms-ai-overlay { position: absolute; inset: 0; background: rgba(0,0,0,.45); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; z-index: 5; font-size: 14px; color: #fff; font-weight: 600; }
+  .ms-ai-sections { display: flex; flex-direction: column; gap: 12px; }
+  .ms-ai-section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .ms-ai-suggest { background: rgba(255,214,10,.07); border-color: rgba(255,214,10,.35); }
+  .ms-ai-shdr { font-size: 10px; font-weight: 700; letter-spacing: .7px; color: var(--accent); margin-bottom: 8px; }
+  .ms-ai-suggest .ms-ai-shdr { color: #9a7600; }
+  .ms-ai-sbody { font-size: 15px; line-height: 1.65; color: var(--text2); }
+  .ms-ai-sbody p { margin: 0 0 7px; }
+  .ms-ai-sbody p:last-child { margin: 0; }
+  .ms-ai-sbody ul { margin: 4px 0 7px 18px; padding: 0; }
+  .ms-ai-sbody li { margin-bottom: 4px; }
+  .ms-ai-warn { font-size: 12px; font-style: italic; color: var(--muted); margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .ms-ai-meta { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+  .ms-ai-ts { font-size: 11px; color: var(--muted); }
+  .ms-ai-regen { font-size: 12px; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 4px; padding: 3px 10px; cursor: pointer; }
+  .ms-ai-regen:hover { background: var(--accent); color: #fff; }
+  .ms-ai-err { border-color: var(--red) !important; }
+  .ms-ai-err .ms-ai-shdr { color: var(--red); }
+  @media (max-width: 600px) { .ms-ai-sbody { font-size: 16px; } }
   .ms-ob-pct .ask { color: #c41f1f; }
   .ms-l3-dca-note { font-style: italic; margin-top: 4px; }
 
@@ -2018,6 +2056,38 @@
 
     </div>
 
+    <!-- AI Analysis Panel -->
+    <div class="ms-ai-panel" id="ms-ai-panel">
+      <div class="ms-ai-title">🤖 AI Market Analysis</div>
+      <div class="ms-ai-subtitle">Reads all three layers and generates a professional trader assessment. Press Generate when you want an analysis.</div>
+
+      <div class="ms-ai-liq-section">
+        <div class="ms-ai-liq-title">OPTIONAL — LIQUIDATION CLUSTERS (from Coinglass Heatmap)</div>
+        <div class="ms-ai-liq-row">
+          <span class="ms-ai-liq-label">Nearest cluster BELOW price ($):</span>
+          <input type="number" id="ms-ai-liq-below" placeholder="e.g. 94200 — check Coinglass" oninput="aiLiqPersist()">
+        </div>
+        <div class="ms-ai-liq-row">
+          <span class="ms-ai-liq-label">Nearest cluster ABOVE price ($):</span>
+          <input type="number" id="ms-ai-liq-above" placeholder="e.g. 107500 — check Coinglass" oninput="aiLiqPersist()">
+        </div>
+        <div class="ms-ai-liq-note">Optional — enter the nearest bright cluster above and below current price.
+          <a href="https://www.coinglass.com/pro/futures/LiquidationMap" target="_blank" rel="noopener" class="ms-ai-liq-link">Open Coinglass →</a>
+        </div>
+      </div>
+
+      <div class="ms-ai-low-warn" id="ms-ai-low-warn" style="display:none">
+        ⚠️ Limited data — fill in more Layer 1 manual cards for a more accurate analysis.
+      </div>
+
+      <button class="ms-ai-gen-btn" id="ms-ai-gen-btn" onclick="generateAiAnalysis()">⚡ Generate Professional Analysis</button>
+
+      <div class="ms-ai-output-wrap" id="ms-ai-output-wrap">
+        <div class="ms-ai-output" id="ms-ai-output"></div>
+        <div class="ms-ai-overlay" id="ms-ai-overlay" style="display:none">⏳ Analyzing…</div>
+      </div>
+    </div>
+
     <!-- Shared info modal -->
     <div class="ms-modal-overlay" id="ms-modal-overlay" onclick="if(event.target===this) closeMsModal()">
       <div class="ms-modal-card">
@@ -2224,9 +2294,11 @@ function selectMsCoin(coin, btn) {
   btn.classList.add('active');
   const mc = document.getElementById('ms-master-coin');
   if (mc) mc.textContent = coin;
+  _l3LatestPrice = null;
   loadLayer2();
   loadLayer3();
   updateLiqHeatmap();
+  aiLiqRestore();
 }
 
 function updateLiqHeatmap() {
@@ -2866,6 +2938,7 @@ function recalcL1Verdict() {
   if (mstr)  mstr.textContent = verdict.emoji + ' ' + shortLabel;
   _l1VerdictCode = verdict.code;
   updateMasterSummary();
+  updateAiDataWarning();
 }
 
 function l1FearGreed(d) {
@@ -4542,6 +4615,7 @@ async function loadLayer3() {
   try {
     const data = await api(`/api/layer3/${MS_SYMBOLS[msCoin]}`);
     if (data.error) { renderL3FallbackError(); return; }
+    if (data.price) _l3LatestPrice = data.price;
     renderL3VolDivergence(data.volume_divergence);
     renderL3PriceStructure(data.price_structure);
     renderL3Momentum(data.momentum);
@@ -4759,12 +4833,237 @@ function updateMasterSummary() {
   el.className   = 'ms-master-verdict ' + cls;
 }
 
+// ── AI Analysis ──────────────────────────────────────────────────────────────
+
+let _l3LatestPrice = null;
+
+function aiEsc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function aiMd(text) {
+  const lines = text.split('\n');
+  const out = [];
+  let inList = false;
+  for (const raw of lines) {
+    const line = raw.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    if (raw.startsWith('- ')) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push('<li>' + line.slice(2) + '</li>');
+    } else {
+      if (inList) { out.push('</ul>'); inList = false; }
+      out.push(line.trim() ? '<p>' + line + '</p>' : '');
+    }
+  }
+  if (inList) out.push('</ul>');
+  return out.join('');
+}
+
+function renderAiResponse(text) {
+  const allLines = text.split('\n');
+  // Peel off trailing warning line
+  while (allLines.length && !allLines[allLines.length-1].trim()) allLines.pop();
+  let warnLine = '';
+  if (allLines.length && allLines[allLines.length-1].startsWith('⚠️')) {
+    warnLine = allLines.pop().trim();
+  }
+  const main = allLines.join('\n');
+
+  // Split into sections at '## '
+  const parts = main.split(/\n(?=## )/);
+  let sectHtml = '';
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    let title = '', body = trimmed;
+    if (trimmed.startsWith('## ')) {
+      const nl = trimmed.indexOf('\n');
+      title = nl > 0 ? trimmed.slice(3, nl).trim() : trimmed.slice(3).trim();
+      body  = nl > 0 ? trimmed.slice(nl+1).trim() : '';
+    }
+    const isSuggest = title.toUpperCase().includes('SUGGESTION');
+    sectHtml += `<div class="ms-ai-section${isSuggest ? ' ms-ai-suggest' : ''}">`;
+    if (title) sectHtml += `<div class="ms-ai-shdr">${aiEsc(title)}</div>`;
+    sectHtml += `<div class="ms-ai-sbody">${aiMd(body)}</div>`;
+    sectHtml += '</div>';
+  }
+
+  return `<div class="ms-ai-sections">${sectHtml}</div>` +
+    (warnLine ? `<div class="ms-ai-warn">${aiEsc(warnLine)}</div>` : '');
+}
+
+function aiLiqKey(coin, side) { return `ms_ai_liq_${side}_${coin}`; }
+
+function aiLiqPersist() {
+  const lb = document.getElementById('ms-ai-liq-below');
+  const la = document.getElementById('ms-ai-liq-above');
+  try {
+    if (lb) localStorage.setItem(aiLiqKey(msCoin,'below'), lb.value);
+    if (la) localStorage.setItem(aiLiqKey(msCoin,'above'), la.value);
+  } catch(e) {}
+}
+
+function aiLiqRestore() {
+  const lb = document.getElementById('ms-ai-liq-below');
+  const la = document.getElementById('ms-ai-liq-above');
+  try {
+    if (lb) lb.value = localStorage.getItem(aiLiqKey(msCoin,'below')) || '';
+    if (la) la.value = localStorage.getItem(aiLiqKey(msCoin,'above')) || '';
+  } catch(e) {}
+}
+
+function updateAiDataWarning() {
+  const warn = document.getElementById('ms-ai-low-warn');
+  if (!warn) return;
+  const signals = l1CombinedSignals();
+  const l2val = document.getElementById('ms-funding-value');
+  const l2HasData = l2val && l2val.textContent.trim() !== '—';
+  const total = signals.length + (l2HasData ? 1 : 0);
+  warn.style.display = total < 5 ? '' : 'none';
+}
+
+function collectL1AiData() {
+  const d = _layer1Data || {};
+  const indicators = [];
+
+  if (d.fear_greed && d.fear_greed.status === 'ok')
+    indicators.push({ name: 'Fear & Greed Index', value: String(d.fear_greed.value), label: d.fear_greed.label });
+  if (d.btc_dominance && d.btc_dominance.status === 'ok') {
+    const dir = (d.btc_dominance.change_24h || 0) >= 0 ? '↑ rising' : '↓ falling';
+    indicators.push({ name: 'BTC Dominance', value: d.btc_dominance.value.toFixed(1) + '% (' + dir + ')', label: d.btc_dominance.label });
+  }
+
+  const mixed = [
+    { liveKey:'dxy',       manKey:'dxy',       name:'DXY (Dollar Index)' },
+    { liveKey:'fed_funds', manKey:'fedfunds',  name:'Fed Funds Rate' },
+    { liveKey:'yield_10y', manKey:'yield10y',  name:'10Y Treasury Yield' },
+    { liveKey:'cpi',       manKey:'cpi',       name:'CPI Inflation' },
+    { liveKey:'vix',       manKey:'vix',       name:'VIX (Volatility)' },
+  ];
+  for (const { liveKey, manKey, name } of mixed) {
+    const ld = d[liveKey];
+    if (ld && ld.status === 'ok') {
+      indicators.push({ name, value: ld.display || String(ld.value), label: ld.label });
+    } else {
+      const sv = l1LoadManual(manKey);
+      if (sv) {
+        const r = L1_MANUAL_SPECS[manKey].compute(sv);
+        indicators.push({ name, value: r.display + (r.sub ? ' (' + r.sub + ')' : ''), label: r.label });
+      }
+    }
+  }
+
+  const manOnly = [
+    { key:'fedwatch', name:'FedWatch CME' },
+    { key:'jobs',     name:'Jobs / Unemployment' },
+    { key:'rainbow',  name:'Rainbow Chart' },
+    { key:'m2',       name:'M2 Money Supply' },
+  ];
+  for (const { key, name } of manOnly) {
+    const sv = l1LoadManual(key);
+    if (sv) {
+      const r = L1_MANUAL_SPECS[key].compute(sv);
+      indicators.push({ name, value: r.display, label: r.label });
+    }
+  }
+
+  return { verdict: _l1VerdictCode || 'Unknown', indicators, missing_count: Math.max(0, 11 - indicators.length) };
+}
+
+function collectL2AiData() {
+  const g = (id) => { const el = document.getElementById(id); return el ? el.textContent.trim() : ''; };
+  const fundingVal = g('ms-funding-value');
+  const hasData = fundingVal && fundingVal !== '—';
+  return {
+    verdict: _l2VerdictCode || 'Unknown',
+    funding:   hasData ? { value: fundingVal, label: g('ms-funding-pill') } : null,
+    oi:        (g('ms-oi-value') !== '—') ? { value: g('ms-oi-value'), change: g('ms-oi-change'), label: g('ms-oi-pill') } : null,
+    ls_global: (g('ms-global-long-pct') !== '—') ? { long: g('ms-global-long-pct').replace('%','').trim(), short: g('ms-global-short-pct').replace('%','').trim(), label: g('ms-global-pill') } : null,
+    ls_top:    (g('ms-top-long-pct') !== '—') ? { long: g('ms-top-long-pct').replace('%','').trim(), short: g('ms-top-short-pct').replace('%','').trim(), label: g('ms-top-pill') } : null,
+  };
+}
+
+function collectL3AiData() {
+  const g = (id) => { const el = document.getElementById(id); return el ? el.textContent.trim() : ''; };
+  const volVal = g('ms-l3-vol-value');
+  const bidRaw = g('ms-ob-bid-pct').replace('Bids ','').replace('%','').trim();
+  const askRaw = g('ms-ob-ask-pct').replace('Asks ','').replace('%','').trim();
+  const atrUsd = g('ms-l3-atr-usd');
+  const atrPctRaw = g('ms-l3-atr-pct').replace('ATR: ','').replace('% of price','').replace('%','').trim();
+  return {
+    available:  !!_l3VerdictCode,
+    verdict:    _l3VerdictCode || 'Unknown',
+    score:      g('ms-l3-score'),
+    volume:     (volVal && volVal !== '—') ? { ratio: volVal.replace('× avg volume','').trim(), label: g('ms-l3-vol-pill') } : null,
+    structure:  (g('ms-l3-structure-pill') && g('ms-l3-structure-pill') !== '—') ? { label: g('ms-l3-structure-pill') } : null,
+    momentum:   (g('ms-l3-roc6') && g('ms-l3-roc6') !== '—') ? { roc6: g('ms-l3-roc6').replace('%','').trim(), roc14: g('ms-l3-roc14').replace('%','').trim(), label: g('ms-l3-momentum-pill') } : null,
+    ob:         (bidRaw && bidRaw !== '—') ? { bid_pct: bidRaw, ask_pct: askRaw, label: g('ms-l3-ob-pill') } : null,
+    atr:        (atrUsd && atrUsd !== '—') ? { atr_pct: atrPctRaw, label: g('ms-l3-atr-pill'), dca_note: g('ms-l3-dca-note') } : null,
+  };
+}
+
+function collectAiPayload() {
+  const lb = document.getElementById('ms-ai-liq-below');
+  const la = document.getElementById('ms-ai-liq-above');
+  const mvEl = document.getElementById('ms-master-verdict');
+  const l2 = collectL2AiData();
+  l2.liq_below = lb && lb.value.trim() ? lb.value.trim() : '';
+  l2.liq_above = la && la.value.trim() ? la.value.trim() : '';
+  return {
+    coin:           msCoin,
+    price:          _l3LatestPrice,
+    master_verdict: mvEl ? mvEl.textContent.trim() : 'Unknown',
+    layer1:         collectL1AiData(),
+    layer2:         l2,
+    layer3:         collectL3AiData(),
+  };
+}
+
+async function generateAiAnalysis() {
+  const btn     = document.getElementById('ms-ai-gen-btn');
+  const output  = document.getElementById('ms-ai-output');
+  const overlay = document.getElementById('ms-ai-overlay');
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Analyzing…'; }
+  if (overlay) overlay.style.display = 'flex';
+  if (output && !output.classList.contains('visible')) {
+    const wrap = document.getElementById('ms-ai-output-wrap');
+    if (wrap) wrap.style.minHeight = '80px';
+  }
+
+  try {
+    const data = await api('/api/ai/analysis', 'POST', collectAiPayload());
+    if (!data.ok) throw new Error(data.error || 'Server error');
+    const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    output.innerHTML = renderAiResponse(data.text) +
+      `<div class="ms-ai-meta">
+        <span class="ms-ai-ts">Generated at ${ts}</span>
+        <button class="ms-ai-regen" onclick="generateAiAnalysis()">↻ Regenerate</button>
+      </div>`;
+    output.classList.add('visible');
+  } catch (err) {
+    output.innerHTML =
+      `<div class="ms-ai-section ms-ai-err">` +
+      `<div class="ms-ai-shdr">⚠️ ANALYSIS FAILED</div>` +
+      `<div class="ms-ai-sbody"><p>${aiEsc(String(err.message || err))}</p></div>` +
+      `<button class="ms-ai-regen" style="margin-top:10px" onclick="generateAiAnalysis()">↻ Retry</button>` +
+      `</div>`;
+    output.classList.add('visible');
+  } finally {
+    if (overlay) overlay.style.display = 'none';
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Generate Professional Analysis'; }
+    const wrap = document.getElementById('ms-ai-output-wrap');
+    if (wrap) wrap.style.minHeight = '';
+  }
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 refresh();
 loadLayer2();
 loadLayer1();
 loadLayer3();
 updateLiqHeatmap();
+aiLiqRestore();
 initLayerCollapseState();
 refreshRunning();
 setInterval(refresh, 5000);

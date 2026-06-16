@@ -899,10 +899,155 @@ def api_layer3(symbol):
         _ok("volume_divergence"), _ok("price_structure"),
         _ok("momentum"),          _ok("order_book"),
     )
+    result["price"]     = round(klines[-1]["close"], 2) if klines else None
     result["timestamp"] = int(now * 1000)
 
     _layer3_cache[symbol] = {"data": result, "ts": now}
     return jsonify(result)
+
+
+# ── AI Analysis route ──────────────────────────────────────────────────────────
+
+@app.route("/api/ai/analysis", methods=["POST"])
+def api_ai_analysis():
+    """Generate a professional trading analysis via Claude API from dashboard data."""
+    import anthropic as _anthropic
+
+    payload = request.get_json(force=True, silent=True) or {}
+    coin    = payload.get("coin", "BTC")
+    price   = payload.get("price")
+    master  = payload.get("master_verdict", "Unknown")
+    l1      = payload.get("layer1", {})
+    l2      = payload.get("layer2", {})
+    l3      = payload.get("layer3", {})
+
+    # ── Format price ──────────────────────────────────────────────────────────
+    if isinstance(price, (int, float)):
+        price_str = f"${price:,.2f}"
+    elif price:
+        price_str = str(price)
+    else:
+        price_str = "not available"
+
+    # ── Build user message ────────────────────────────────────────────────────
+    lines: list[str] = [
+        f"Analyze this trading setup for {coin}:", "",
+        f"CURRENT PRICE: {price_str}", "",
+        f"MASTER VERDICT: {master}", "",
+    ]
+
+    # Layer 1
+    lines.append(f"LAYER 1 — MACRO ENVIRONMENT ({l1.get('verdict', 'Unknown')}):")
+    indicators = l1.get("indicators", [])
+    if indicators:
+        for ind in indicators:
+            lines.append(f"- {ind['name']}: {ind['value']} — {ind['label']}")
+    else:
+        lines.append("Note: No Layer 1 data available")
+    mc = l1.get("missing_count", 0)
+    if mc:
+        lines.append(f"Note: {mc} Layer 1 indicator(s) not yet entered")
+    lines.append("")
+
+    # Layer 2
+    lines.append(f"LAYER 2 — MARKET POSITIONING ({l2.get('verdict', 'Unknown')}):")
+    has_l2 = False
+    if l2.get("funding") and l2["funding"].get("value") not in (None, "—"):
+        lines.append(f"- Funding Rate: {l2['funding']['value']} — {l2['funding']['label']}")
+        has_l2 = True
+    if l2.get("oi") and l2["oi"].get("value") not in (None, "—"):
+        oi = l2["oi"]
+        chg = f" ({oi['change']})" if oi.get("change") and oi["change"] != "—" else ""
+        lines.append(f"- Open Interest: {oi['value']}{chg} — {oi['label']}")
+        has_l2 = True
+    if l2.get("ls_global") and l2["ls_global"].get("long") not in (None, "—"):
+        g = l2["ls_global"]
+        lines.append(f"- Long/Short Ratio (Retail): {g['long']}% Long / {g['short']}% Short — {g['label']}")
+        has_l2 = True
+    if l2.get("ls_top") and l2["ls_top"].get("long") not in (None, "—"):
+        t = l2["ls_top"]
+        lines.append(f"- Long/Short Ratio (Top Traders): {t['long']}% Long / {t['short']}% Short — {t['label']}")
+        has_l2 = True
+    if l2.get("liq_below"):
+        lines.append(f"- Liquidation cluster BELOW price: ${l2['liq_below']}")
+    if l2.get("liq_above"):
+        lines.append(f"- Liquidation cluster ABOVE price: ${l2['liq_above']}")
+    if not has_l2:
+        lines.append("Note: No Layer 2 data available")
+    lines.append("")
+
+    # Layer 3
+    if not l3.get("available", True):
+        lines.extend(["LAYER 3 — ENTRY TIMING:",
+                       "Note: Layer 3 data unavailable — analyze with Layer 1 and Layer 2 only."])
+    else:
+        score_info = f", {l3['score']} signals" if l3.get("score") else ""
+        lines.append(f"LAYER 3 — ENTRY TIMING ({l3.get('verdict', 'Unknown')}{score_info}):")
+        if l3.get("volume") and l3["volume"]:
+            v = l3["volume"]
+            lines.append(f"- Volume Divergence: {v.get('ratio','?')}x average — {v.get('label','')}")
+        if l3.get("structure"):
+            lines.append(f"- Price Structure: {l3['structure'].get('label','')}")
+        if l3.get("momentum"):
+            m = l3["momentum"]
+            lines.append(f"- Momentum: {m.get('roc6','?')}% (24h) / {m.get('roc14','?')}% (56h) — {m.get('label','')}")
+        if l3.get("ob"):
+            ob = l3["ob"]
+            lines.append(f"- Order Book: Bids {ob.get('bid_pct','?')}% / Asks {ob.get('ask_pct','?')}% — {ob.get('label','')}")
+        if l3.get("atr"):
+            atr = l3["atr"]
+            lines.append(f"- ATR Volatility: {atr.get('atr_pct','?')}% — {atr.get('label','')}")
+            if atr.get("dca_note"):
+                lines.append(f"  DCA implication: {atr['dca_note']}")
+    lines.extend(["", "Please provide your professional analysis."])
+
+    user_msg = "\n".join(lines)
+
+    system_prompt = (
+        "You are a professional cryptocurrency trader with deep expertise in technical analysis, "
+        "market microstructure, macro economics, and derivatives markets. You analyze trading setups "
+        "across three layers: macro environment (Layer 1), market positioning (Layer 2), and entry "
+        "timing (Layer 3).\n\n"
+        "You are direct, specific, and honest. You do not give vague or generic analysis. You always "
+        "reference the specific numbers in front of you. You explain your reasoning in plain language "
+        "that a developing trader can understand and learn from.\n\n"
+        "You structure every response in exactly four sections with these exact headers:\n\n"
+        "## WHAT THE MARKET IS DOING\n"
+        "A clear, plain-English picture of current conditions combining all three layers. "
+        "2-3 sentences maximum. Specific numbers only, no vague statements.\n\n"
+        "## THE KEY TENSION\n"
+        "What signals are agreeing and what is conflicting. Why the conflict matters. "
+        "What it tells you about the market's uncertainty or conviction. 2-3 sentences.\n\n"
+        "## PROFESSIONAL ASSESSMENT\n"
+        "What an experienced trader would conclude from this exact combination of signals. "
+        "Be specific about conviction level (high/medium/low) and why. Reference the most important "
+        "2-3 signals driving the conclusion. 3-4 sentences.\n\n"
+        "## SUGGESTION\n"
+        "One of: LONG / SHORT / WAIT.\n"
+        "If LONG or SHORT:\n"
+        "  - Entry approach (immediate or wait for X)\n"
+        "  - Step spacing recommendation (use the ATR data provided)\n"
+        "  - The specific signal change that would be your exit or stop signal\n"
+        "  - If liquidation clusters were provided, incorporate them into the entry/exit logic\n"
+        "If WAIT:\n"
+        "  - Exactly what needs to change in the data before action is warranted\n"
+        "  - Which specific signal to watch\n\n"
+        "End every response with this exact line:\n"
+        "\"⚠️ This is analytical context to support your own decision — not financial advice. "
+        "You make the final call.\""
+    )
+
+    try:
+        client = _anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        msg    = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        return jsonify({"ok": True, "text": msg.content[0].text})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 # ── Routes — Layer 1 (Macro Environment) ───────────────────────────────────────
