@@ -349,6 +349,59 @@
   .ms-ai-err { border-color: var(--red) !important; }
   .ms-ai-err .ms-ai-shdr { color: var(--red); }
   @media (max-width: 600px) { .ms-ai-sbody { font-size: 16px; } }
+  /* ── DCA Model Level Visualizer ── */
+  .ms-dca-panel { margin-top: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .ms-dca-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .ms-dca-title { font-size: 15px; font-weight: 700; }
+  .ms-dca-price-badge { font-size: 12px; font-weight: 700; color: var(--accent); background: rgba(0,122,255,.1); padding: 2px 9px; border-radius: 99px; }
+  .ms-dca-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+  .ms-dca-select-row select { width: 100%; padding: 9px 10px; background: var(--surface); border: 1px solid var(--border2); border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
+  .ms-dca-side-row { display: flex; gap: 8px; margin-top: 10px; }
+  .ms-dca-side-btn { flex: 1; padding: 8px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; color: var(--text2); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s; }
+  .ms-dca-side-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ms-dca-slider-wrap { margin-top: 14px; }
+  .ms-dca-slider-lbl { font-size: 12px; color: var(--text2); margin-bottom: 6px; font-weight: 600; }
+  .ms-dca-slider-lbl em { font-style: normal; color: var(--accent); }
+  #ms-dca-mult-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: var(--border2); outline: none; cursor: pointer; }
+  #ms-dca-mult-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+  .ms-dca-slider-rng { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 3px; }
+  .ms-dca-step-info { font-size: 11px; color: var(--muted); margin-top: 5px; }
+  .ms-dca-empty { font-size: 13px; color: var(--muted); padding: 10px 0; }
+  .ms-dca-empty a { color: var(--accent); text-decoration: none; }
+  .ms-dca-updating { font-size: 12px; color: var(--muted); padding: 8px 0; }
+  .ms-dca-err { background: rgba(255,59,48,.08); border: 1px solid rgba(255,59,48,.3); border-radius: 6px; padding: 10px 12px; font-size: 13px; color: #c41f1f; margin-top: 10px; }
+  .ms-dca-table-wrap { overflow-x: auto; margin-top: 14px; }
+  .ms-dca-tbl { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+  .ms-dca-tbl th { font-size: 10px; font-weight: 700; letter-spacing: .5px; color: var(--muted); border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+  .ms-dca-tbl td { padding: 7px 8px; border-bottom: 1px solid var(--border); color: var(--text2); }
+  .ms-dca-tbl tr:last-child td { border-bottom: none; }
+  .ms-dca-row-tp td { color: #1d8a3b; font-weight: 600; }
+  .ms-dca-row-near td:first-child { animation: ms-dca-near-pulse 1.8s infinite; }
+  @keyframes ms-dca-near-pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+  .ms-dca-warn-note { font-size: 11px; color: #9a5c00; }
+  .ms-dca-good-note { font-size: 11px; color: #1d8a3b; }
+  .ms-dca-summary { margin-top: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px 16px; }
+  .ms-dca-sum-row { display: flex; justify-content: space-between; font-size: 12px; }
+  .ms-dca-sum-row span:first-child { color: var(--muted); }
+  .ms-dca-sum-row span:last-child { font-weight: 600; }
+  .ms-dca-cwarn { margin-top: 12px; background: rgba(255,149,0,.08); border: 1px solid rgba(255,149,0,.3); border-radius: 8px; padding: 12px 14px; }
+  .ms-dca-cwarn-hdr { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: #9a5c00; margin-bottom: 8px; }
+  .ms-dca-cwarn-body { font-size: 13px; color: var(--text2); line-height: 1.55; margin-bottom: 10px; }
+  .ms-dca-apply-btn { font-size: 12px; background: none; border: 1px solid #9a5c00; color: #9a5c00; padding: 4px 12px; border-radius: 4px; cursor: pointer; }
+  .ms-dca-apply-btn:hover { background: rgba(255,149,0,.15); }
+  .ms-dca-ladder { margin-top: 14px; font-family: monospace; font-size: 12px; line-height: 1; }
+  .ms-dca-l-row { display: flex; align-items: center; gap: 10px; }
+  .ms-dca-l-price { width: 90px; text-align: right; font-weight: 600; color: var(--text2); flex-shrink: 0; }
+  .ms-dca-l-tick { color: var(--border2); flex-shrink: 0; letter-spacing: -2px; }
+  .ms-dca-l-label { color: var(--muted); }
+  .ms-dca-l-connector { padding-left: 98px; color: var(--border2); line-height: 0.8; font-size: 14px; }
+  .ms-dca-l-tp .ms-dca-l-price { color: #1d8a3b; }
+  .ms-dca-l-tp .ms-dca-l-tick { color: #1d8a3b; }
+  .ms-dca-l-current .ms-dca-l-price { color: var(--accent); font-size: 13px; }
+  .ms-dca-l-current .ms-dca-l-tick { color: var(--accent); }
+  .ms-dca-l-cluster .ms-dca-l-price { color: #9a5c00; }
+  .ms-dca-l-cluster .ms-dca-l-tick { color: #9a5c00; }
+  .ms-dca-approaching { margin-top: 8px; background: rgba(255,214,10,.10); border: 1px solid rgba(255,214,10,.35); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #9a7600; }
   .ms-ob-pct .ask { color: #c41f1f; }
   .ms-l3-dca-note { font-style: italic; margin-top: 4px; }
 
@@ -2056,6 +2109,47 @@
 
     </div>
 
+    <!-- DCA Model Level Visualizer -->
+    <div class="ms-dca-panel" id="ms-dca-panel">
+      <div class="ms-dca-hdr">
+        <span class="ms-dca-title">📐 DCA Model Levels</span>
+        <span class="ms-dca-price-badge" id="ms-dca-price-badge" style="display:none"></span>
+      </div>
+      <div class="ms-dca-subtitle">Select a saved DCA Model to see where ATR-calibrated entry levels sit right now.</div>
+
+      <div class="ms-dca-select-row">
+        <select id="ms-dca-model-sel" onchange="onDcaModelChange()">
+          <option value="">— Select DCA Model —</option>
+        </select>
+      </div>
+      <div id="ms-dca-no-models" style="display:none" class="ms-dca-empty">
+        No DCA Models saved yet —
+        <a href="#" onclick="showPage('dca-models');return false">create one in the DCA Models tab →</a>
+      </div>
+
+      <div id="ms-dca-side-row" class="ms-dca-side-row" style="display:none">
+        <button class="ms-dca-side-btn active" id="ms-dca-side-long" onclick="onDcaSideChange('long')">LONG / Bull Ladder</button>
+        <button class="ms-dca-side-btn" id="ms-dca-side-short" onclick="onDcaSideChange('short')">SHORT / Bear Ladder</button>
+      </div>
+
+      <div id="ms-dca-slider-wrap" class="ms-dca-slider-wrap" style="display:none">
+        <div class="ms-dca-slider-lbl">Step spacing: <em id="ms-dca-mult-disp">1.5</em>× ATR</div>
+        <input type="range" id="ms-dca-mult-slider" min="5" max="30" step="1" value="15"
+               oninput="onDcaMultiplierChange(this.value)">
+        <div class="ms-dca-slider-rng"><span>0.5×</span><span>3.0×</span></div>
+        <div class="ms-dca-step-info" id="ms-dca-step-info"></div>
+      </div>
+
+      <div id="ms-dca-content" style="display:none">
+        <div class="ms-dca-updating" id="ms-dca-updating" style="display:none">⟳ Updating levels…</div>
+        <div class="ms-dca-err" id="ms-dca-err" style="display:none"></div>
+        <div class="ms-dca-table-wrap" id="ms-dca-table-wrap"></div>
+        <div id="ms-dca-cwarn" style="display:none"></div>
+        <div id="ms-dca-ladder"></div>
+        <div id="ms-dca-approaching" class="ms-dca-approaching" style="display:none"></div>
+      </div>
+    </div>
+
     <!-- AI Analysis Panel -->
     <div class="ms-ai-panel" id="ms-ai-panel">
       <div class="ms-ai-title">🤖 AI Market Analysis</div>
@@ -2299,6 +2393,7 @@ function selectMsCoin(coin, btn) {
   loadLayer3();
   updateLiqHeatmap();
   aiLiqRestore();
+  if (_dcaSelectedId) calcDcaLevels(false);
 }
 
 function updateLiqHeatmap() {
@@ -4833,6 +4928,261 @@ function updateMasterSummary() {
   el.className   = 'ms-master-verdict ' + cls;
 }
 
+// ── DCA Model Level Visualizer ───────────────────────────────────────────────
+
+let _dcaSelectedId   = '';
+let _dcaSide         = 'long';
+let _dcaMultiplier   = 1.5;
+let _dcaLevelsData   = null;
+let _dcaRefreshTimer = null;
+
+function fmtP(p) {
+  if (p == null) return '—';
+  return '$' + Number(p).toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+async function loadDcaModels() {
+  try {
+    const data = await api('/api/dca_models');
+    _dcaModels = (data.models || []);
+    const sel = document.getElementById('ms-dca-model-sel');
+    const noM = document.getElementById('ms-dca-no-models');
+    if (!sel) return;
+    // Keep the placeholder option
+    while (sel.options.length > 1) sel.remove(1);
+    if (!_dcaModels.length) {
+      if (noM) noM.style.display = '';
+      return;
+    }
+    if (noM) noM.style.display = 'none';
+    // Filter: only show models with bull_order_sizes (most models will have both)
+    _dcaModels.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+function onDcaModelChange() {
+  const sel = document.getElementById('ms-dca-model-sel');
+  _dcaSelectedId = sel ? sel.value : '';
+  const model = _dcaModels.find(m => m.id === _dcaSelectedId);
+  const sideRow = document.getElementById('ms-dca-side-row');
+  const sliderWrap = document.getElementById('ms-dca-slider-wrap');
+  const content = document.getElementById('ms-dca-content');
+  if (!_dcaSelectedId || !model) {
+    if (sideRow)    sideRow.style.display = 'none';
+    if (sliderWrap) sliderWrap.style.display = 'none';
+    if (content)    content.style.display = 'none';
+    _dcaLevelsData = null;
+    return;
+  }
+  // Show / hide SHORT button based on whether model has bear_order_sizes
+  const hasBear = model.bear_order_sizes && model.bear_order_sizes.length > 0;
+  const shortBtn = document.getElementById('ms-dca-side-short');
+  if (shortBtn) shortBtn.style.display = hasBear ? '' : 'none';
+  if (sideRow)    sideRow.style.display = '';
+  if (sliderWrap) sliderWrap.style.display = '';
+  if (content)    content.style.display = '';
+  calcDcaLevels();
+}
+
+function onDcaSideChange(side) {
+  _dcaSide = side;
+  document.getElementById('ms-dca-side-long').classList.toggle('active', side === 'long');
+  document.getElementById('ms-dca-side-short').classList.toggle('active', side === 'short');
+  calcDcaLevels();
+}
+
+function onDcaMultiplierChange(rawVal) {
+  _dcaMultiplier = rawVal / 10;   // slider 5-30, display 0.5-3.0
+  const disp = document.getElementById('ms-dca-mult-disp');
+  if (disp) disp.textContent = _dcaMultiplier.toFixed(1);
+  calcDcaLevels();
+}
+
+async function calcDcaLevels(showUpdating = true) {
+  if (!_dcaSelectedId) return;
+  const updEl = document.getElementById('ms-dca-updating');
+  const errEl = document.getElementById('ms-dca-err');
+  if (showUpdating && updEl) updEl.style.display = '';
+  if (errEl) errEl.style.display = 'none';
+
+  // Read current liquidation cluster values
+  const lb = parseFloat(document.getElementById('ms-ai-liq-below')?.value || 0) || null;
+  const la = parseFloat(document.getElementById('ms-ai-liq-above')?.value || 0) || null;
+
+  try {
+    const data = await api('/api/market/dca-levels', 'POST', {
+      symbol:              MS_SYMBOLS[msCoin],
+      model_id:            _dcaSelectedId,
+      side:                _dcaSide,
+      multiplier:          _dcaMultiplier,
+      liq_cluster_below:   lb,
+      liq_cluster_above:   la,
+    });
+    if (data.error) throw new Error(data.error);
+    _dcaLevelsData = data;
+    renderDcaResult(data);
+  } catch(e) {
+    _dcaLevelsData = null;
+    if (errEl) { errEl.textContent = '⚠️ ' + String(e.message || e); errEl.style.display = ''; }
+    // Clear table/ladder
+    const tw = document.getElementById('ms-dca-table-wrap');
+    if (tw) tw.innerHTML = '';
+    const lad = document.getElementById('ms-dca-ladder');
+    if (lad) lad.innerHTML = '';
+  } finally {
+    if (updEl) updEl.style.display = 'none';
+  }
+}
+
+function renderDcaResult(data) {
+  // Price badge
+  const pb = document.getElementById('ms-dca-price-badge');
+  if (pb) { pb.textContent = msCoin + '  ' + fmtP(data.current_price); pb.style.display = ''; }
+
+  // Slider step info
+  const si = document.getElementById('ms-dca-step-info');
+  if (si) {
+    const stepAmt  = data.atr_pct * _dcaMultiplier;
+    const stepUsdt = data.current_price * stepAmt / 100;
+    si.textContent = `Each step: ~${stepAmt.toFixed(2)}% apart (~${fmtP(stepUsdt)} at current price)`;
+  }
+
+  // Table
+  const tw = document.getElementById('ms-dca-table-wrap');
+  if (tw) tw.innerHTML = renderDcaTable(data);
+
+  // Cluster warning box
+  renderDcaClusterWarn(data);
+
+  // Ladder
+  const lad = document.getElementById('ms-dca-ladder');
+  if (lad) lad.innerHTML = renderDcaLadder(data);
+
+  // Approaching alert
+  renderDcaApproaching(data);
+}
+
+function renderDcaTable(data) {
+  const { current_price, steps, avg_entry, tp_price, tp_pct_from_avg, tp_pct_from_current, total_capital, atr_pct } = data;
+  let html = `<table class="ms-dca-tbl">
+    <thead><tr>
+      <th>Step</th><th>Price</th><th>% From Now</th><th>Size (USDT)</th><th>Notes</th>
+    </tr></thead><tbody>`;
+
+  // Anchor row
+  html += `<tr><td style="font-weight:700;color:var(--accent)">⚓</td>
+    <td style="font-weight:700;color:var(--accent)">${fmtP(current_price)}</td>
+    <td>—</td><td>—</td><td style="font-size:11px;color:var(--muted)">Current price</td></tr>`;
+
+  for (const s of steps) {
+    const near  = Math.abs((s.price - current_price) / current_price * 100) < 0.5;
+    const rowCls = near ? ' class="ms-dca-row-near"' : '';
+    const noteCls = (s.cluster_warning || '').startsWith('⚠️') ? 'ms-dca-warn-note' : 'ms-dca-good-note';
+    html += `<tr${rowCls}>
+      <td>${s.index}</td>
+      <td>${fmtP(s.price)}</td>
+      <td>${s.pct_from_anchor > 0 ? '+' : ''}${s.pct_from_anchor.toFixed(2)}%</td>
+      <td>$${Number(s.size_usdt).toLocaleString()}</td>
+      <td class="${noteCls}">${s.cluster_warning || ''}</td>
+    </tr>`;
+  }
+
+  // TP row
+  if (tp_price) {
+    html += `<tr class="ms-dca-row-tp">
+      <td>TP 🎯</td>
+      <td>${fmtP(tp_price)}</td>
+      <td>${tp_pct_from_current > 0 ? '+' : ''}${tp_pct_from_current.toFixed(2)}%</td>
+      <td>—</td>
+      <td style="font-size:11px">${tp_pct_from_avg > 0 ? '+' : ''}${tp_pct_from_avg.toFixed(1)}% from avg entry</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+
+  // Summary below table
+  const tpFromCurStr = tp_pct_from_current != null ? (tp_pct_from_current > 0 ? '+' : '') + tp_pct_from_current.toFixed(2) + '%' : '—';
+  html += `<div class="ms-dca-summary">
+    <div class="ms-dca-sum-row"><span>Total capital:</span><span>$${Number(total_capital).toLocaleString()}</span></div>
+    <div class="ms-dca-sum-row"><span>Avg entry if all fill:</span><span>${fmtP(avg_entry)}</span></div>
+    <div class="ms-dca-sum-row"><span>TP from avg entry:</span><span>${tp_pct_from_avg > 0 ? '+' : ''}${tp_pct_from_avg.toFixed(1)}%</span></div>
+    <div class="ms-dca-sum-row"><span>TP from current:</span><span>${tpFromCurStr}</span></div>
+  </div>`;
+  return html;
+}
+
+function renderDcaClusterWarn(data) {
+  const el = document.getElementById('ms-dca-cwarn');
+  if (!el) return;
+  const { cluster_warnings, suggested_multiplier, current_price, atr_pct } = data;
+  if (!cluster_warnings || !cluster_warnings.length) { el.style.display = 'none'; return; }
+
+  const w = cluster_warnings[0];
+  let body = `Step ${w.index} (${fmtP(w.price)}) sits above a liquidation cluster. ` +
+    `If the cluster is swept first, this step may fill on the way down before the cluster triggers, ` +
+    `which is less ideal than entering after the flush.`;
+  let applyBtn = '';
+  if (suggested_multiplier) {
+    const sugPct = (atr_pct * suggested_multiplier).toFixed(2);
+    const sugPrice = fmtP(data.current_price * (1 - sugPct / 100));
+    body += ` Consider adjusting to <strong>${suggested_multiplier}×</strong> to place Step 1 at ~${sugPrice} — just below the cluster.`;
+    applyBtn = `<button class="ms-dca-apply-btn" onclick="applyDcaSuggestedMult(${suggested_multiplier})">Apply ${suggested_multiplier}× multiplier</button>`;
+  }
+  el.innerHTML = `<div class="ms-dca-cwarn">
+    <div class="ms-dca-cwarn-hdr">⚠️ CLUSTER INTERACTION</div>
+    <div class="ms-dca-cwarn-body">${body}</div>
+    ${applyBtn}
+  </div>`;
+  el.style.display = '';
+}
+
+function applyDcaSuggestedMult(mult) {
+  const slider = document.getElementById('ms-dca-mult-slider');
+  if (slider) { slider.value = Math.round(mult * 10); onDcaMultiplierChange(slider.value); }
+}
+
+function renderDcaLadder(data) {
+  const { current_price, steps, tp_price, side } = data;
+  const lb = parseFloat(document.getElementById('ms-ai-liq-below')?.value || 0) || null;
+  const la = parseFloat(document.getElementById('ms-ai-liq-above')?.value || 0) || null;
+
+  const items = [];
+  if (tp_price) items.push({ price: tp_price, type: 'tp', label: `TP 🎯  (${data.tp_pct_from_current > 0 ? '+' : ''}${data.tp_pct_from_current.toFixed(1)}%)` });
+  items.push({ price: current_price, type: 'current', label: '◀ CURRENT PRICE' });
+  if (side === 'long' && lb) items.push({ price: lb, type: 'cluster', label: '⚠️ Liq Cluster Below' });
+  if (side === 'short' && la) items.push({ price: la, type: 'cluster', label: '⚠️ Liq Cluster Above' });
+  steps.forEach(s => items.push({ price: s.price, type: 'step', label: `Step ${s.index}  ($${Number(s.size_usdt).toLocaleString()})` }));
+  items.sort((a, b) => b.price - a.price);
+
+  const fmt = p => '$' + Number(p).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  let html = '<div class="ms-dca-ladder">';
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const tick = it.type === 'current' ? '════' : it.type === 'cluster' ? '┄┄┄┄' : '────';
+    html += `<div class="ms-dca-l-row ms-dca-l-${it.type}">
+      <div class="ms-dca-l-price">${fmt(it.price)}</div>
+      <div class="ms-dca-l-tick">${tick}</div>
+      <div class="ms-dca-l-label">${it.label}</div>
+    </div>`;
+    if (i < items.length - 1) html += '<div class="ms-dca-l-connector">│</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderDcaApproaching(data) {
+  const el = document.getElementById('ms-dca-approaching');
+  if (!el) return;
+  const near = data.steps.filter(s => Math.abs((s.price - data.current_price) / data.current_price * 100) < 0.5);
+  if (!near.length) { el.style.display = 'none'; return; }
+  el.textContent = near.map(s => `⚡ Step ${s.index} approaching — within 0.5% of current price (${fmtP(s.price)})`).join('  ');
+  el.style.display = '';
+}
+
 // ── AI Analysis ──────────────────────────────────────────────────────────────
 
 let _l3LatestPrice = null;
@@ -5009,7 +5359,7 @@ function collectAiPayload() {
   const l2 = collectL2AiData();
   l2.liq_below = lb && lb.value.trim() ? lb.value.trim() : '';
   l2.liq_above = la && la.value.trim() ? la.value.trim() : '';
-  return {
+  const payload = {
     coin:           msCoin,
     price:          _l3LatestPrice,
     master_verdict: mvEl ? mvEl.textContent.trim() : 'Unknown',
@@ -5017,6 +5367,25 @@ function collectAiPayload() {
     layer2:         l2,
     layer3:         collectL3AiData(),
   };
+  if (_dcaLevelsData && _dcaSelectedId) {
+    const model = _dcaModels.find(m => m.id === _dcaSelectedId);
+    payload.dca_model = {
+      name:               model ? model.name : 'Unknown',
+      side:               _dcaSide,
+      multiplier:         _dcaMultiplier,
+      current_price:      _dcaLevelsData.current_price,
+      atr_pct:            _dcaLevelsData.atr_pct,
+      steps:              _dcaLevelsData.steps,
+      avg_entry:          _dcaLevelsData.avg_entry,
+      tp_price:           _dcaLevelsData.tp_price,
+      tp_pct_from_avg:    _dcaLevelsData.tp_pct_from_avg,
+      tp_pct_from_current: _dcaLevelsData.tp_pct_from_current,
+      total_capital:      _dcaLevelsData.total_capital,
+      cluster_warnings:   _dcaLevelsData.cluster_warnings,
+      suggested_multiplier: _dcaLevelsData.suggested_multiplier,
+    };
+  }
+  return payload;
 }
 
 async function generateAiAnalysis() {
@@ -5064,6 +5433,7 @@ loadLayer1();
 loadLayer3();
 updateLiqHeatmap();
 aiLiqRestore();
+loadDcaModels();
 initLayerCollapseState();
 refreshRunning();
 setInterval(refresh, 5000);
@@ -5072,6 +5442,7 @@ setInterval(() => loadLayer2(), 300000);
 setInterval(() => loadLayer1(), 900000);
 setInterval(() => loadLayer3(), 120000);
 setInterval(updateL1Timestamp, 60000);
+setInterval(() => { if (_dcaSelectedId) calcDcaLevels(false); }, 60000);
 </script>
 </body>
 </html>
