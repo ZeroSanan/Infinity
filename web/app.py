@@ -36,6 +36,13 @@ from core.dca_engine import DCAEngine
 from core.mixed_engine import MixedEngine
 from core.regime_detector import RegimeDetector
 from core.state_manager import load_state, save_state, reset_state
+from core.testnet_journal import (
+    load_journal as load_testnet_journal,
+    append_entry as append_testnet_journal_entry,
+    compute_stats as compute_testnet_journal_stats,
+    entries_to_csv as testnet_journal_to_csv,
+    now_str as testnet_now_str,
+)
 from models.dca_config import CoinConfig, DCAModel
 from utils.calculations import calc_dump_percent, calc_take_profit_price, calc_pnl
 
@@ -83,6 +90,10 @@ _LAYER3_TTL = 120  # seconds (2 min)
 _layer1_cache: dict = {}   # {"data": dict, "ts": float}
 _LAYER1_TTL = 900  # seconds (15 min)
 _btc_dom_history: list = []  # [(timestamp, btc_dominance_pct), ...] rolling 48h window
+
+# strategy_id -> snapshot of the last-seen ACTIVE testnet position, used by
+# _track_testnet_journal() to detect a completed trade (see core/testnet_journal.py)
+_testnet_active_snapshot: dict = {}
 
 
 # ── Loaders ───────────────────────────────────────────────────────────────────
@@ -153,6 +164,7 @@ def load_coin_configs() -> list:
                 regime_interval=item.get("regime_interval", "1h"),
                 atr_based_spacing=item.get("atr_based_spacing", False),
                 atr_period=item.get("atr_period", 14),
+                is_testnet=item.get("is_testnet", False),
             )
             cfg.validate()
         except (KeyError, ValueError) as e:
@@ -256,6 +268,104 @@ def _price_poller():
         time.sleep(5)
 
 
+# ── Testnet learning journal ────────────────────────────────────────────────
+# Mirrors the Market Signals "Master Summary" rule in updateMasterSummary()
+# (web/templates/index.html) so a journal entry's `master` field matches what
+# the UI would have shown at the time, purely from already-cached L1/L2/L3 data.
+
+def _verdict_code(cache_entry) -> str:
+    if not cache_entry:
+        return "UNKNOWN"
+    data = cache_entry.get("data") if isinstance(cache_entry, dict) and "data" in cache_entry else cache_entry
+    verdict = (data or {}).get("verdict")
+    if isinstance(verdict, dict):
+        return verdict.get("code", "UNKNOWN")
+    return verdict or "UNKNOWN"
+
+
+def _signal_snapshot(symbol: str) -> dict:
+    l1 = _verdict_code(_layer1_cache if _layer1_cache.get("data") else None)
+    l2 = _verdict_code(_layer2_cache.get(symbol))
+    l3 = _verdict_code(_layer3_cache.get(symbol))
+
+    l1_bull, l1_bear = l1 == "FAVORABLE", l1 == "UNFAVORABLE"
+    l2_bear, l2_bull = l2 == "CAUTION_LONG", l2 in ("NEUTRAL", "CAUTION_SHORT")
+    l3_bull = l3 in ("LONG", "WEAK_LONG")
+    l3_bear = l3 in ("SHORT", "WEAK_SHORT")
+
+    if l1_bull and l2_bull and l3_bull:
+        master = "ALIGNED LONG"
+    elif l1_bear and l2_bear and l3_bear:
+        master = "ALIGNED SHORT"
+    elif l1_bull and l3_bull and not l2_bear:
+        master = "DEVELOPING"
+    elif l1 in ("MIXED", "INSUFFICIENT_DATA"):
+        master = "MIXED"
+    elif l2_bear or l3_bear:
+        master = "CAUTION"
+    else:
+        master = "WAIT"
+
+    return {"l1_verdict": l1, "l2_verdict": l2, "l3_verdict": l3, "master": master}
+
+
+def _track_testnet_journal(cfg: CoinConfig, state) -> None:
+    """Detect a completed TESTNET trade and log it to the learning journal.
+
+    See core/testnet_journal.py module docstring for why this is done via
+    snapshot-diffing rather than a hook inside core/dca_engine.py.
+    """
+    snap = _testnet_active_snapshot.get(cfg.id)
+
+    if state.status == "ACTIVE" and state.average_entry:
+        if snap is None:
+            _testnet_active_snapshot[cfg.id] = {
+                "entered_at": time.time(),
+                "signal_at_entry": _signal_snapshot(cfg.symbol),
+                "steps_filled": state.steps_done,
+                "avg_entry": state.average_entry,
+                "total_invested": state.total_invested,
+                "direction": state.direction,
+            }
+        else:
+            snap["steps_filled"] = state.steps_done
+            snap["avg_entry"] = state.average_entry
+            snap["total_invested"] = state.total_invested
+            snap["direction"] = state.direction
+        return
+
+    if state.status == "WAITING" and snap is not None:
+        is_short = cfg.mode == "mixed" and snap.get("direction") == "SHORT"
+        tp_pct = cfg.bear_take_profit_percent if is_short else cfg.take_profit_percent
+        exit_price = (
+            snap["avg_entry"] * (1 - tp_pct / 100) if is_short
+            else calc_take_profit_price(snap["avg_entry"], tp_pct)
+        )
+        qty = snap["total_invested"] / snap["avg_entry"] if snap["avg_entry"] else 0.0
+        pnl_usdt, pnl_pct = calc_pnl(snap["avg_entry"], exit_price, qty)
+        duration_hours = (time.time() - snap["entered_at"]) / 3600
+
+        append_testnet_journal_entry({
+            "timestamp": testnet_now_str(),
+            "coin": cfg.coin,
+            "strategy": cfg.name,
+            "signal_at_entry": snap["signal_at_entry"],
+            "entry": {
+                "steps_filled": snap["steps_filled"],
+                "avg_entry": snap["avg_entry"],
+                "total_invested": snap["total_invested"],
+            },
+            "exit": {
+                "exit_price": exit_price,
+                "pnl_usdt": pnl_usdt,
+                "pnl_pct": pnl_pct,
+                "duration_hours": round(duration_hours, 2),
+            },
+            "outcome": "WIN" if pnl_usdt >= 0 else "LOSS",
+        })
+        del _testnet_active_snapshot[cfg.id]
+
+
 # ── Coin summary helper ───────────────────────────────────────────────────────
 
 def _coin_summary(cfg: CoinConfig) -> dict:
@@ -263,6 +373,9 @@ def _coin_summary(cfg: CoinConfig) -> dict:
         price = _price_cache.get(cfg.symbol, 0.0)
 
     state = load_state(cfg.id, cfg.coin, cfg.symbol)
+
+    if cfg.is_testnet:
+        _track_testnet_journal(cfg, state)
 
     dump_pct = tp_price = pnl_usdt = pnl_pct = None
     liq_distance_pct = None
@@ -325,6 +438,7 @@ def _coin_summary(cfg: CoinConfig) -> dict:
         "coin":           cfg.coin,
         "symbol":         cfg.symbol,
         "enabled":        cfg.enabled,
+        "is_testnet":     cfg.is_testnet,
         "status":         state.status,
         "engine_running": engine_running,
         "engine_account": engine_account,
@@ -1633,6 +1747,7 @@ def api_running():
                 "status":        engine.state.status,
                 "steps_done":    engine.state.steps_done,
                 "step_count":    engine.cfg.step_count,
+                "is_testnet":    engine.cfg.is_testnet,
             })
     return jsonify({"running": result})
 
@@ -1700,6 +1815,26 @@ def api_start_engine():
         account_id = _accounts[0]["id"] if _accounts else None
     if not account_id:
         return jsonify({"error": "No Binance account connected"}), 503
+
+    # Safety guard: a testnet strategy may only trade on a testnet account,
+    # and a live strategy may only trade on a live account — this is what
+    # keeps testnet orders from ever reaching live Binance endpoints (and
+    # vice versa), since BinanceSpotClient/BinanceFuturesClient already
+    # route to testnet vs. live purely off the account's `testnet` flag.
+    acct = next((a for a in _accounts if a["id"] == account_id), None)
+    if not acct:
+        return jsonify({"error": "Account not found"}), 404
+    acct_is_testnet = bool(acct.get("testnet", False))
+    if bool(cfg.is_testnet) != acct_is_testnet:
+        strat_kind = "testnet" if cfg.is_testnet else "live"
+        acct_kind = "testnet" if acct_is_testnet else "live"
+        return jsonify({
+            "error": (
+                f"Mode mismatch: '{cfg.name}' is a {strat_kind} strategy but account "
+                f"'{acct.get('name', account_id)}' is a {acct_kind} account. "
+                f"Testnet strategies can only run on testnet accounts."
+            )
+        }), 400
 
     # Check not already running
     for aid, engines in _engines.items():
@@ -1940,6 +2075,7 @@ def api_strategies_create():
         "order_sizes":         [float(x) for x in data["order_sizes"]],
         "take_profit_percent": float(data["take_profit_percent"]),
         "reference_price":     data.get("reference_price") or None,
+        "is_testnet":          bool(data.get("is_testnet", False)),
     }
 
     cfg_data.setdefault("coins", []).append(new_entry)
@@ -1974,6 +2110,7 @@ def api_strategies_update(strategy_id):
     if "order_sizes" in data:         entry["order_sizes"]         = [float(x) for x in data["order_sizes"]]
     if "take_profit_percent" in data: entry["take_profit_percent"] = float(data["take_profit_percent"])
     if "reference_price" in data:     entry["reference_price"]     = data["reference_price"] or None
+    if "is_testnet" in data:          entry["is_testnet"]          = bool(data["is_testnet"])
 
     # ── Mixed long/short engine fields ──────────────────────────────────────
     if "mode" in data:                     entry["mode"]                     = data["mode"]
@@ -2016,6 +2153,59 @@ def api_strategies_delete(strategy_id):
 
     _coin_configs = load_coin_configs()
     return jsonify({"ok": True})
+
+
+@app.route("/api/strategies/<strategy_id>/copy_to_testnet", methods=["POST"])
+def api_strategies_copy_to_testnet(strategy_id):
+    """Duplicate a live strategy into a fresh TESTNET strategy.
+
+    Pure paper-trading copy: new id, fresh state, is_testnet=True. The
+    original live strategy and its state/config are never touched.
+    """
+    global _coin_configs
+    with open(COINS_PATH) as f:
+        cfg_data = json.load(f)
+
+    coins = cfg_data.get("coins", [])
+    src = next((c for c in coins if c.get("id") == strategy_id), None)
+    if src is None:
+        return jsonify({"error": "Strategy not found"}), 404
+    if src.get("is_testnet"):
+        return jsonify({"error": "Strategy is already a testnet strategy"}), 400
+
+    copy = dict(src)
+    copy["id"] = str(uuid.uuid4())[:8]
+    copy["name"] = f"{src.get('name', src.get('coin'))} (Testnet)"
+    copy["is_testnet"] = True
+    copy["reference_price"] = None  # fresh paper position, no carried-over reference
+
+    coins.append(copy)
+    cfg_data["coins"] = coins
+    with open(COINS_PATH, "w") as f:
+        json.dump(cfg_data, f, indent=2)
+
+    _coin_configs = load_coin_configs()
+    return jsonify({"ok": True, "id": copy["id"], "name": copy["name"]})
+
+
+# ── Routes — Testnet Learning Journal ─────────────────────────────────────────
+
+@app.route("/api/testnet/journal", methods=["GET"])
+def api_testnet_journal_get():
+    entries = load_testnet_journal()
+    stats = compute_testnet_journal_stats(entries)
+    return jsonify({"entries": list(reversed(entries))[:50], "stats": stats})
+
+
+@app.route("/api/testnet/journal/export", methods=["GET"])
+def api_testnet_journal_export():
+    from flask import Response
+    csv_text = testnet_journal_to_csv(load_testnet_journal())
+    return Response(
+        csv_text,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=testnet_journal.csv"},
+    )
 
 
 # ── Routes — DCA Models ───────────────────────────────────────────────────────

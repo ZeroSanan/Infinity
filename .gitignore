@@ -21,6 +21,9 @@ data/signal_history.db
 # Telegram alert dedup state (generated on VPS)
 data/telegram_notify_state.json
 
+# Testnet learning journal (generated on VPS, paper-trading only)
+data/testnet_journal.json
+
 # Reports & outputs
 algo-trading/reports/
 algo-trading/backtest/
