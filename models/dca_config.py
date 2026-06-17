@@ -33,6 +33,9 @@ class CoinConfig:
     atr_based_spacing: bool = False  # when True, levels/TP/SL are ATR multiples, not fixed %
     atr_period: int = 14              # candles (in regime_interval units) for live ATR
 
+    # ── Testnet dashboard toggle ───────────────────────────────────────────────
+    is_testnet: bool = False         # True = paper-trading strategy, shown only in TESTNET mode
+
     def validate(self):
         if len(self.dump_levels) != self.step_count:
             raise ValueError(

@@ -516,6 +516,33 @@
     text-align: center;
   }
 
+  /* ── LIVE / TESTNET mode toggle ─────────────────────────────── */
+  .mode-toggle {
+    display: flex; gap: 0;
+    border-radius: 99px; overflow: hidden;
+    border: 1px solid var(--border2);
+  }
+  .mode-toggle-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border: none; background: var(--surface);
+    color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .3px;
+    cursor: pointer; transition: background .15s, color .15s;
+  }
+  .mode-toggle-btn .mode-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .mode-toggle-btn.live.active    { background: var(--green-bg); color: #1d8a3b; }
+  .mode-toggle-btn.testnet.active { background: var(--orange-bg); color: #a05c00; }
+
+  .testnet-banner {
+    display: none;
+    align-items: center; gap: 8px;
+    background: var(--orange-bg); border: 1px solid var(--orange);
+    color: #92400e; font-size: 13px; font-weight: 600;
+    border-radius: var(--radius-sm); padding: 10px 16px; margin-bottom: 16px;
+  }
+  .testnet-banner.show { display: flex; }
+
+  .page-tabs-row.testnet-mode { border-bottom: 2px solid var(--orange); padding-bottom: 14px; }
+
   /* ── PAGE TABS ROW ──────────────────────────────────────────── */
   .page-tabs-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -642,11 +669,13 @@
   .btn-blue   { background: var(--blue);  color: #fff; box-shadow: 0 2px 8px rgba(0,122,255,.25); }
   .btn-green  { background: var(--green); color: #fff; box-shadow: 0 2px 8px rgba(52,199,89,.25); }
   .btn-red    { background: var(--red);   color: #fff; box-shadow: 0 2px 8px rgba(255,59,48,.20); }
+  .btn-amber  { background: var(--orange); color: #fff; box-shadow: 0 2px 8px rgba(255,149,0,.25); }
   .btn-ghost  { background: rgba(116,116,128,0.1); color: var(--text2); }
   .btn-ghost:hover { background: rgba(116,116,128,0.16); }
   .btn-blue:hover  { filter: brightness(1.06); }
   .btn-green:hover { filter: brightness(1.06); }
   .btn-red:hover   { filter: brightness(1.06); }
+  .btn-amber:hover { filter: brightness(1.06); }
   .btn:disabled { opacity: .4; cursor: not-allowed; transform: none !important; }
 
   .btn-sm { padding: 6px 13px; font-size: 13px; border-radius: 7px; }
@@ -1299,6 +1328,14 @@
       <p id="header-sub">Dynamic Spot · Binance API</p>
     </div>
     <div class="header-right">
+      <div class="mode-toggle" id="mode-toggle">
+        <button class="mode-toggle-btn live active" id="mode-btn-live" onclick="onModeToggleClick('live')">
+          <span class="mode-dot"></span>LIVE
+        </button>
+        <button class="mode-toggle-btn testnet" id="mode-btn-testnet" onclick="onModeToggleClick('testnet')">
+          <span class="mode-dot"></span>TESTNET
+        </button>
+      </div>
       <div class="balance-chip" id="usdt-balance">—</div>
       <div id="conn-badge" class="status-pill warn">
         <span class="dot"></span> Connecting…
@@ -1309,8 +1346,13 @@
     </div>
   </header>
 
+  <!-- ══ TESTNET BANNER (non-dismissible while in TESTNET mode) ══ -->
+  <div class="testnet-banner" id="testnet-banner">
+    ⚠️ TESTNET MODE — Using fake money. No real orders will be placed.
+  </div>
+
   <!-- ══ PAGE TABS ═════════════════════════════════════════════ -->
-  <div class="page-tabs-row">
+  <div class="page-tabs-row" id="page-tabs-row">
     <div class="seg-ctrl" style="margin-bottom:0">
       <button class="seg-btn active" onclick="showPage('market-signals',this)">Market Signals</button>
       <button class="seg-btn"        onclick="showPage('dashboard',this)">Dashboard</button>
@@ -1461,6 +1503,21 @@
             5. Each account runs independently
           </p>
         </div>
+        <details class="setup-guide" id="testnet-setup-guide" style="display:none">
+          <summary class="section-label" style="cursor:pointer">📓 How to set up Testnet</summary>
+          <p style="margin-top:8px">
+            1. Go to <span class="hl">testnet.binance.vision</span><br>
+            2. Log in with your <span>GitHub</span> account<br>
+            3. Click <span>Generate HMAC_SHA256 Key</span><br>
+            4. Copy the API Key and Secret Key<br>
+            5. Paste them in the account form on the right<br>
+            6. Check <span>"Use Testnet (paper trading)"</span> and click Save &amp; Connect<br>
+            7. Click <span>Test</span> — you should see a testnet balance (usually 1 BTC + 10,000 USDT, free)<br>
+            8. Go to the <span class="hl">Strategies</span> tab<br>
+            9. Click <span>📋 Copy to Testnet</span> on any live strategy<br>
+            10. Start the testnet engine and watch it trade with fake money
+          </p>
+        </details>
       </div>
 
       <!-- Right: form -->
@@ -1560,6 +1617,9 @@
        PAGE 3 — STRATEGIES
   ═══════════════════════════════════════════════════════════════ -->
   <div id="page-strategies" class="page">
+    <div id="strategies-mode-hdr" style="display:none;font-size:13px;font-weight:700;color:var(--orange);margin-bottom:14px">
+      ⚠️ TESTNET Strategies — fake money, real market prices
+    </div>
     <div class="two-col">
 
       <!-- Left: list -->
@@ -1639,6 +1699,20 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- Testnet Learning Journal — only shown in TESTNET mode -->
+    <div id="testnet-journal-section" style="display:none;margin-top:24px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div class="section-label" style="margin:0">📓 Testnet Learning Journal</div>
+        <button class="btn btn-ghost btn-sm" onclick="exportTestnetJournalCsv()">⬇ Export CSV</button>
+      </div>
+
+      <div class="config-grid" id="tj-stats" style="margin-bottom:16px"></div>
+
+      <div class="list-card" id="tj-list" style="max-height:420px;overflow-y:auto">
+        <div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">Loading…</div>
+      </div>
     </div>
   </div><!-- /page-strategies -->
 
@@ -2114,6 +2188,7 @@
         <span class="ms-dca-price-badge" id="ms-dca-price-badge" style="display:none"></span>
       </div>
       <div class="ms-dca-subtitle">Select a saved DCA Model to see where ATR-calibrated entry levels sit right now.</div>
+      <div id="ms-testnet-context" style="display:none;font-size:12px;font-weight:600;color:#a05c00;background:var(--orange-bg);border:1px solid rgba(255,149,0,.3);border-radius:6px;padding:8px 12px;margin-bottom:12px"></div>
 
       <div class="ms-dca-select-row">
         <select id="ms-dca-model-sel" onchange="onDcaModelChange()">
@@ -2178,6 +2253,21 @@
 
 
 </div><!-- /container -->
+
+<!-- ══ Switch-to-Testnet Confirmation Modal ════════════════════ -->
+<div class="ms-modal-overlay" id="testnet-confirm-overlay" onclick="if(event.target===this) cancelTestnetSwitch()">
+  <div class="ms-modal-card" style="max-width:420px">
+    <div class="ms-modal-title">Switch to Testnet Mode?</div>
+    <div class="ms-modal-content">
+      <p>Live strategies will keep running in the background, unaffected.</p>
+      <p>You will see testnet account data only.</p>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:18px">
+      <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="cancelTestnetSwitch()">Cancel</button>
+      <button class="btn btn-amber" style="flex:1;justify-content:center" onclick="confirmTestnetSwitch()">Switch to Testnet</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══ Start Process Modal ════════════════════════════════════ -->
 <div class="modal-overlay" id="start-modal-overlay">
@@ -2315,6 +2405,48 @@ let _savedAccounts   = [];
 let _startStrategies = [];
 let _editingAccountId= null;
 
+// ── LIVE / TESTNET dashboard mode ───────────────────────────────────────────────
+let DASHBOARD_MODE = localStorage.getItem('dashboard_mode') === 'testnet' ? 'testnet' : 'live';
+
+const usdtLabel = () => DASHBOARD_MODE === 'testnet' ? 'T-USDT' : 'USDT';
+
+function applyModeUI(){
+  const isTestnet = DASHBOARD_MODE === 'testnet';
+  document.getElementById('mode-btn-live').classList.toggle('active', !isTestnet);
+  document.getElementById('mode-btn-testnet').classList.toggle('active', isTestnet);
+  document.getElementById('testnet-banner').classList.toggle('show', isTestnet);
+  document.getElementById('page-tabs-row').classList.toggle('testnet-mode', isTestnet);
+}
+
+function setDashboardMode(mode){
+  DASHBOARD_MODE = mode;
+  localStorage.setItem('dashboard_mode', mode);
+  applyModeUI();
+  refresh(); refreshRunning(); loadAccounts(); loadStrategies();
+}
+
+function onModeToggleClick(mode){
+  if(mode === DASHBOARD_MODE) return;
+  if(mode === 'testnet'){
+    document.getElementById('testnet-confirm-overlay').classList.add('open');
+  } else {
+    setDashboardMode('live');
+  }
+}
+
+function confirmTestnetSwitch(){
+  document.getElementById('testnet-confirm-overlay').classList.remove('open');
+  setDashboardMode('testnet');
+}
+
+function cancelTestnetSwitch(){
+  document.getElementById('testnet-confirm-overlay').classList.remove('open');
+}
+
+function initDashboardMode(){
+  applyModeUI();
+}
+
 const coin = () => _coins[_activeIdx] || null;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -2365,6 +2497,7 @@ function selectMsCoin(coin, btn) {
   const mc = document.getElementById('ms-master-coin');
   if (mc) mc.textContent = coin;
   _l3LatestPrice = null;
+  renderMsTestnetContext();
   loadLayer2();
   loadLayer3();
   renderMsChart(coin);
@@ -3421,6 +3554,13 @@ function showPage(id, btn){
 // ── Strategy tabs ─────────────────────────────────────────────────────────────
 function buildTabs(){
   const el = document.getElementById('coin-tabs');
+  if(!_coins.length){
+    el.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:8px 0">` +
+      (DASHBOARD_MODE === 'testnet'
+        ? 'No testnet strategies yet. Copy one from a live strategy in the Strategies tab →'
+        : 'No strategies yet.') + `</div>`;
+    return;
+  }
   el.innerHTML = _coins.map((c,i) => `
     <div class="strat-tab${i===_activeIdx?' active':''}" onclick="selectCoin(${i})">
       ${esc(c.strategy_name)}
@@ -3434,14 +3574,21 @@ function selectCoin(i){ _activeIdx = i; buildTabs(); renderCoin(); }
 async function refresh(){
   try{
     const data = await api('/api/status');
-    _coins = data.coins || [];
+    const isTestnet = DASHBOARD_MODE === 'testnet';
+    _lastAllCoins = data.coins || [];
+    _coins = _lastAllCoins.filter(c => !!c.is_testnet === isTestnet);
     if(_activeIdx >= _coins.length) _activeIdx = 0;
 
-    // Balance
+    // Balance — only sum accounts matching the current LIVE/TESTNET mode
     const totals  = data.usdt_totals || {};
-    const totalBal = Object.values(totals).reduce((a,b) => a+b, 0);
+    const acctTestnetMap = {};
+    _savedAccounts.forEach(a => { acctTestnetMap[a.id] = !!a.testnet; });
+    const modeTotals = Object.fromEntries(
+      Object.entries(totals).filter(([aid]) => (acctTestnetMap[aid] || false) === isTestnet)
+    );
+    const totalBal = Object.values(modeTotals).reduce((a,b) => a+b, 0);
     document.getElementById('usdt-balance').textContent =
-      Object.keys(totals).length ? `$${fmt(totalBal,2)} USDT` : '—';
+      Object.keys(modeTotals).length ? `$${fmt(totalBal,2)} ${usdtLabel()}` : '—';
 
     // Connection badge
     const badge = document.getElementById('conn-badge');
@@ -3460,7 +3607,23 @@ async function refresh(){
 
     buildTabs();
     if(_coins.length) renderCoin();
+    else document.getElementById('header-sub').textContent =
+      isTestnet ? 'TESTNET Dashboard — no testnet strategies yet' : 'Dynamic Spot · Binance API';
+    renderMsTestnetContext();
   } catch(e){ console.error(e); }
+}
+
+// ── Market Signals: testnet position context for the selected coin ────────────
+let _lastAllCoins = [];
+function renderMsTestnetContext(){
+  const el = document.getElementById('ms-testnet-context');
+  if(!el) return;
+  const symbol = MS_SYMBOLS[msCoin];
+  const match = _lastAllCoins.find(c => c.is_testnet && c.symbol === symbol && c.status === 'ACTIVE');
+  if(!match){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `🧪 Testnet position active — <strong>${esc(match.strategy_name)}</strong>: ` +
+    `avg entry $${fmt(match.average_entry,2)} · ${match.steps_done}/${match.step_count} steps filled`;
 }
 
 // ── Dashboard render ──────────────────────────────────────────────────────────
@@ -3468,6 +3631,7 @@ function renderCoin(){
   const c = coin(); if(!c) return;
 
   document.getElementById('header-sub').textContent =
+    (DASHBOARD_MODE === 'testnet' ? 'TESTNET — ' : '') +
     `${esc(c.strategy_name)} · ${c.symbol} · $${fmt(c.price,2)}`;
 
   // Metrics
@@ -3625,7 +3789,8 @@ function renderMsChart(coin){
 // ── Running bar ───────────────────────────────────────────────────────────────
 async function refreshRunning(){
   const r       = await api('/api/running');
-  const running = r.running || [];
+  const isTestnet = DASHBOARD_MODE === 'testnet';
+  const running = (r.running || []).filter(p => !!p.is_testnet === isTestnet);
   const bar     = document.getElementById('running-bar');
   const pills   = document.getElementById('running-pills');
 
@@ -3643,15 +3808,17 @@ let _startActiveCfg = null;   // currently selected strategy config
 
 async function openStartModal(){
   _startActiveCfg = null;
+  const isTestnet = DASHBOARD_MODE === 'testnet';
 
   const accSel = document.getElementById('start-account-sel');
+  const accts  = _savedAccounts.filter(a => !!a.testnet === isTestnet);
   accSel.innerHTML = '<option value="">— Select account —</option>' +
-    _savedAccounts.map(a =>
+    accts.map(a =>
       `<option value="${a.id}">${esc(a.name)}${a.testnet?' (Testnet)':''} ${a.connected?'✓':'⚠'}</option>`
     ).join('');
 
   const data = await api('/api/strategies');
-  _startStrategies = data.coins || [];
+  _startStrategies = (data.coins || []).filter(c => !!c.is_testnet === isTestnet);
   const stratSel = document.getElementById('start-strategy-sel');
   stratSel.innerHTML = '<option value="">— Select strategy —</option>' +
     _startStrategies.map(c =>
@@ -3662,6 +3829,11 @@ async function openStartModal(){
   document.getElementById('start-feedback').style.display = 'none';
   document.getElementById('dca-levels-preview').style.display = 'none';
   document.getElementById('start-entry-price').value = '';
+
+  if(isTestnet && !accts.length){
+    setFeedback('start-feedback','No testnet accounts configured. Add one in the Accounts tab first (check "Use Testnet").','err');
+  }
+
   document.getElementById('start-modal-overlay').classList.add('open');
 }
 
@@ -3778,7 +3950,8 @@ document.getElementById('start-modal-overlay').addEventListener('click', e => {
 // ── Stop Modal ────────────────────────────────────────────────────────────────
 async function openStopModal(){
   const r       = await api('/api/running');
-  const running = r.running || [];
+  const isTestnet = DASHBOARD_MODE === 'testnet';
+  const running = (r.running || []).filter(p => !!p.is_testnet === isTestnet);
   const list    = document.getElementById('stop-list');
 
   list.innerHTML = running.length ? running.map(p => `
@@ -3853,13 +4026,21 @@ async function loadAccounts(){
   const r = await api('/api/accounts');
   _savedAccounts = r.accounts || [];
   const el = document.getElementById('accounts-list');
+  const isTestnet = DASHBOARD_MODE === 'testnet';
+  const shown = _savedAccounts.filter(a => !!a.testnet === isTestnet);
 
-  if(!_savedAccounts.length){
-    el.innerHTML = '<div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">No accounts yet. Add your first account →</div>';
+  const guide = document.getElementById('testnet-setup-guide');
+  if(guide) guide.style.display = isTestnet ? '' : 'none';
+
+  if(!shown.length){
+    el.innerHTML = `<div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">` +
+      (isTestnet
+        ? 'No testnet accounts yet. Add one below with "Use Testnet" checked — get free keys at <a href="https://testnet.binance.vision" target="_blank" rel="noopener">testnet.binance.vision</a> →'
+        : 'No accounts yet. Add your first account →') + `</div>`;
     return;
   }
 
-  el.innerHTML = _savedAccounts.map(a => `
+  el.innerHTML = shown.map(a => `
     <div class="list-item${a.connected?'':' disabled-item'}" style="cursor:default">
       <div style="flex:1">
         <div class="item-name">${esc(a.name)}</div>
@@ -3869,7 +4050,7 @@ async function loadAccounts(){
           &nbsp;
           ${a.testnet ? '<span class="badge badge-blue">Testnet</span>' : '<span class="badge badge-muted">Live</span>'}
           &nbsp;
-          ${a.usdt_balance != null ? `<span style="font-size:12px;color:var(--muted)">$${fmt(a.usdt_balance,2)} USDT</span>` : ''}
+          ${a.usdt_balance != null ? `<span style="font-size:12px;color:var(--muted)">$${fmt(a.usdt_balance,2)} ${a.testnet ? 'T-USDT' : 'USDT'}</span>` : ''}
         </div>
       </div>
       <div class="item-actions">
@@ -3888,7 +4069,7 @@ function newAccount(){
   document.getElementById('acct-name').value = '';
   document.getElementById('acct-api-key').value = '';
   document.getElementById('acct-secret-key').value = '';
-  document.getElementById('acct-testnet').checked = false;
+  document.getElementById('acct-testnet').checked = DASHBOARD_MODE === 'testnet';
   document.getElementById('acct-feedback').style.display = 'none';
   document.getElementById('acct-editing-bar').style.display = 'none';
   document.getElementById('acct-api-key').type = 'password';
@@ -3932,7 +4113,7 @@ async function saveAccount(){
   }
 
   if(r.ok){
-    const bal = r.usdt_balance != null ? ` — $${fmt(r.usdt_balance,2)} USDT` : '';
+    const bal = r.usdt_balance != null ? ` — $${fmt(r.usdt_balance,2)} ${testnet ? 'T-USDT' : 'USDT'}` : '';
     setFeedback('acct-feedback','✓ Saved' + bal,'ok');
     toast((_editingAccountId ? 'Account updated' : 'Account added') + ' ✓');
     newAccount(); loadAccounts(); refresh();
@@ -3951,7 +4132,8 @@ async function testNewAccount(){
     testnet: document.getElementById('acct-testnet').checked
   });
   if(r.ok){
-    setFeedback('acct-feedback','✓ Connected — $' + fmt(r.usdt_balance,2) + ' USDT','ok');
+    const lbl = document.getElementById('acct-testnet').checked ? 'T-USDT' : 'USDT';
+    setFeedback('acct-feedback','✓ Connected — $' + fmt(r.usdt_balance,2) + ' ' + lbl,'ok');
     toast('Test passed ✓');
   } else {
     setFeedback('acct-feedback','✗ ' + (r.error || 'Failed'),'err');
@@ -3961,7 +4143,9 @@ async function testNewAccount(){
 
 async function testAccount(id){
   const r = await api('/api/accounts/' + id + '/test','POST');
-  if(r.ok) toast('Connected ✓  $' + fmt(r.usdt_balance,2) + ' USDT');
+  const acct = _savedAccounts.find(a => a.id === id);
+  const lbl = acct && acct.testnet ? 'T-USDT' : 'USDT';
+  if(r.ok) toast('Connected ✓  $' + fmt(r.usdt_balance,2) + ' ' + lbl);
   else     toast('Test failed: ' + (r.error || 'error'),'err');
   loadAccounts();
 }
@@ -3976,11 +4160,25 @@ async function deleteAccount(id, name){
 // ── Strategies ────────────────────────────────────────────────────────────────
 async function loadStrategies(){
   const data  = await api('/api/strategies');
-  const coins = data.coins || [];
+  const allCoins = data.coins || [];
   const el    = document.getElementById('strategy-list');
+  const isTestnet = DASHBOARD_MODE === 'testnet';
+  const coins = allCoins.filter(c => !!c.is_testnet === isTestnet);
+
+  const hdr = document.getElementById('strategies-mode-hdr');
+  if(hdr) hdr.style.display = isTestnet ? 'block' : 'none';
+
+  const journalSection = document.getElementById('testnet-journal-section');
+  if(journalSection){
+    journalSection.style.display = isTestnet ? '' : 'none';
+    if(isTestnet) loadTestnetJournal();
+  }
 
   if(!coins.length){
-    el.innerHTML = '<div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">No strategies yet.</div>';
+    el.innerHTML = `<div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">` +
+      (isTestnet
+        ? 'No testnet strategies yet. Use "📋 Copy to Testnet" on a live strategy (switch to LIVE mode first).'
+        : 'No strategies yet.') + `</div>`;
     return;
   }
 
@@ -3999,13 +4197,70 @@ async function loadStrategies(){
         </div>
       </div>
       <div class="item-actions">
+        ${c.is_testnet ? '<span class="badge badge-blue">Testnet</span>' : ''}
         ${c.mode === 'mixed' ? `<span class="badge badge-blue">Mixed ${c.leverage}x</span>` : ''}
         ${c.mode === 'mixed' && c.atr_based_spacing ? `<span class="badge badge-blue">ATR ${c.atr_period}</span>` : ''}
         <span class="badge ${c.enabled?'badge-green':'badge-muted'}">${c.enabled?'Enabled':'Disabled'}</span>
+        ${!isTestnet ? `<button class="btn btn-ghost btn-sm"
+          onclick="event.stopPropagation();copyStrategyToTestnet('${c.id}','${esc(c.name||c.coin)}')" title="Copy to Testnet">📋</button>` : ''}
         <button class="btn btn-red btn-sm"
           onclick="event.stopPropagation();deleteStrategy('${c.id}','${esc(c.name||c.coin)}')">Remove</button>
       </div>
     </div>`).join('');
+}
+
+async function copyStrategyToTestnet(id, name){
+  const r = await api('/api/strategies/' + id + '/copy_to_testnet','POST');
+  if(r.ok){ toast(`"${name}" copied to Testnet ✓`); loadStrategies(); }
+  else toast(r.error || 'Copy failed','err');
+}
+
+// ── Testnet Learning Journal ────────────────────────────────────────────────────
+async function loadTestnetJournal(){
+  const data    = await api('/api/testnet/journal');
+  const stats   = data.stats || {};
+  const entries = data.entries || [];
+
+  document.getElementById('tj-stats').innerHTML = `
+    <span class="config-key">Total Trades</span><span class="config-val">${stats.total_trades ?? 0}</span>
+    <span class="config-key">Win Rate</span><span class="config-val" style="color:var(--green)">${stats.win_rate_pct != null ? fmt(stats.win_rate_pct,1)+'%' : '—'}</span>
+    <span class="config-key">Avg Win</span><span class="config-val" style="color:var(--green)">${stats.avg_profit_win != null ? '$'+fmt(stats.avg_profit_win,2) : '—'}</span>
+    <span class="config-key">Avg Loss</span><span class="config-val" style="color:var(--red)">${stats.avg_loss_loss != null ? '$'+fmt(stats.avg_loss_loss,2) : '—'}</span>
+    <span class="config-key">Best Combo</span><span class="config-val" style="color:var(--blue)">${stats.best_combo ? esc(stats.best_combo.combo) + ' (' + fmt(stats.best_combo.win_rate_pct,0) + '%)' : '—'}</span>
+    <span class="config-key">Worst Combo</span><span class="config-val" style="color:var(--orange)">${stats.worst_combo ? esc(stats.worst_combo.combo) + ' (' + fmt(stats.worst_combo.win_rate_pct,0) + '%)' : '—'}</span>`;
+
+  const listEl = document.getElementById('tj-list');
+  if(!entries.length){
+    listEl.innerHTML = `<div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">` +
+      `No completed testnet trades yet — they'll appear here automatically once a testnet strategy hits take-profit.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = entries.map(e => {
+    const sig  = e.signal_at_entry || {};
+    const ent  = e.entry || {};
+    const ex   = e.exit  || {};
+    const win  = e.outcome === 'WIN';
+    return `
+      <div class="list-item" style="cursor:default">
+        <div style="flex:1">
+          <div class="item-name">${esc(e.coin)} · ${esc(e.strategy)}</div>
+          <div class="item-sub">${esc(e.timestamp)} · ${esc(sig.l1_verdict||'?')} + ${esc(sig.l2_verdict||'?')} + ${esc(sig.l3_verdict||'?')} → ${esc(sig.master||'?')}</div>
+          <div class="item-meta">
+            Avg entry <span>$${fmt(ent.avg_entry,2)}</span> &nbsp;·&nbsp;
+            Exit <span>$${fmt(ex.exit_price,2)}</span> &nbsp;·&nbsp;
+            Duration <span>${fmt(ex.duration_hours,1)}h</span>
+          </div>
+        </div>
+        <div class="item-actions">
+          <span class="badge ${win?'badge-green':'badge-red'}">${win?'WIN':'LOSS'} ${fmtPct(ex.pnl_pct)}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function exportTestnetJournalCsv(){
+  window.open('/api/testnet/journal/export', '_blank');
 }
 
 function newStrategy(){
@@ -5417,6 +5672,7 @@ async function generateAiAnalysis() {
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
+initDashboardMode();
 refresh();
 loadLayer2();
 loadLayer1();
