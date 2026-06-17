@@ -69,6 +69,9 @@
   }
   @media (max-width: 860px) { .ms-layer2-grid { grid-template-columns: 1fr; } }
 
+  .ms-chart-area { width: 100%; height: 400px; position: relative; }
+  @media (max-width: 640px) { .ms-chart-area { height: 280px; } }
+
   .ms-panel {
     background: var(--surface2);
     border: 1px solid var(--border);
@@ -306,27 +309,26 @@
   .ms-ob-pct { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; }
   .ms-ob-pct .bid { color: #1d8a3b; }
   /* ── Liquidation Heatmap card ── */
-  .ms-liq-wrap { position: relative; height: 400px; border-radius: calc(var(--radius) - 2px); overflow: hidden; background: var(--surface); }
-  .ms-liq-wrap iframe { width: 100%; height: 100%; border: none; display: block; }
-  .ms-liq-na { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 13px; font-style: italic; }
-  .ms-liq-ext { font-size: 11px; color: var(--accent); text-decoration: none; margin-left: auto; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--accent); white-space: nowrap; }
-  .ms-liq-ext:hover { background: var(--accent); color: #fff; }
+  .ms-liq-input-row { display: flex; flex-direction: column; gap: 4px; }
+  .ms-liq-input-lbl { font-size: 12px; color: var(--text2); font-weight: 600; display: flex; flex-direction: column; gap: 4px; }
+  .ms-liq-input-wrap { display: flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; padding: 0 8px; }
+  .ms-liq-input-wrap span { color: var(--muted); font-size: 13px; }
+  .ms-liq-input-wrap input[type=number] { flex: 1; min-width: 0; border: none; background: none; padding: 7px 0; font-size: 13px; color: var(--text); font-family: inherit; }
+  .ms-liq-input-wrap input[type=number]:focus { outline: none; }
+  .ms-liq-save-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ms-liq-save-btn { font-size: 12px; font-weight: 700; color: var(--blue); background: var(--blue-bg); border: none; border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+  .ms-liq-save-btn:hover { background: rgba(0,122,255,.16); }
+  .ms-liq-saved-ind { font-size: 11px; font-weight: 600; }
+  .ms-liq-saved-ind.ok { color: var(--green); }
+  .ms-liq-saved-ind.warn { color: var(--orange); }
   /* ── AI Analysis panel ── */
   .ms-ai-panel { margin-top: 24px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
   .ms-ai-title { font-size: 15px; font-weight: 700; }
   .ms-ai-subtitle { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
-  .ms-ai-liq-section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin: 14px 0; }
-  .ms-ai-liq-title { font-size: 10px; font-weight: 700; letter-spacing: .6px; color: var(--muted); margin-bottom: 10px; }
-  .ms-ai-liq-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-  .ms-ai-liq-label { font-size: 12px; color: var(--text2); flex: 1; min-width: 160px; }
-  .ms-ai-liq-row input[type=number] { width: 130px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 13px; }
-  .ms-ai-liq-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
-  .ms-ai-liq-link { color: var(--accent); text-decoration: none; }
-  .ms-ai-liq-link:hover { text-decoration: underline; }
   .ms-ai-low-warn { background: rgba(255,149,0,.10); border: 1px solid rgba(255,149,0,.30); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #9a5c00; margin-bottom: 12px; }
-  .ms-ai-gen-btn { width: 100%; padding: 13px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); font-size: 15px; font-weight: 700; cursor: pointer; transition: opacity .15s; letter-spacing: .2px; }
-  .ms-ai-gen-btn:hover:not(:disabled) { opacity: .88; }
-  .ms-ai-gen-btn:disabled { opacity: .55; cursor: not-allowed; }
+  .ms-ai-gen-btn { width: 100%; padding: 14px 24px; background: #000000; color: #FFFFFF; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s; letter-spacing: .2px; }
+  .ms-ai-gen-btn:hover:not(:disabled) { background: #222222; }
+  .ms-ai-gen-btn:disabled { background: #444444; cursor: not-allowed; }
   .ms-ai-output-wrap { position: relative; margin-top: 18px; }
   .ms-ai-output { display: none; }
   .ms-ai-output.visible { display: block; }
@@ -356,9 +358,12 @@
   .ms-dca-price-badge { font-size: 12px; font-weight: 700; color: var(--accent); background: rgba(0,122,255,.1); padding: 2px 9px; border-radius: 99px; }
   .ms-dca-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
   .ms-dca-select-row select { width: 100%; padding: 9px 10px; background: var(--surface); border: 1px solid var(--border2); border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
-  .ms-dca-side-row { display: flex; gap: 8px; margin-top: 10px; }
-  .ms-dca-side-btn { flex: 1; padding: 8px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; color: var(--text2); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s; }
-  .ms-dca-side-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ms-dca-side-row { display: flex; gap: 0; margin-top: 10px; }
+  .ms-dca-side-btn { flex: 1; padding: 10px 24px; background: #f3f4f6; border: 1px solid #e5e7eb; color: #6b7280; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+  .ms-dca-side-btn:first-child { border-radius: 6px 0 0 6px; border-right-width: 0; }
+  .ms-dca-side-btn:last-child { border-radius: 0 6px 6px 0; }
+  #ms-dca-side-long.active { background: #16a34a; border-color: #16a34a; color: #fff; }
+  #ms-dca-side-short.active { background: #dc2626; border-color: #dc2626; color: #fff; }
   .ms-dca-slider-wrap { margin-top: 14px; }
   .ms-dca-slider-lbl { font-size: 12px; color: var(--text2); margin-bottom: 6px; font-weight: 600; }
   .ms-dca-slider-lbl em { font-style: normal; color: var(--accent); }
@@ -737,20 +742,6 @@
     color: var(--muted);
     margin-top: 5px;
     font-weight: 400;
-  }
-
-  /* ── CHART ───────────────────────────────────────────────────── */
-  .chart-wrap {
-    background: var(--surface);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow);
-    padding: 20px;
-    margin-bottom: 20px;
-  }
-
-  .chart-area { height: 560px; position: relative; }
-  @media (max-width: 640px) {
-    .chart-area { height: 400px; }
   }
 
   /* ── STEPS PANEL ─────────────────────────────────────────────── */
@@ -1321,12 +1312,12 @@
   <!-- ══ PAGE TABS ═════════════════════════════════════════════ -->
   <div class="page-tabs-row">
     <div class="seg-ctrl" style="margin-bottom:0">
-      <button class="seg-btn active" onclick="showPage('dashboard',this)">Dashboard</button>
+      <button class="seg-btn active" onclick="showPage('market-signals',this)">Market Signals</button>
+      <button class="seg-btn"        onclick="showPage('dashboard',this)">Dashboard</button>
       <button class="seg-btn"        onclick="showPage('account',this)">Accounts</button>
       <button class="seg-btn"        onclick="showPage('strategies',this)">Strategies</button>
       <button class="seg-btn"        onclick="showPage('dca-models',this)">DCA Models</button>
       <button class="seg-btn"        onclick="showPage('regime',this)">Weekly Regime</button>
-      <button class="seg-btn"        onclick="showPage('market-signals',this)">Market Signals</button>
     </div>
     <a href="/backtest" class="backtest-link" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">&#9654; Backtest</a>
   </div>
@@ -1334,15 +1325,7 @@
   <!-- ══════════════════════════════════════════════════════════
        PAGE 1 — DASHBOARD
   ═══════════════════════════════════════════════════════════════ -->
-  <div id="page-dashboard" class="page active">
-
-    <!-- Chart -->
-    <div class="chart-wrap">
-      <div class="section-label">Price Action (30m · TradingView)</div>
-      <div class="chart-area">
-        <div id="tv-chart-container" style="width:100%;height:100%"></div>
-      </div>
-    </div>
+  <div id="page-dashboard" class="page">
 
     <!-- Strategy tabs -->
     <div class="strat-tabs" id="coin-tabs"></div>
@@ -1917,7 +1900,7 @@
   <!-- ══════════════════════════════════════════════════════════
        PAGE 6 — MARKET SIGNALS
   ═══════════════════════════════════════════════════════════════ -->
-  <div id="page-market-signals" class="page">
+  <div id="page-market-signals" class="page active">
 
     <!-- Coin selector -->
     <div class="card card-padded" style="margin-bottom:20px">
@@ -1929,6 +1912,11 @@
         <div class="strat-tab"        onclick="selectMsCoin('ZEC',this)">ZEC</div>
         <div class="strat-tab"        onclick="selectMsCoin('XAUT',this)">XAUT</div>
       </div>
+    </div>
+
+    <!-- TradingView Chart -->
+    <div class="card card-padded" style="margin-bottom:20px">
+      <div id="ms-chart-container" class="ms-chart-area"></div>
     </div>
 
     <!-- Three-layer card -->
@@ -2020,14 +2008,24 @@
         <div class="ms-panel" id="ms-liq-panel" style="margin-bottom:16px">
           <div class="ms-panel-head">
             <span>Liquidation Heatmap</span>
-            <a id="ms-liq-ext-link" href="https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=BTC" target="_blank" rel="noopener" class="ms-liq-ext">↗ Open</a>
             <button class="ms-info-btn" onclick="openMsModal(MS_MODAL.liqheatmap.title, MS_MODAL.liqheatmap.body)" aria-label="About Liquidation Heatmap" title="About Liquidation Heatmap">ⓘ</button>
           </div>
-          <div class="ms-liq-wrap">
-            <iframe id="ms-liq-iframe" src="https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=BTC" loading="lazy" referrerpolicy="no-referrer"></iframe>
-            <div class="ms-liq-na" id="ms-liq-na" style="display:none">Liquidation heatmap not available for this coin</div>
+          <div class="ms-liq-input-row">
+            <label class="ms-liq-input-lbl" for="ms-ai-liq-below">Nearest cluster BELOW price:
+              <div class="ms-liq-input-wrap"><span>$</span><input type="number" min="0" id="ms-ai-liq-below" placeholder="e.g. 65065" oninput="if(this.value<0)this.value=0"></div>
+            </label>
           </div>
-          <div class="ms-stat-sub" style="color:var(--muted)">Context only — not a directional signal. Shows price levels where large liquidations are clustered.</div>
+          <div class="ms-liq-input-row">
+            <label class="ms-liq-input-lbl" for="ms-ai-liq-above">Nearest cluster ABOVE price:
+              <div class="ms-liq-input-wrap"><span>$</span><input type="number" min="0" id="ms-ai-liq-above" placeholder="e.g. 67378" oninput="if(this.value<0)this.value=0"></div>
+            </label>
+          </div>
+          <div class="ms-liq-save-row">
+            <button class="ms-liq-save-btn" onclick="liqSaveValues()">Save Values</button>
+            <span class="ms-liq-saved-ind" id="ms-liq-saved-ind"></span>
+          </div>
+          <a href="https://www.coinglass.com/pro/futures/LiquidationMap" target="_blank" rel="noopener" class="ms-l1-link-btn">Open Liquidation Heatmap →</a>
+          <div class="ms-stat-sub" style="color:var(--muted)">Read the bright clusters and enter the nearest levels above and below current price.</div>
         </div>
 
         <!-- Combined verdict -->
@@ -2154,21 +2152,6 @@
     <div class="ms-ai-panel" id="ms-ai-panel">
       <div class="ms-ai-title">🤖 AI Market Analysis</div>
       <div class="ms-ai-subtitle">Reads all three layers and generates a professional trader assessment. Press Generate when you want an analysis.</div>
-
-      <div class="ms-ai-liq-section">
-        <div class="ms-ai-liq-title">OPTIONAL — LIQUIDATION CLUSTERS (from Coinglass Heatmap)</div>
-        <div class="ms-ai-liq-row">
-          <span class="ms-ai-liq-label">Nearest cluster BELOW price ($):</span>
-          <input type="number" id="ms-ai-liq-below" placeholder="e.g. 94200 — check Coinglass" oninput="aiLiqPersist()">
-        </div>
-        <div class="ms-ai-liq-row">
-          <span class="ms-ai-liq-label">Nearest cluster ABOVE price ($):</span>
-          <input type="number" id="ms-ai-liq-above" placeholder="e.g. 107500 — check Coinglass" oninput="aiLiqPersist()">
-        </div>
-        <div class="ms-ai-liq-note">Optional — enter the nearest bright cluster above and below current price.
-          <a href="https://www.coinglass.com/pro/futures/LiquidationMap" target="_blank" rel="noopener" class="ms-ai-liq-link">Open Coinglass →</a>
-        </div>
-      </div>
 
       <div class="ms-ai-low-warn" id="ms-ai-low-warn" style="display:none">
         ⚠️ Limited data — fill in more Layer 1 manual cards for a more accurate analysis.
@@ -2373,13 +2356,6 @@ function setFeedback(id, msg, type='ok'){
 
 // ── Market Signals (Layer Framework) ──────────────────────────────────────────
 const MS_SYMBOLS = { BTC: 'BTCUSDT', ETH: 'ETHUSDT', SOL: 'SOLUSDT', ZEC: 'ZECUSDT', XAUT: 'XAUTUSDT' };
-const LIQ_HEATMAP_URLS = {
-  BTC:  'https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=BTC',
-  ETH:  'https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=ETH',
-  SOL:  'https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=SOL',
-  ZEC:  null,
-  XAUT: null,
-};
 let msCoin = 'BTC';
 
 function selectMsCoin(coin, btn) {
@@ -2391,25 +2367,9 @@ function selectMsCoin(coin, btn) {
   _l3LatestPrice = null;
   loadLayer2();
   loadLayer3();
-  updateLiqHeatmap();
-  aiLiqRestore();
+  renderMsChart(coin);
+  liqRestoreValues();
   if (_dcaSelectedId) calcDcaLevels(false);
-}
-
-function updateLiqHeatmap() {
-  const url  = LIQ_HEATMAP_URLS[msCoin] || null;
-  const fr   = document.getElementById('ms-liq-iframe');
-  const na   = document.getElementById('ms-liq-na');
-  const link = document.getElementById('ms-liq-ext-link');
-  if (!url) {
-    if (fr)   fr.style.display = 'none';
-    if (na)   na.style.display = '';
-    if (link) link.style.display = 'none';
-    return;
-  }
-  if (fr)   { fr.style.display = ''; fr.src = url; }
-  if (na)   na.style.display = 'none';
-  if (link) { link.style.display = ''; link.href = url; }
 }
 
 async function loadLayer2() {
@@ -3455,7 +3415,7 @@ function showPage(id, btn){
   if(id === 'strategies'){ loadAccounts(); loadStrategies(); }
   if(id === 'dca-models') { loadDCAModels(); }
   if(id === 'regime')     loadRegimeState();
-  if(id === 'market-signals') { loadLayer2(); loadLayer1(); loadLayer3(); updateLiqHeatmap(); }
+  if(id === 'market-signals') { loadLayer2(); loadLayer1(); loadLayer3(); renderMsChart(msCoin); liqRestoreValues(); }
 }
 
 // ── Strategy tabs ─────────────────────────────────────────────────────────────
@@ -3594,8 +3554,6 @@ function renderCoin(){
     <span class="config-key">Take Profit</span><span class="config-val" style="color:var(--green)">+${c.tp_percent}%</span>
     <span class="config-key">Max Capital</span><span class="config-val" style="color:var(--orange)">$${fmt(c.total_capital,0)}</span>
     ${extraConfigHtml}`;
-
-  renderTradingViewChart(c.symbol);
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
@@ -3629,13 +3587,16 @@ function renderSteps(c){
   }, 50);
 }
 
-// ── TradingView Chart ─────────────────────────────────────────────────────────
-let _tvSymbol = null;
-function renderTradingViewChart(symbol){
-  if (!symbol || symbol === _tvSymbol) return;
-  _tvSymbol = symbol;
+// ── TradingView Chart (Market Signals) ──────────────────────────────────────────
+let _msTvSymbol = null;
+function renderMsChart(coin){
+  const symbol = MS_SYMBOLS[coin];
+  if (!symbol) return;
+  const tvSymbol = `BINANCE:${symbol}`;
+  if (tvSymbol === _msTvSymbol) return;
+  _msTvSymbol = tvSymbol;
 
-  const container = document.getElementById('tv-chart-container');
+  const container = document.getElementById('ms-chart-container');
   if (!container) return;
   container.innerHTML = '';
 
@@ -3646,8 +3607,8 @@ function renderTradingViewChart(symbol){
 
   new TradingView.widget({
     autosize: true,
-    symbol: `BINANCE:${symbol}`,
-    interval: '30',
+    symbol: tvSymbol,
+    interval: '240',
     timezone: 'Etc/UTC',
     theme: 'light',
     style: '1',
@@ -3657,7 +3618,7 @@ function renderTradingViewChart(symbol){
     allow_symbol_change: true,
     withdateranges: true,
     hide_side_toolbar: false,
-    container_id: 'tv-chart-container',
+    container_id: 'ms-chart-container',
   });
 }
 
@@ -5242,24 +5203,53 @@ function renderAiResponse(text) {
     (warnLine ? `<div class="ms-ai-warn">${aiEsc(warnLine)}</div>` : '');
 }
 
-function aiLiqKey(coin, side) { return `ms_ai_liq_${side}_${coin}`; }
+function liqKey(coin, side) { return `liq_${side}_${coin}`; }
+function liqTsKey(coin) { return `liq_ts_${coin}`; }
 
-function aiLiqPersist() {
+function liqSaveValues() {
   const lb = document.getElementById('ms-ai-liq-below');
   const la = document.getElementById('ms-ai-liq-above');
   try {
-    if (lb) localStorage.setItem(aiLiqKey(msCoin,'below'), lb.value);
-    if (la) localStorage.setItem(aiLiqKey(msCoin,'above'), la.value);
+    if (lb) localStorage.setItem(liqKey(msCoin,'below'), lb.value);
+    if (la) localStorage.setItem(liqKey(msCoin,'above'), la.value);
+    localStorage.setItem(liqTsKey(msCoin), String(Date.now()));
   } catch(e) {}
+  liqUpdateSavedIndicator();
+  if (_dcaSelectedId) calcDcaLevels(false);
 }
 
-function aiLiqRestore() {
+function liqRestoreValues() {
   const lb = document.getElementById('ms-ai-liq-below');
   const la = document.getElementById('ms-ai-liq-above');
   try {
-    if (lb) lb.value = localStorage.getItem(aiLiqKey(msCoin,'below')) || '';
-    if (la) la.value = localStorage.getItem(aiLiqKey(msCoin,'above')) || '';
+    if (lb) lb.value = localStorage.getItem(liqKey(msCoin,'below')) || '';
+    if (la) la.value = localStorage.getItem(liqKey(msCoin,'above')) || '';
   } catch(e) {}
+  liqUpdateSavedIndicator();
+}
+
+function liqUpdateSavedIndicator() {
+  const ind = document.getElementById('ms-liq-saved-ind');
+  if (!ind) return;
+  let ts = null;
+  try { ts = parseInt(localStorage.getItem(liqTsKey(msCoin)), 10); } catch(e) {}
+  if (!ts || isNaN(ts)) { ind.textContent = ''; ind.className = 'ms-liq-saved-ind'; return; }
+
+  const ageMs  = Date.now() - ts;
+  const ageHrs = ageMs / 3600000;
+  let ageStr;
+  if (ageMs < 60000)      ageStr = 'just now';
+  else if (ageHrs < 1)    ageStr = `${Math.round(ageMs/60000)}m ago`;
+  else if (ageHrs < 24)   ageStr = `${Math.round(ageHrs)}h ago`;
+  else                    ageStr = `${Math.round(ageHrs/24)}d ago`;
+
+  if (ageHrs > 24) {
+    ind.textContent = `⚠️ Verify — saved ${Math.round(ageHrs)} hours ago`;
+    ind.className = 'ms-liq-saved-ind warn';
+  } else {
+    ind.textContent = `✓ Saved (updated ${ageStr})`;
+    ind.className = 'ms-liq-saved-ind ok';
+  }
 }
 
 function updateAiDataWarning() {
@@ -5431,8 +5421,8 @@ refresh();
 loadLayer2();
 loadLayer1();
 loadLayer3();
-updateLiqHeatmap();
-aiLiqRestore();
+renderMsChart(msCoin);
+liqRestoreValues();
 loadDcaModels();
 initLayerCollapseState();
 refreshRunning();
