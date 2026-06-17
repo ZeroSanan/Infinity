@@ -410,6 +410,89 @@
   .ms-ob-pct .ask { color: #c41f1f; }
   .ms-l3-dca-note { font-style: italic; margin-top: 4px; }
 
+  /* ── Pre-Trade Checklist ── */
+  .ms-pt-panel { margin-top: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .ms-pt-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .ms-pt-title { font-size: 15px; font-weight: 700; }
+  .ms-pt-subtitle { font-size: 12px; color: var(--muted); margin-top: 4px; margin-bottom: 14px; line-height: 1.5; }
+  .ms-pt-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .ms-pt-item:last-child { margin-bottom: 0; }
+  .ms-pt-item-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .ms-pt-check { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border2); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; font-weight: 700; transition: background .15s, border-color .15s; cursor: pointer; }
+  .ms-pt-check.on { background: var(--green); border-color: var(--green); }
+  .ms-pt-item-num { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .5px; }
+  .ms-pt-item-label { font-size: 13px; font-weight: 700; }
+  .ms-pt-item-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .ms-pt-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ms-pt-input-wrap { display: flex; align-items: center; gap: 4px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px; padding: 0 8px; min-width: 130px; }
+  .ms-pt-input-wrap span { color: var(--muted); font-size: 13px; }
+  .ms-pt-input-wrap input[type=number] { flex: 1; min-width: 0; width: 100%; border: none; background: none; padding: 7px 0; font-size: 13px; color: var(--text); font-family: inherit; }
+  .ms-pt-input-wrap input[type=number]:focus { outline: none; }
+  .ms-pt-derived { font-size: 12px; color: var(--text2); font-weight: 600; }
+  .ms-pt-live-btn { font-size: 11px; font-weight: 700; color: var(--blue); background: var(--blue-bg); border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  .ms-pt-live-btn:hover { background: rgba(0,122,255,.16); }
+
+  .ms-pt-scenarios { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+  @media (max-width: 760px) { .ms-pt-scenarios { grid-template-columns: 1fr; } }
+  .ms-pt-scenario1 { background: #f0f7ff; border: 1px solid rgba(0,122,255,.18); border-radius: 8px; padding: 12px 14px; }
+  .ms-pt-scenario2 { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .ms-pt-scn-hdr { font-size: 11px; font-weight: 700; letter-spacing: .4px; color: var(--text2); margin-bottom: 10px; }
+  .ms-pt-level-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-top: 1px solid rgba(0,0,0,.06); }
+  .ms-pt-level-row:first-of-type { border-top: none; }
+  .ms-pt-level-main { display: flex; flex-direction: column; gap: 1px; }
+  .ms-pt-level-name { font-size: 12px; font-weight: 600; color: var(--text2); display: flex; align-items: center; gap: 4px; }
+  .ms-pt-level-price { font-size: 14px; font-weight: 700; }
+  .ms-pt-level-sub { font-size: 10.5px; color: var(--muted); }
+  .ms-pt-level-row.ms-pt-target { padding-left: 8px; border-left: 3px solid var(--green); background: rgba(52,199,89,.06); border-radius: 4px; }
+  .ms-pt-level-row.ms-pt-target .ms-pt-level-name { font-weight: 800; }
+  .ms-pt-level-row.ms-pt-target .ms-pt-level-price { color: #1d8a3b; font-size: 15px; }
+  .ms-pt-use-btn { font-size: 11px; font-weight: 700; color: var(--blue); background: rgba(255,255,255,.7); border: 1px solid rgba(0,122,255,.3); border-radius: 6px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  .ms-pt-use-btn:hover { background: var(--blue); color: #fff; }
+  .ms-pt-cluster2-row { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border2); }
+  .ms-pt-cluster2-row label { font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  .ms-pt-s1-note { font-size: 10.5px; color: #a05c00; margin-top: 6px; font-style: italic; }
+
+  .ms-pt-tip-wrap { position: relative; display: inline-flex; }
+  .ms-pt-tip-icon { font-size: 11px; color: var(--muted); cursor: pointer; }
+  .ms-pt-tip-bubble { display: none; position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%); background: #1d1d1f; color: #fff; font-size: 11px; line-height: 1.4; padding: 8px 10px; border-radius: 6px; max-width: 200px; width: max-content; z-index: 20; box-shadow: var(--shadow); }
+  .ms-pt-tip-wrap.open .ms-pt-tip-bubble { display: block; }
+  .ms-pt-tip-wrap:hover .ms-pt-tip-bubble { display: block; }
+
+  .ms-pt-s2-input-row { margin-bottom: 10px; }
+  .ms-pt-s2-checks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .ms-pt-s2-check { font-size: 11.5px; line-height: 1.4; padding: 6px 8px; border-radius: 6px; }
+  .ms-pt-s2-check.green  { background: rgba(52,199,89,.10);  color: #1d8a3b; }
+  .ms-pt-s2-check.yellow { background: rgba(255,204,0,.14);  color: #9a7600; }
+  .ms-pt-s2-check.red    { background: rgba(255,59,48,.10);  color: #c41f1f; }
+  .ms-pt-s2-check.grey   { background: rgba(142,142,147,.10); color: var(--muted); }
+  .ms-pt-s2-verdict { font-size: 12px; font-weight: 700; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px; line-height: 1.4; }
+  .ms-pt-s2-verdict.green     { background: rgba(52,199,89,.14);  color: #1d8a3b; }
+  .ms-pt-s2-verdict.ltgreen   { background: rgba(140,214,113,.22); color: #3e8e2f; }
+  .ms-pt-s2-verdict.yellow    { background: rgba(255,204,0,.18);  color: #9a7600; }
+  .ms-pt-s2-verdict.red       { background: rgba(255,59,48,.12);  color: #c41f1f; }
+  .ms-pt-s2-empty { font-size: 11.5px; color: var(--muted); font-style: italic; }
+
+  .ms-pt-agreement { margin: 12px 0; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; line-height: 1.45; }
+  .ms-pt-agreement.aligned     { background: rgba(52,199,89,.12);  color: #1d8a3b; border: 1px solid rgba(52,199,89,.3); }
+  .ms-pt-agreement.conservative,
+  .ms-pt-agreement.ambitious   { background: rgba(255,204,0,.16);  color: #9a7600; border: 1px solid rgba(255,204,0,.4); }
+  .ms-pt-agreement.toohigh     { background: var(--orange-bg);     color: #a05c00; border: 1px solid rgba(255,149,0,.35); }
+
+  .ms-pt-confirmed { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-top: 12px; }
+  .ms-pt-confirmed-hdr { font-size: 11px; font-weight: 700; letter-spacing: .4px; color: var(--text2); margin-bottom: 8px; }
+  .ms-pt-confirmed-pct { font-size: 13px; font-weight: 600; color: var(--text2); }
+  .ms-pt-confirmed-src { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .ms-pt-rr-box { margin-top: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 14px; }
+  @media (max-width: 560px) { .ms-pt-rr-box { grid-template-columns: 1fr; } }
+  .ms-pt-rr-cell { display: flex; flex-direction: column; gap: 2px; }
+  .ms-pt-rr-lbl { font-size: 10.5px; color: var(--muted); letter-spacing: .3px; }
+  .ms-pt-rr-val { font-size: 14px; font-weight: 700; }
+
+  .ms-ai-style-row { display: flex; gap: 8px; margin: 10px 0 14px; }
+  .ms-ai-style-btn { flex: 1; font-size: 12px; font-weight: 700; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border2); background: var(--surface); color: var(--text2); cursor: pointer; }
+  .ms-ai-style-btn.active { background: #000; color: #fff; border-color: #000; }
+
   /* ── Market Signals info modal ── */
   .ms-modal-overlay {
     position: fixed; inset: 0;
@@ -1710,6 +1793,11 @@
 
       <div class="config-grid" id="tj-stats" style="margin-bottom:16px"></div>
 
+      <div id="tj-tp-accuracy" style="display:none;margin-bottom:16px">
+        <div class="section-label" style="margin:0 0 8px" id="tj-tp-accuracy-title"></div>
+        <div class="config-grid" id="tj-tp-accuracy-grid" style="margin-top:0"></div>
+      </div>
+
       <div class="list-card" id="tj-list" style="max-height:420px;overflow-y:auto">
         <div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">Loading…</div>
       </div>
@@ -2181,6 +2269,121 @@
 
     </div>
 
+    <!-- Pre-Trade Checklist -->
+    <div class="ms-pt-panel" id="ms-pt-panel">
+      <div class="ms-pt-hdr">
+        <span class="ms-pt-title">✅ Pre-Trade Checklist</span>
+      </div>
+      <div class="ms-pt-subtitle">Work through every item before you place a trade. Switching coins starts a fresh checklist.</div>
+
+      <!-- Item 1 — Signal Alignment -->
+      <div class="ms-pt-item">
+        <div class="ms-pt-item-hdr">
+          <span class="ms-pt-check" id="ms-pt-check-1">✓</span>
+          <div>
+            <div class="ms-pt-item-num">ITEM 1</div>
+            <div class="ms-pt-item-label">Signal Alignment</div>
+          </div>
+        </div>
+        <div class="ms-pt-item-sub" id="ms-pt-signal-sub">Waiting on Master Verdict…</div>
+      </div>
+
+      <!-- Item 2 — Entry Price -->
+      <div class="ms-pt-item">
+        <div class="ms-pt-item-hdr">
+          <span class="ms-pt-check" id="ms-pt-check-2">✓</span>
+          <div>
+            <div class="ms-pt-item-num">ITEM 2</div>
+            <div class="ms-pt-item-label">Entry Price</div>
+          </div>
+        </div>
+        <div class="ms-pt-row">
+          <div class="ms-pt-input-wrap"><span>$</span><input type="number" min="0" id="ms-pt-entry" placeholder="e.g. 65420" oninput="ptOnEntryInput()"></div>
+          <button class="ms-pt-live-btn" onclick="ptUseLivePrice()">Use live price</button>
+        </div>
+      </div>
+
+      <!-- Item 3 — Take Profit -->
+      <div class="ms-pt-item">
+        <div class="ms-pt-item-hdr">
+          <span class="ms-pt-check" id="ms-pt-check-3">✓</span>
+          <div>
+            <div class="ms-pt-item-num">ITEM 3</div>
+            <div class="ms-pt-item-label">Take Profit</div>
+          </div>
+        </div>
+
+        <div class="ms-pt-scenarios">
+          <div class="ms-pt-scenario1">
+            <div class="ms-pt-scn-hdr">WHAT THE MARKET IS OFFERING</div>
+            <div id="ms-pt-s1-levels"></div>
+            <div class="ms-pt-cluster2-row">
+              <label for="ms-pt-cluster2">Second cluster ABOVE price (optional, refines Stretch TP):
+                <div class="ms-pt-input-wrap" style="margin-top:4px"><span>$</span><input type="number" min="0" id="ms-pt-cluster2" placeholder="e.g. 69200" oninput="ptRecalcAll()"></div>
+              </label>
+            </div>
+          </div>
+
+          <div class="ms-pt-scenario2">
+            <div class="ms-pt-scn-hdr">IS YOUR TARGET ACHIEVABLE?</div>
+            <div class="ms-pt-s2-input-row">
+              <div class="ms-pt-input-wrap"><input type="number" min="0" step="0.1" id="ms-pt-s2-pct" placeholder="Desired TP %" oninput="ptRecalcAll()"><span>%</span></div>
+            </div>
+            <div class="ms-pt-s2-checks" id="ms-pt-s2-checks"></div>
+            <div id="ms-pt-s2-verdict"></div>
+            <button class="ms-pt-use-btn" id="ms-pt-s2-use-btn" style="display:none" onclick="ptUseScenario2()">Use this as my TP</button>
+          </div>
+        </div>
+
+        <div class="ms-pt-agreement" id="ms-pt-agreement" style="display:none"></div>
+
+        <div class="ms-pt-confirmed">
+          <div class="ms-pt-confirmed-hdr">CONFIRMED TP</div>
+          <div class="ms-pt-row">
+            <div class="ms-pt-input-wrap"><span>$</span><input type="number" min="0" id="ms-pt-confirmed" placeholder="0.00" oninput="ptOnConfirmedManualEdit()"></div>
+            <span class="ms-pt-confirmed-pct" id="ms-pt-confirmed-pct"></span>
+          </div>
+          <div class="ms-pt-confirmed-src" id="ms-pt-confirmed-src">Pick a level from either scenario, or type your own.</div>
+        </div>
+      </div>
+
+      <!-- Item 4 — Stop Loss -->
+      <div class="ms-pt-item">
+        <div class="ms-pt-item-hdr">
+          <span class="ms-pt-check" id="ms-pt-check-4">✓</span>
+          <div>
+            <div class="ms-pt-item-num">ITEM 4</div>
+            <div class="ms-pt-item-label">Stop Loss</div>
+          </div>
+        </div>
+        <div class="ms-pt-row">
+          <div class="ms-pt-input-wrap"><span>$</span><input type="number" min="0" id="ms-pt-stop" placeholder="e.g. 62000" oninput="ptRecalcAll()"></div>
+          <span class="ms-pt-derived" id="ms-pt-stop-pct"></span>
+        </div>
+      </div>
+
+      <!-- Item 5 — Position Size -->
+      <div class="ms-pt-item">
+        <div class="ms-pt-item-hdr">
+          <span class="ms-pt-check" id="ms-pt-check-5">✓</span>
+          <div>
+            <div class="ms-pt-item-num">ITEM 5</div>
+            <div class="ms-pt-item-label">Position Size</div>
+          </div>
+        </div>
+        <div class="ms-pt-row">
+          <div class="ms-pt-input-wrap"><span>$</span><input type="number" min="0" id="ms-pt-size" placeholder="e.g. 1500" oninput="ptRecalcAll()"></div>
+        </div>
+      </div>
+
+      <!-- Risk:Reward summary -->
+      <div class="ms-pt-rr-box" id="ms-pt-rr-box">
+        <div class="ms-pt-rr-cell"><span class="ms-pt-rr-lbl">RISK</span><span class="ms-pt-rr-val" id="ms-pt-rr-risk">—</span></div>
+        <div class="ms-pt-rr-cell"><span class="ms-pt-rr-lbl">REWARD</span><span class="ms-pt-rr-val" id="ms-pt-rr-reward">—</span></div>
+        <div class="ms-pt-rr-cell"><span class="ms-pt-rr-lbl">R : R</span><span class="ms-pt-rr-val" id="ms-pt-rr-ratio">—</span></div>
+      </div>
+    </div>
+
     <!-- DCA Model Level Visualizer -->
     <div class="ms-dca-panel" id="ms-dca-panel">
       <div class="ms-dca-hdr">
@@ -2230,6 +2433,11 @@
 
       <div class="ms-ai-low-warn" id="ms-ai-low-warn" style="display:none">
         ⚠️ Limited data — fill in more Layer 1 manual cards for a more accurate analysis.
+      </div>
+
+      <div class="ms-ai-style-row">
+        <button class="ms-ai-style-btn active" id="ms-ai-style-professional" onclick="setAiStyle('professional')">Professional</button>
+        <button class="ms-ai-style-btn" id="ms-ai-style-plain" onclick="setAiStyle('plain')">Plain English</button>
       </div>
 
       <button class="ms-ai-gen-btn" id="ms-ai-gen-btn" onclick="generateAiAnalysis()">⚡ Generate Professional Analysis</button>
@@ -2502,6 +2710,7 @@ function selectMsCoin(coin, btn) {
   loadLayer3();
   renderMsChart(coin);
   liqRestoreValues();
+  ptResetChecklist();
   if (_dcaSelectedId) calcDcaLevels(false);
 }
 
@@ -4229,6 +4438,22 @@ async function loadTestnetJournal(){
     <span class="config-key">Best Combo</span><span class="config-val" style="color:var(--blue)">${stats.best_combo ? esc(stats.best_combo.combo) + ' (' + fmt(stats.best_combo.win_rate_pct,0) + '%)' : '—'}</span>
     <span class="config-key">Worst Combo</span><span class="config-val" style="color:var(--orange)">${stats.worst_combo ? esc(stats.worst_combo.combo) + ' (' + fmt(stats.worst_combo.win_rate_pct,0) + '%)' : '—'}</span>`;
 
+  const tpAcc   = data.tp_accuracy;
+  const tpAccEl = document.getElementById('tj-tp-accuracy');
+  if(tpAcc){
+    tpAccEl.style.display = '';
+    document.getElementById('tj-tp-accuracy-title').textContent = `🎯 TP Accuracy Over ${tpAcc.total_trades} Trades`;
+    document.getElementById('tj-tp-accuracy-grid').innerHTML = `
+      <span class="config-key">Reached Minimum</span><span class="config-val" style="color:var(--green)">${fmt(tpAcc.reached_minimum_pct,0)}%</span>
+      <span class="config-key">Reached Target</span><span class="config-val" style="color:var(--blue)">${fmt(tpAcc.reached_target_pct,0)}%</span>
+      <span class="config-key">Reached Stretch</span><span class="config-val" style="color:var(--orange)">${fmt(tpAcc.reached_stretch_pct,0)}%</span>
+      <span class="config-key">Avg Actual Exit</span><span class="config-val">${fmtPct(tpAcc.avg_actual_pct)}</span>
+      <span class="config-key">Avg Target TP</span><span class="config-val">${fmtPct(tpAcc.avg_target_pct)}</span>
+      <span class="config-key">Best-Performing Level</span><span class="config-val" style="color:var(--green)">${tpAcc.best_level ? esc(tpAcc.best_level) : '—'}</span>`;
+  } else {
+    tpAccEl.style.display = 'none';
+  }
+
   const listEl = document.getElementById('tj-list');
   if(!entries.length){
     listEl.innerHTML = `<div class="list-item" style="cursor:default;color:var(--muted);font-size:13px">` +
@@ -5031,6 +5256,8 @@ function renderL3Atr(d) {
   if (!d || d.error) {
     if (usd)  usd.textContent  = '—';
     if (pill) { pill.textContent = 'Unavailable'; pill.className = 'ms-pill grey'; }
+    _l3AtrPct = null;
+    ptRecalcAll();
     return;
   }
   if (usd)  usd.textContent  = d.atr_usd;
@@ -5038,6 +5265,8 @@ function renderL3Atr(d) {
   if (pill) { pill.textContent = d.label; pill.className = 'ms-pill ' + d.color; }
   if (note) note.textContent  = d.dca_note;
   if (spk && d.atr_history && d.atr_history.length > 1) spk.innerHTML = msSparkline(d.atr_history);
+  _l3AtrPct = d.atr_pct;
+  ptRecalcAll();
 }
 
 function renderL3Verdict(v, atr) {
@@ -5055,6 +5284,7 @@ function renderL3Verdict(v, atr) {
     if (badge) { badge.textContent = '— —'; badge.className = 'ms-layer-badge grey'; }
     _l3VerdictCode = null;
     updateMasterSummary();
+    ptRecalcAll();
     return;
   }
   if (box)   box.className   = 'ms-verdict ' + v.color;
@@ -5069,6 +5299,7 @@ function renderL3Verdict(v, atr) {
   }
   _l3VerdictCode = v.code;
   updateMasterSummary();
+  ptRecalcAll();
 }
 
 function renderL3FallbackError() {
@@ -5080,6 +5311,7 @@ function renderL3FallbackError() {
   if (lbl) lbl.textContent = 'Unable to load';
   _l3VerdictCode = null;
   updateMasterSummary();
+  ptRecalcAll();
 }
 
 function updateL3Timestamp(ts) {
@@ -5142,6 +5374,7 @@ function updateMasterSummary() {
   }
   el.textContent = text;
   el.className   = 'ms-master-verdict ' + cls;
+  ptUpdateSignalAlignment();
 }
 
 // ── DCA Model Level Visualizer ───────────────────────────────────────────────
@@ -5399,9 +5632,432 @@ function renderDcaApproaching(data) {
   el.style.display = '';
 }
 
+// ── Pre-Trade Checklist ────────────────────────────────────────────────────────
+
+let _l3AtrPct          = null;
+let _ptEntryTouched    = false;
+let _ptConfirmedTouched = false;
+let _ptConfirmedSource = null;   // 'scenario1' | 'scenario2' | 'manual' | null
+let _ptConfirmedDetail = null;   // levelKey for scenario1, desired_pct for scenario2
+let _ptS1Levels        = null;
+let _ptS2Result        = null;
+let _ptSyncTimer       = null;
+
+function ptCheckSet(n, on) {
+  const el = document.getElementById(`ms-pt-check-${n}`);
+  if (el) el.classList.toggle('on', !!on);
+}
+
+function ptGetEntryPrice() {
+  const el = document.getElementById('ms-pt-entry');
+  const v  = el ? parseFloat(el.value) : NaN;
+  if (!isNaN(v) && v > 0) return v;
+  return (typeof _l3LatestPrice === 'number' && _l3LatestPrice > 0) ? _l3LatestPrice : null;
+}
+
+function ptUseLivePrice() {
+  const el = document.getElementById('ms-pt-entry');
+  if (el && typeof _l3LatestPrice === 'number' && _l3LatestPrice > 0) {
+    el.value = _l3LatestPrice;
+    ptOnEntryInput();
+  }
+}
+
+function ptOnEntryInput() {
+  const el = document.getElementById('ms-pt-entry');
+  const had = _ptEntryTouched;
+  const v   = el ? parseFloat(el.value) : NaN;
+  const justFilled = !had && !isNaN(v) && v > 0;
+  if (justFilled) _ptEntryTouched = true;
+  ptRecalcAll();
+  if (justFilled && !_ptConfirmedTouched && _ptS1Levels && _ptS1Levels.target) {
+    ptUseLevel('target');
+  }
+}
+
+function ptToggleTip(event, el) {
+  event.stopPropagation();
+  const wasOpen = el.classList.contains('open');
+  document.querySelectorAll('.ms-pt-tip-wrap.open').forEach(w => w.classList.remove('open'));
+  if (!wasOpen) el.classList.add('open');
+}
+document.addEventListener('click', () => {
+  document.querySelectorAll('.ms-pt-tip-wrap.open').forEach(w => w.classList.remove('open'));
+});
+
+function ptLevelRowHtml(key, name, lvl, tip) {
+  const isTarget = key === 'target';
+  return `<div class="ms-pt-level-row${isTarget ? ' ms-pt-target' : ''}">
+    <div class="ms-pt-level-main">
+      <div class="ms-pt-level-name">${isTarget ? '★ ' : ''}${esc(name)}
+        <span class="ms-pt-tip-wrap" onclick="ptToggleTip(event,this)"><span class="ms-pt-tip-icon">ⓘ</span><span class="ms-pt-tip-bubble">${esc(tip)}</span></span>
+      </div>
+      <div class="ms-pt-level-price">${fmtP(lvl.price)} <span style="font-weight:600;font-size:11px;color:var(--muted)">(${lvl.pct >= 0 ? '+' : ''}${lvl.pct.toFixed(2)}%)</span></div>
+      <div class="ms-pt-level-sub">${esc(lvl.label)}</div>
+    </div>
+    <button class="ms-pt-use-btn" onclick="ptUseLevel('${key}')">Use this</button>
+  </div>`;
+}
+
+const PT_TOOLTIPS = {
+  minimum: 'This is the smallest realistic bite — like the smallest fish at the market stall. A normal candle move would get you here.',
+  target:  'This is the fish the market most likely has in stock today — a realistic, well-supported target.',
+  stretch: 'This is the biggest fish in the market — possible on a strong trend day, but not guaranteed to be available.',
+};
+
+function ptRecalcScenario1() {
+  const wrap = document.getElementById('ms-pt-s1-levels');
+  if (!wrap) return;
+  const entry  = ptGetEntryPrice();
+  const atrPct = _l3AtrPct;
+  if (entry == null || atrPct == null) {
+    wrap.innerHTML = `<div class="ms-pt-s2-empty">Enter an entry price and wait for ATR data to load…</div>`;
+    _ptS1Levels = null;
+    return;
+  }
+
+  const clusterAboveEl = document.getElementById('ms-ai-liq-above');
+  const clusterAbove   = clusterAboveEl && parseFloat(clusterAboveEl.value) > 0 ? parseFloat(clusterAboveEl.value) : null;
+  const cluster2El     = document.getElementById('ms-pt-cluster2');
+  const cluster2Above  = cluster2El && parseFloat(cluster2El.value) > 0 ? parseFloat(cluster2El.value) : null;
+
+  const minimum = { price: entry * (1 + atrPct / 100), label: '1× ATR — normal candle range' };
+
+  let target;
+  if (clusterAbove) {
+    target = { price: clusterAbove * 0.995, label: 'Nearest cluster above - 0.5%' };
+  } else {
+    target = {
+      price: entry * (1 + atrPct * 2.5 / 100),
+      label: '2.5× ATR — estimated target',
+      note:  'Enter liquidation cluster above in Layer 2 for a more accurate target',
+    };
+  }
+
+  let stretch;
+  if (cluster2Above) {
+    stretch = { price: cluster2Above * 0.995, label: 'Second cluster above - 0.5%' };
+  } else {
+    stretch = { price: entry * (1 + atrPct * 4 / 100), label: '4× ATR — strong trend target' };
+  }
+
+  for (const lvl of [minimum, target, stretch]) lvl.pct = (lvl.price - entry) / entry * 100;
+  _ptS1Levels = { minimum, target, stretch };
+
+  wrap.innerHTML = ptLevelRowHtml('minimum', 'Minimum', minimum, PT_TOOLTIPS.minimum) +
+                    ptLevelRowHtml('target',  'Target',  target,  PT_TOOLTIPS.target) +
+                    ptLevelRowHtml('stretch', 'Stretch', stretch, PT_TOOLTIPS.stretch) +
+                    (target.note ? `<div class="ms-pt-s1-note">${esc(target.note)}</div>` : '');
+}
+
+function ptUseLevel(key) {
+  if (!_ptS1Levels || !_ptS1Levels[key]) return;
+  ptSetConfirmed(_ptS1Levels[key].price, 'scenario1', key);
+}
+
+function ptRecalcScenario2() {
+  const checksEl  = document.getElementById('ms-pt-s2-checks');
+  const verdictEl = document.getElementById('ms-pt-s2-verdict');
+  const useBtn    = document.getElementById('ms-pt-s2-use-btn');
+  const pctEl     = document.getElementById('ms-pt-s2-pct');
+  const theirPct  = pctEl ? parseFloat(pctEl.value) : NaN;
+
+  if (isNaN(theirPct) || theirPct <= 0) {
+    if (checksEl)  checksEl.innerHTML = '';
+    if (verdictEl) verdictEl.innerHTML = `<div class="ms-pt-s2-empty">Type a target % to see if it's achievable.</div>`;
+    if (useBtn)    useBtn.style.display = 'none';
+    _ptS2Result = null;
+    return;
+  }
+
+  const entry  = ptGetEntryPrice();
+  const atrPct = _l3AtrPct;
+  const clusterAboveEl = document.getElementById('ms-ai-liq-above');
+  const clusterAbove   = clusterAboveEl && parseFloat(clusterAboveEl.value) > 0 ? parseFloat(clusterAboveEl.value) : null;
+
+  let greenCount = 0;
+  const checks = [];
+
+  if (clusterAbove && entry) {
+    const clusterDistPct = (clusterAbove - entry) / entry * 100;
+    if (theirPct <= clusterDistPct) {
+      greenCount++;
+      checks.push({ status: 'green', text: `✅ A liquidation cluster sits at ${clusterDistPct.toFixed(2)}% — your target is within mechanical range` });
+    } else {
+      checks.push({ status: 'yellow', text: `⚠️ No cluster target at this level — the nearest cluster sits at ${clusterDistPct.toFixed(2)}%, below your ${theirPct.toFixed(2)}% target, so there's no clear liquidity pool to fuel a move that far` });
+    }
+  } else {
+    checks.push({ status: 'grey', text: '— Enter cluster above in Layer 2 for cluster analysis' });
+  }
+
+  if (atrPct) {
+    const atrMultiple = theirPct / atrPct;
+    if (atrMultiple <= 2) {
+      greenCount++;
+      checks.push({ status: 'green', text: `✅ ${theirPct.toFixed(2)}% is ${atrMultiple.toFixed(1)}× your average candle range — comfortably achievable` });
+    } else if (atrMultiple <= 4) {
+      checks.push({ status: 'yellow', text: `🟡 ${theirPct.toFixed(2)}% is ${atrMultiple.toFixed(1)}× your average candle range — possible but needs a strong move` });
+    } else {
+      checks.push({ status: 'red', text: `❌ ${theirPct.toFixed(2)}% is ${atrMultiple.toFixed(1)}× your average candle range — very unlikely without a major catalyst` });
+    }
+  } else {
+    checks.push({ status: 'grey', text: '— ATR data loading' });
+  }
+
+  const l3 = _l3VerdictCode;
+  if (l3 === 'LONG' || l3 === 'WEAK_LONG') {
+    greenCount++;
+    checks.push({ status: 'green', text: `✅ Momentum (Layer 3: ${l3}) supports upside continuation` });
+  } else if (l3 === 'NEUTRAL') {
+    checks.push({ status: 'yellow', text: '🟡 Momentum (Layer 3: NEUTRAL) is not currently confirming a move in either direction' });
+  } else if (l3 === 'SHORT' || l3 === 'WEAK_SHORT') {
+    checks.push({ status: 'red', text: `❌ Momentum (Layer 3: ${l3}) is currently against this target` });
+  } else {
+    checks.push({ status: 'grey', text: '— Layer 3 data loading' });
+  }
+
+  if (checksEl) checksEl.innerHTML = checks.map(c => `<div class="ms-pt-s2-check ${c.status}">${esc(c.text)}</div>`).join('');
+
+  const s1target = _ptS1Levels ? _ptS1Levels.target : null;
+  let verdict;
+  if (greenCount === 3) {
+    verdict = { status: 'green', text: '✅ Achievable — the cluster, volatility, and momentum data all support this target.' };
+  } else if (greenCount === 2) {
+    verdict = { status: 'ltgreen', text: '🟡 Possible but not ideal — two of three checks support this target.' };
+  } else if (greenCount === 1) {
+    verdict = { status: 'yellow', text: '⚠️ A stretch — only one of three checks supports this target. Consider using the Market Target instead.' };
+  } else {
+    const targetPctStr = s1target ? `${s1target.pct >= 0 ? '+' : ''}${s1target.pct.toFixed(2)}%` : 'a lower target';
+    verdict = { status: 'red', text: `❌ Unlikely — none of the checks support this target. The market is offering ${targetPctStr} — consider accepting that instead.` };
+  }
+
+  if (verdictEl) verdictEl.innerHTML = `<div class="ms-pt-s2-verdict ${verdict.status}">${esc(verdict.text)}</div>`;
+  if (useBtn) useBtn.style.display = '';
+
+  _ptS2Result = { desired_pct: theirPct, price: entry ? entry * (1 + theirPct / 100) : null, checks, green_count: greenCount, verdict };
+}
+
+function ptUseScenario2() {
+  if (!_ptS2Result || !_ptS2Result.price) return;
+  ptSetConfirmed(_ptS2Result.price, 'scenario2', _ptS2Result.desired_pct);
+}
+
+function ptUpdateAgreement() {
+  const box = document.getElementById('ms-pt-agreement');
+  if (!box) return;
+  const s1 = _ptS1Levels, s2 = _ptS2Result;
+  if (!s1 || !s1.target || !s2) { box.style.display = 'none'; return; }
+
+  const diff = s2.desired_pct - s1.target.pct;
+  let cls, text;
+  if (Math.abs(diff) <= 0.5) {
+    cls = 'aligned';
+    text = '✅ ALIGNED — Your target matches what the market is offering. Scenario 1 and Scenario 2 agree.';
+  } else if (diff < -0.5) {
+    cls = 'conservative';
+    text = '🟡 CONSERVATIVE — Your target is below what the market may offer. Safe, but you may be leaving profit on the table.';
+  } else if (s2.green_count >= 2) {
+    cls = 'ambitious';
+    text = '🟡 AMBITIOUS BUT SUPPORTED — Your target is higher than the market average, but the data (cluster/ATR/momentum) backs it up.';
+  } else {
+    cls = 'toohigh';
+    text = '🟠 TARGET LIKELY TOO HIGH — Your target is well above what the data supports. Consider scaling back expectations.';
+  }
+
+  box.className = `ms-pt-agreement ${cls}`;
+  box.textContent = text;
+  box.style.display = '';
+}
+
+function ptSetConfirmed(price, source, detail) {
+  const el = document.getElementById('ms-pt-confirmed');
+  if (el) el.value = Math.round(price * 100) / 100;
+  _ptConfirmedTouched = true;
+  _ptConfirmedSource  = source;
+  _ptConfirmedDetail  = detail;
+  ptRecalcAll();
+}
+
+function ptOnConfirmedManualEdit() {
+  _ptConfirmedTouched = true;
+  _ptConfirmedSource  = 'manual';
+  _ptConfirmedDetail  = null;
+  ptRecalcAll();
+}
+
+function ptRecalcConfirmedDisplay() {
+  const pctEl = document.getElementById('ms-pt-confirmed-pct');
+  const srcEl = document.getElementById('ms-pt-confirmed-src');
+  const el    = document.getElementById('ms-pt-confirmed');
+  const entry = ptGetEntryPrice();
+  const val   = el ? parseFloat(el.value) : NaN;
+
+  if (pctEl) {
+    if (!isNaN(val) && val > 0 && entry) {
+      const pct = (val - entry) / entry * 100;
+      pctEl.textContent = `= ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+    } else {
+      pctEl.textContent = '';
+    }
+  }
+  if (srcEl) {
+    if (_ptConfirmedSource === 'scenario1') {
+      srcEl.textContent = 'Using: Market Target (Scenario 1)';
+    } else if (_ptConfirmedSource === 'scenario2') {
+      const p = Number(_ptConfirmedDetail);
+      srcEl.textContent = `Using: Your ${!isNaN(p) ? p.toFixed(2) : '?'}% Target (Scenario 2)`;
+    } else if (_ptConfirmedSource === 'manual') {
+      srcEl.textContent = 'Using: Manual entry';
+    } else {
+      srcEl.textContent = 'Pick a level from either scenario, or type your own.';
+    }
+  }
+}
+
+function ptUpdateStopDerived() {
+  const el    = document.getElementById('ms-pt-stop-pct');
+  if (!el) return;
+  const entry = ptGetEntryPrice();
+  const stopEl = document.getElementById('ms-pt-stop');
+  const stop   = stopEl ? parseFloat(stopEl.value) : NaN;
+  if (entry && !isNaN(stop) && stop > 0) {
+    const pct = (stop - entry) / entry * 100;
+    el.textContent = `= ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+  } else {
+    el.textContent = '';
+  }
+}
+
+function ptRecalcRR() {
+  const riskEl      = document.getElementById('ms-pt-rr-risk');
+  const rewardEl    = document.getElementById('ms-pt-rr-reward');
+  const ratioEl     = document.getElementById('ms-pt-rr-ratio');
+  const entry       = ptGetEntryPrice();
+  const stopEl      = document.getElementById('ms-pt-stop');
+  const stop        = stopEl ? parseFloat(stopEl.value) : NaN;
+  const confirmedEl = document.getElementById('ms-pt-confirmed');
+  const tp          = confirmedEl ? parseFloat(confirmedEl.value) : NaN;
+  const sizeEl      = document.getElementById('ms-pt-size');
+  const size        = sizeEl ? parseFloat(sizeEl.value) : NaN;
+
+  if (!entry || isNaN(stop) || stop <= 0 || isNaN(tp) || tp <= 0) {
+    if (riskEl)   riskEl.textContent   = '—';
+    if (rewardEl) rewardEl.textContent = '—';
+    if (ratioEl)  ratioEl.textContent  = '—';
+    return;
+  }
+
+  const riskPct   = (entry - stop) / entry * 100;
+  const rewardPct = (tp - entry) / entry * 100;
+  const sizeVal   = (!isNaN(size) && size > 0) ? size : null;
+
+  if (riskEl)   riskEl.textContent   = `${riskPct.toFixed(2)}%`   + (sizeVal ? ` (-$${Math.abs(sizeVal * riskPct / 100).toFixed(0)})` : '');
+  if (rewardEl) rewardEl.textContent = `${rewardPct.toFixed(2)}%` + (sizeVal ? ` (+$${Math.abs(sizeVal * rewardPct / 100).toFixed(0)})` : '');
+  if (ratioEl)  ratioEl.textContent  = riskPct > 0 ? `1 : ${(rewardPct / riskPct).toFixed(2)}` : '—';
+}
+
+function ptUpdateSignalAlignment() {
+  const sub  = document.getElementById('ms-pt-signal-sub');
+  const mvEl = document.getElementById('ms-master-verdict');
+  const mv   = mvEl ? mvEl.textContent.trim() : '';
+  ptCheckSet(1, /ALIGNED/.test(mv));
+  if (sub) sub.textContent = mv ? `Master Verdict: ${mv}` : 'Waiting on Master Verdict…';
+}
+
+function ptUpdateChecks() {
+  const entry = ptGetEntryPrice();
+
+  const entryEl = document.getElementById('ms-pt-entry');
+  const entryVal = entryEl ? parseFloat(entryEl.value) : NaN;
+  ptCheckSet(2, !isNaN(entryVal) && entryVal > 0);
+
+  const confirmedEl = document.getElementById('ms-pt-confirmed');
+  const confirmedVal = confirmedEl ? parseFloat(confirmedEl.value) : NaN;
+  ptCheckSet(3, !isNaN(confirmedVal) && confirmedVal > 0 && entry != null && confirmedVal > entry);
+
+  const stopEl = document.getElementById('ms-pt-stop');
+  const stopVal = stopEl ? parseFloat(stopEl.value) : NaN;
+  ptCheckSet(4, !isNaN(stopVal) && stopVal > 0 && entry != null && stopVal < entry);
+
+  const sizeEl = document.getElementById('ms-pt-size');
+  const sizeVal = sizeEl ? parseFloat(sizeEl.value) : NaN;
+  ptCheckSet(5, !isNaN(sizeVal) && sizeVal > 0);
+}
+
+function collectPreTradePlan() {
+  const entry = ptGetEntryPrice();
+  const confirmedEl    = document.getElementById('ms-pt-confirmed');
+  const confirmedVal   = confirmedEl ? parseFloat(confirmedEl.value) : NaN;
+  const confirmedPrice = (!isNaN(confirmedVal) && confirmedVal > 0) ? confirmedVal : null;
+  const confirmedPct   = (confirmedPrice && entry) ? (confirmedPrice - entry) / entry * 100 : null;
+
+  let sourceLabel = null;
+  if (_ptConfirmedSource === 'scenario1') sourceLabel = 'Market Target (Scenario 1)';
+  else if (_ptConfirmedSource === 'scenario2') sourceLabel = `Your ${!isNaN(Number(_ptConfirmedDetail)) ? Number(_ptConfirmedDetail).toFixed(2) : '?'}% Target (Scenario 2)`;
+  else if (_ptConfirmedSource === 'manual') sourceLabel = 'Manual entry';
+
+  const agreementBox  = document.getElementById('ms-pt-agreement');
+  const agreementText = (agreementBox && agreementBox.style.display !== 'none') ? agreementBox.textContent : null;
+
+  const numVal = (id) => { const el = document.getElementById(id); const n = el ? parseFloat(el.value) : NaN; return (!isNaN(n) && n > 0) ? n : null; };
+
+  return {
+    entry_price: entry,
+    atr_pct:     _l3AtrPct,
+    scenario1:   _ptS1Levels,
+    scenario2:   _ptS2Result,
+    confirmed: {
+      price: confirmedPrice,
+      pct:   confirmedPct,
+      source: _ptConfirmedSource,
+      source_label: sourceLabel,
+    },
+    agreement_text: agreementText,
+    stop_loss:      numVal('ms-pt-stop'),
+    position_size:  numVal('ms-pt-size'),
+  };
+}
+
+function ptSyncPlanToServer() {
+  clearTimeout(_ptSyncTimer);
+  _ptSyncTimer = setTimeout(() => {
+    api('/api/checklist/tp-plan', 'POST', { coin: msCoin, plan: collectPreTradePlan() }).catch(() => {});
+  }, 600);
+}
+
+function ptRecalcAll() {
+  ptUpdateSignalAlignment();
+  ptRecalcScenario1();
+  ptRecalcScenario2();
+  ptUpdateAgreement();
+  ptRecalcConfirmedDisplay();
+  ptUpdateStopDerived();
+  ptRecalcRR();
+  ptUpdateChecks();
+  ptSyncPlanToServer();
+}
+
+function ptResetChecklist() {
+  _ptEntryTouched     = false;
+  _ptConfirmedTouched = false;
+  _ptConfirmedSource  = null;
+  _ptConfirmedDetail  = null;
+  _ptS1Levels         = null;
+  _ptS2Result         = null;
+  ['ms-pt-entry', 'ms-pt-cluster2', 'ms-pt-s2-pct', 'ms-pt-confirmed', 'ms-pt-stop', 'ms-pt-size'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  [1, 2, 3, 4, 5].forEach(n => ptCheckSet(n, false));
+  const agreementBox = document.getElementById('ms-pt-agreement');
+  if (agreementBox) agreementBox.style.display = 'none';
+  ptRecalcAll();
+}
+
 // ── AI Analysis ──────────────────────────────────────────────────────────────
 
 let _l3LatestPrice = null;
+let _aiStyle = 'professional';
 
 function aiEsc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -5471,6 +6127,7 @@ function liqSaveValues() {
   } catch(e) {}
   liqUpdateSavedIndicator();
   if (_dcaSelectedId) calcDcaLevels(false);
+  ptRecalcAll();
 }
 
 function liqRestoreValues() {
@@ -5481,6 +6138,7 @@ function liqRestoreValues() {
     if (la) la.value = localStorage.getItem(liqKey(msCoin,'above')) || '';
   } catch(e) {}
   liqUpdateSavedIndicator();
+  ptRecalcAll();
 }
 
 function liqUpdateSavedIndicator() {
@@ -5611,6 +6269,8 @@ function collectAiPayload() {
     layer1:         collectL1AiData(),
     layer2:         l2,
     layer3:         collectL3AiData(),
+    style:          _aiStyle,
+    pre_trade_plan: collectPreTradePlan(),
   };
   if (_dcaLevelsData && _dcaSelectedId) {
     const model = _dcaModels.find(m => m.id === _dcaSelectedId);
@@ -5631,6 +6291,20 @@ function collectAiPayload() {
     };
   }
   return payload;
+}
+
+function ptAiGenLabel() {
+  return _aiStyle === 'plain' ? '⚡ Generate Plain English Analysis' : '⚡ Generate Professional Analysis';
+}
+
+function setAiStyle(style) {
+  _aiStyle = style;
+  const profBtn  = document.getElementById('ms-ai-style-professional');
+  const plainBtn = document.getElementById('ms-ai-style-plain');
+  if (profBtn)  profBtn.classList.toggle('active', style === 'professional');
+  if (plainBtn) plainBtn.classList.toggle('active', style === 'plain');
+  const genBtn = document.getElementById('ms-ai-gen-btn');
+  if (genBtn && !genBtn.disabled) genBtn.textContent = ptAiGenLabel();
 }
 
 async function generateAiAnalysis() {
@@ -5665,7 +6339,7 @@ async function generateAiAnalysis() {
     output.classList.add('visible');
   } finally {
     if (overlay) overlay.style.display = 'none';
-    if (btn) { btn.disabled = false; btn.textContent = '⚡ Generate Professional Analysis'; }
+    if (btn) { btn.disabled = false; btn.textContent = ptAiGenLabel(); }
     const wrap = document.getElementById('ms-ai-output-wrap');
     if (wrap) wrap.style.minHeight = '';
   }
@@ -5679,6 +6353,7 @@ loadLayer1();
 loadLayer3();
 renderMsChart(msCoin);
 liqRestoreValues();
+ptRecalcAll();
 loadDcaModels();
 initLayerCollapseState();
 refreshRunning();

@@ -95,6 +95,10 @@ _btc_dom_history: list = []  # [(timestamp, btc_dominance_pct), ...] rolling 48h
 # _track_testnet_journal() to detect a completed trade (see core/testnet_journal.py)
 _testnet_active_snapshot: dict = {}
 
+# coin -> latest Pre-Trade Checklist TP plan (see collectPreTradePlan() in
+# index.html), consumed once by _track_testnet_journal() when a trade closes
+_tp_plan_cache: dict = {}
+
 
 # ── Loaders ───────────────────────────────────────────────────────────────────
 
@@ -309,6 +313,34 @@ def _signal_snapshot(symbol: str) -> dict:
     return {"l1_verdict": l1, "l2_verdict": l2, "l3_verdict": l3, "master": master}
 
 
+def _build_tp_analysis(plan: dict, exit_price: float, pnl_pct: float) -> dict:
+    """Compare a Pre-Trade Checklist TP plan (see _tp_plan_cache) to how a closed
+    testnet trade actually played out, for the Learning Journal's TP accuracy stats."""
+    s1_target  = (plan.get("scenario1") or {}).get("target") or {}
+    s1_minimum = (plan.get("scenario1") or {}).get("minimum") or {}
+    s1_stretch = (plan.get("scenario1") or {}).get("stretch") or {}
+    s2         = plan.get("scenario2") or {}
+    confirmed  = plan.get("confirmed") or {}
+
+    confirmed_tp_pct = confirmed.get("pct")
+    tp_accuracy = round(pnl_pct / confirmed_tp_pct * 100, 1) if confirmed_tp_pct else None
+
+    return {
+        "scenario1_target_pct": s1_target.get("pct"),
+        "scenario1_target_price": s1_target.get("price"),
+        "scenario2_desired_pct": s2.get("desired_pct"),
+        "scenario2_verdict": (s2.get("verdict") or {}).get("text"),
+        "confirmed_tp": confirmed.get("price"),
+        "confirmed_tp_pct": confirmed_tp_pct,
+        "actual_exit": exit_price,
+        "actual_pct": pnl_pct,
+        "reached_minimum": (exit_price >= s1_minimum["price"]) if s1_minimum.get("price") else None,
+        "reached_target": (exit_price >= s1_target["price"]) if s1_target.get("price") else None,
+        "reached_stretch": (exit_price >= s1_stretch["price"]) if s1_stretch.get("price") else None,
+        "tp_accuracy": tp_accuracy,
+    }
+
+
 def _track_testnet_journal(cfg: CoinConfig, state) -> None:
     """Detect a completed TESTNET trade and log it to the learning journal.
 
@@ -345,7 +377,7 @@ def _track_testnet_journal(cfg: CoinConfig, state) -> None:
         pnl_usdt, pnl_pct = calc_pnl(snap["avg_entry"], exit_price, qty)
         duration_hours = (time.time() - snap["entered_at"]) / 3600
 
-        append_testnet_journal_entry({
+        journal_entry = {
             "timestamp": testnet_now_str(),
             "coin": cfg.coin,
             "strategy": cfg.name,
@@ -362,7 +394,13 @@ def _track_testnet_journal(cfg: CoinConfig, state) -> None:
                 "duration_hours": round(duration_hours, 2),
             },
             "outcome": "WIN" if pnl_usdt >= 0 else "LOSS",
-        })
+        }
+
+        plan = _tp_plan_cache.pop(cfg.coin, None)
+        if plan:
+            journal_entry["tp_analysis"] = _build_tp_analysis(plan, exit_price, pnl_pct)
+
+        append_testnet_journal_entry(journal_entry)
         del _testnet_active_snapshot[cfg.id]
 
 
@@ -1022,9 +1060,161 @@ def api_layer3(symbol):
 
 # ── AI Analysis route ──────────────────────────────────────────────────────────
 
+_PROFESSIONAL_SYSTEM_PROMPT = (
+    "You are a professional cryptocurrency trader with deep expertise in technical analysis, "
+    "market microstructure, macro economics, and derivatives markets. You analyze trading setups "
+    "across three layers: macro environment (Layer 1), market positioning (Layer 2), and entry "
+    "timing (Layer 3).\n\n"
+    "You are direct, specific, and honest. You do not give vague or generic analysis. You always "
+    "reference the specific numbers in front of you. You explain your reasoning in plain language "
+    "that a developing trader can understand and learn from.\n\n"
+    "You structure every response in exactly four sections with these exact headers:\n\n"
+    "## WHAT THE MARKET IS DOING\n"
+    "A clear, plain-English picture of current conditions combining all three layers. "
+    "2-3 sentences maximum. Specific numbers only, no vague statements.\n\n"
+    "## THE KEY TENSION\n"
+    "What signals are agreeing and what is conflicting. Why the conflict matters. "
+    "What it tells you about the market's uncertainty or conviction. 2-3 sentences.\n\n"
+    "## PROFESSIONAL ASSESSMENT\n"
+    "What an experienced trader would conclude from this exact combination of signals. "
+    "Be specific about conviction level (high/medium/low) and why. Reference the most important "
+    "2-3 signals driving the conclusion. 3-4 sentences.\n\n"
+    "## SUGGESTION\n"
+    "One of: LONG / SHORT / WAIT.\n"
+    "If LONG or SHORT:\n"
+    "  - Entry approach (immediate or wait for X)\n"
+    "  - Step spacing recommendation (use the ATR data provided)\n"
+    "  - The specific signal change that would be your exit or stop signal\n"
+    "  - If liquidation clusters were provided, incorporate them into the entry/exit logic\n"
+    "If WAIT:\n"
+    "  - Exactly what needs to change in the data before action is warranted\n"
+    "  - Which specific signal to watch\n\n"
+    "End every response with this exact line:\n"
+    "\"⚠️ This is analytical context to support your own decision — not financial advice. "
+    "You make the final call.\""
+)
+
+_PROFESSIONAL_DCA_ADDENDUM = (
+    "\n\nWhen DCA model levels are provided, incorporate them specifically into your "
+    "SUGGESTION section. Comment on whether the step placement makes sense given "
+    "the current ATR and any liquidation clusters. Flag any step sitting above a "
+    "cluster and recommend the adjusted multiplier. Reference specific dollar "
+    "levels ('$65,785'), not vague descriptions."
+)
+
+_PROFESSIONAL_TP_ADDENDUM = (
+    "\n\nWhen a TAKE PROFIT ANALYSIS is provided, add a fifth section, titled exactly "
+    "## PLAN VALIDATION, after the SUGGESTION section. In it:\n"
+    "- Compare the trader's Confirmed TP to the market's Target TP from Scenario 1.\n"
+    "- If they are aligned within 0.5%, say so explicitly and confirm the trader is reading "
+    "the market correctly.\n"
+    "- If the trader's TP is higher than the Target TP, assess whether that's greed or a "
+    "momentum-justified stretch — reference the ATR multiple and the Layer 3 momentum verdict.\n"
+    "- If the trader's TP is lower than the Target TP, assess whether that's appropriately "
+    "conservative or leaving profit on the table without good reason.\n"
+    "- Always reference specific dollar levels, not vague descriptions.\n"
+    "- Explicitly state whether the TP placement is logical given where the liquidation clusters sit."
+)
+
+_PLAIN_SYSTEM_PROMPT = (
+    "You are a friendly, plain-spoken trading guide who explains crypto market setups the way "
+    "you'd explain them to a smart friend who has never traded before. You avoid jargon — when "
+    "you must use a trading term, you explain it immediately in everyday language.\n\n"
+    "You are still direct and honest — you do not sugar-coat a bad setup. You always reference "
+    "the specific numbers in front of you, just explained simply.\n\n"
+    "You structure every response in exactly four sections with these exact headers:\n\n"
+    "## WHAT'S HAPPENING RIGHT NOW\n"
+    "A clear, plain-English picture of current conditions combining all three layers. "
+    "2-3 sentences maximum. Specific numbers only, no vague statements.\n\n"
+    "## WHAT'S PULLING IN DIFFERENT DIRECTIONS\n"
+    "What signals agree and what's fighting each other, and why that matters. 2-3 sentences.\n\n"
+    "## WHAT AN EXPERIENCED TRADER WOULD THINK\n"
+    "What a seasoned trader would conclude from this exact combination of signals. Be specific "
+    "about how confident they'd be (high/medium/low) and why. 3-4 sentences.\n\n"
+    "## IS YOUR PLAN GOOD?\n"
+    "One of: BUY / SELL / WAIT, explained simply.\n"
+    "If BUY or SELL:\n"
+    "  - When to get in (now, or wait for X)\n"
+    "  - How far apart to space DCA steps (use the ATR data provided)\n"
+    "  - The specific thing that would make you bail out\n"
+    "  - If liquidation clusters were provided, weave them into the entry/exit thinking\n"
+    "If WAIT:\n"
+    "  - Exactly what needs to change before it's worth acting\n"
+    "  - Which specific signal to keep an eye on\n\n"
+    "End every response with this exact line:\n"
+    "\"⚠️ This is analytical context to support your own decision — not financial advice. "
+    "You make the final call.\""
+)
+
+_PLAIN_DCA_ADDENDUM = (
+    "\n\nWhen DCA model levels are provided, weave them into your IS YOUR PLAN GOOD? section "
+    "in plain language. Say whether the step placement makes sense given the current volatility "
+    "and any liquidation clusters. Flag any step sitting above a cluster and suggest the wider "
+    "spacing in everyday terms. Reference specific dollar levels ('$65,785'), not vague descriptions."
+)
+
+_PLAIN_TP_ADDENDUM = (
+    "\n\nWhen a TAKE PROFIT ANALYSIS is provided, explain it using this fish market analogy:\n\n"
+    "THE FISH MARKET — there are three sizes of fish on offer today:\n"
+    "- The Minimum TP is the small fish — always available, a normal-sized catch.\n"
+    "- The Target TP is the medium fish — what's most likely in stock today, a realistic catch.\n"
+    "- The Stretch TP is the big fish — possible on a great day, but not guaranteed to be there.\n\n"
+    "THE SHOP WITH A BUDGET — when judging the trader's desired target, talk about how many of "
+    "the three checks (cluster, volatility, momentum) support it, framed as availability:\n"
+    "- 3 or 2 checks green: the fish is in stock today.\n"
+    "- 1 check green: the fish is in the back, possible but not guaranteed.\n"
+    "- 0 checks green: the fish is not available today.\n\n"
+    "In the ## IS YOUR PLAN GOOD? section, always explicitly answer this question: "
+    "'Is the fish the trader wants available at this market today?' Reference the trader's "
+    "Confirmed TP, which fish size it's closest to, and whether it's in stock using the "
+    "language above."
+)
+
+
+def _format_tp_plan_lines(plan: dict) -> list[str]:
+    """Build the TAKE PROFIT ANALYSIS block for the AI user message from a
+    Pre-Trade Checklist plan dict (see collectPreTradePlan() in index.html)."""
+    lines: list[str] = ["", "TAKE PROFIT ANALYSIS:"]
+
+    s1 = plan.get("scenario1") or {}
+    lines.append("Scenario 1 — What the market is offering:")
+    for key, name in (("minimum", "Minimum"), ("target", "Target"), ("stretch", "Stretch")):
+        lvl = s1.get(key)
+        if lvl and lvl.get("price"):
+            lines.append(f"- {name} TP: ${lvl['price']:,.2f} ({lvl.get('pct', 0):+.2f}%) — {lvl.get('label', '')}")
+
+    s2 = plan.get("scenario2")
+    if s2 and s2.get("desired_pct"):
+        lines.append("")
+        lines.append(
+            f"Scenario 2 — Trader's desired target: {s2['desired_pct']:.2f}% (${s2.get('price', 0):,.2f})"
+        )
+        for chk in s2.get("checks") or []:
+            if chk.get("text"):
+                lines.append(f"- {chk['text']}")
+        verdict = s2.get("verdict")
+        if verdict and verdict.get("text"):
+            lines.append(f"Overall: {verdict['text']}")
+
+    confirmed = plan.get("confirmed") or {}
+    if confirmed.get("price"):
+        lines.append("")
+        lines.append(
+            f"CONFIRMED TP: ${confirmed['price']:,.2f} ({confirmed.get('pct', 0):+.2f}%) "
+            f"— {confirmed.get('source_label') or 'Manual entry'}"
+        )
+
+    agreement_text = plan.get("agreement_text")
+    if agreement_text:
+        lines.append("")
+        lines.append(f"AGREEMENT BETWEEN SCENARIOS: {agreement_text}")
+
+    return lines
+
+
 @app.route("/api/ai/analysis", methods=["POST"])
 def api_ai_analysis():
-    """Generate a professional trading analysis via Claude API from dashboard data."""
+    """Generate a trading analysis via Claude API from dashboard data."""
     import anthropic as _anthropic
 
     payload = request.get_json(force=True, silent=True) or {}
@@ -1034,6 +1224,8 @@ def api_ai_analysis():
     l1      = payload.get("layer1", {})
     l2      = payload.get("layer2", {})
     l3      = payload.get("layer3", {})
+    style   = payload.get("style", "professional")
+    plan    = payload.get("pre_trade_plan")
 
     # ── Format price ──────────────────────────────────────────────────────────
     if isinstance(price, (int, float)):
@@ -1113,7 +1305,10 @@ def api_ai_analysis():
             lines.append(f"- ATR Volatility: {atr.get('atr_pct','?')}% — {atr.get('label','')}")
             if atr.get("dca_note"):
                 lines.append(f"  DCA implication: {atr['dca_note']}")
-    lines.extend(["", "Please provide your professional analysis."])
+
+    # Take Profit plan (Pre-Trade Checklist), if provided
+    if plan:
+        lines.extend(_format_tp_plan_lines(plan))
 
     # DCA model levels (if provided by the visualizer panel)
     dca = payload.get("dca_model")
@@ -1147,65 +1342,53 @@ def api_ai_analysis():
             dca_lines.extend(["",
                 f"CLUSTER INTERACTION: Consider {dca['suggested_multiplier']}× multiplier "
                 f"to place steps below liquidation clusters."])
-        # Insert before the "Please provide..." line that was already added
-        lines = lines[:-2] + dca_lines + ["", "Please provide your professional analysis."]
+        lines.extend(dca_lines)
 
+    closing = "Please provide your analysis." if style == "plain" else "Please provide your professional analysis."
+    lines.extend(["", closing])
     user_msg = "\n".join(lines)
 
-    system_prompt = (
-        "You are a professional cryptocurrency trader with deep expertise in technical analysis, "
-        "market microstructure, macro economics, and derivatives markets. You analyze trading setups "
-        "across three layers: macro environment (Layer 1), market positioning (Layer 2), and entry "
-        "timing (Layer 3).\n\n"
-        "You are direct, specific, and honest. You do not give vague or generic analysis. You always "
-        "reference the specific numbers in front of you. You explain your reasoning in plain language "
-        "that a developing trader can understand and learn from.\n\n"
-        "You structure every response in exactly four sections with these exact headers:\n\n"
-        "## WHAT THE MARKET IS DOING\n"
-        "A clear, plain-English picture of current conditions combining all three layers. "
-        "2-3 sentences maximum. Specific numbers only, no vague statements.\n\n"
-        "## THE KEY TENSION\n"
-        "What signals are agreeing and what is conflicting. Why the conflict matters. "
-        "What it tells you about the market's uncertainty or conviction. 2-3 sentences.\n\n"
-        "## PROFESSIONAL ASSESSMENT\n"
-        "What an experienced trader would conclude from this exact combination of signals. "
-        "Be specific about conviction level (high/medium/low) and why. Reference the most important "
-        "2-3 signals driving the conclusion. 3-4 sentences.\n\n"
-        "## SUGGESTION\n"
-        "One of: LONG / SHORT / WAIT.\n"
-        "If LONG or SHORT:\n"
-        "  - Entry approach (immediate or wait for X)\n"
-        "  - Step spacing recommendation (use the ATR data provided)\n"
-        "  - The specific signal change that would be your exit or stop signal\n"
-        "  - If liquidation clusters were provided, incorporate them into the entry/exit logic\n"
-        "If WAIT:\n"
-        "  - Exactly what needs to change in the data before action is warranted\n"
-        "  - Which specific signal to watch\n\n"
-        "End every response with this exact line:\n"
-        "\"⚠️ This is analytical context to support your own decision — not financial advice. "
-        "You make the final call.\""
-    )
-
-    if dca:
-        system_prompt += (
-            "\n\nWhen DCA model levels are provided, incorporate them specifically into your "
-            "SUGGESTION section. Comment on whether the step placement makes sense given "
-            "the current ATR and any liquidation clusters. Flag any step sitting above a "
-            "cluster and recommend the adjusted multiplier. Reference specific dollar "
-            "levels ('$65,785'), not vague descriptions."
-        )
+    if style == "plain":
+        system_prompt = _PLAIN_SYSTEM_PROMPT
+        if dca:
+            system_prompt += _PLAIN_DCA_ADDENDUM
+        if plan:
+            system_prompt += _PLAIN_TP_ADDENDUM
+    else:
+        system_prompt = _PROFESSIONAL_SYSTEM_PROMPT
+        if dca:
+            system_prompt += _PROFESSIONAL_DCA_ADDENDUM
+        if plan:
+            system_prompt += _PROFESSIONAL_TP_ADDENDUM
 
     try:
         client = _anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         msg    = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1000,
+            max_tokens=1300,
             system=system_prompt,
             messages=[{"role": "user", "content": user_msg}],
         )
         return jsonify({"ok": True, "text": msg.content[0].text})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/checklist/tp-plan", methods=["POST"])
+def api_checklist_tp_plan():
+    """Cache the Pre-Trade Checklist's current TP plan for a coin, so that
+    _track_testnet_journal() can attach a tp_analysis comparison (see
+    _build_tp_analysis) once that coin's testnet trade closes."""
+    payload = request.get_json(force=True, silent=True) or {}
+    coin = payload.get("coin")
+    plan = payload.get("plan")
+    if not coin:
+        return jsonify({"ok": False, "error": "coin is required"}), 400
+    if plan:
+        _tp_plan_cache[coin] = plan
+    else:
+        _tp_plan_cache.pop(coin, None)
+    return jsonify({"ok": True})
 
 
 # ── DCA Model Level Visualizer route ──────────────────────────────────────────
@@ -2190,11 +2373,46 @@ def api_strategies_copy_to_testnet(strategy_id):
 
 # ── Routes — Testnet Learning Journal ─────────────────────────────────────────
 
+def _compute_tp_accuracy_stats(entries: list) -> dict | None:
+    """Summarize how testnet trades' actual exits compared to their Pre-Trade
+    Checklist TP plan (see _build_tp_analysis). Returns None until there are
+    at least 10 trades carrying tp_analysis data."""
+    rows = [e["tp_analysis"] for e in entries if e.get("tp_analysis")]
+    n = len(rows)
+    if n < 10:
+        return None
+
+    reached_minimum = [r for r in rows if r.get("reached_minimum")]
+    reached_target  = [r for r in rows if r.get("reached_target")]
+    reached_stretch = [r for r in rows if r.get("reached_stretch")]
+
+    actual_pcts = [r["actual_pct"] for r in rows if r.get("actual_pct") is not None]
+    target_pcts = [r["confirmed_tp_pct"] for r in rows if r.get("confirmed_tp_pct") is not None]
+
+    levels = {
+        "Minimum": len(reached_minimum),
+        "Target": len(reached_target),
+        "Stretch": len(reached_stretch),
+    }
+    best_level = max(levels, key=levels.get) if any(levels.values()) else None
+
+    return {
+        "total_trades": n,
+        "reached_minimum_pct": len(reached_minimum) / n * 100,
+        "reached_target_pct": len(reached_target) / n * 100,
+        "reached_stretch_pct": len(reached_stretch) / n * 100,
+        "avg_actual_pct": (sum(actual_pcts) / len(actual_pcts)) if actual_pcts else None,
+        "avg_target_pct": (sum(target_pcts) / len(target_pcts)) if target_pcts else None,
+        "best_level": best_level,
+    }
+
+
 @app.route("/api/testnet/journal", methods=["GET"])
 def api_testnet_journal_get():
     entries = load_testnet_journal()
     stats = compute_testnet_journal_stats(entries)
-    return jsonify({"entries": list(reversed(entries))[:50], "stats": stats})
+    tp_accuracy = _compute_tp_accuracy_stats(entries)
+    return jsonify({"entries": list(reversed(entries))[:50], "stats": stats, "tp_accuracy": tp_accuracy})
 
 
 @app.route("/api/testnet/journal/export", methods=["GET"])
