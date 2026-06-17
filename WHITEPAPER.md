@@ -56,16 +56,17 @@ Infinity/
 │   ├── regime_detector.py   # Weekly Regime tab analysis (EMA, volume, AI narrative)
 │   ├── regime_live.py       # Live regime detection (EMA21/50/200, RSI, BB, ATR) feeding the Mixed engine
 │   ├── state_manager.py     # Persists position state to JSON files
-│   ├── ml_signals.py        # ML models: direction, regime & entry-quality scoring
-│   ├── signal_history.py    # SQLite persistence for market signals + ML outputs
+│   ├── ml_signals.py        # Orphaned from the live dashboard — used only by signal_lab's optional --ml-filter overlay (§11.9)
+│   ├── signal_history.py    # Orphaned — superseded by the Layer 1/2/3 Market Signals system (§11.9)
+│   ├── testnet_journal.py   # Persists/aggregates completed Testnet-mode paper trades (§10.6)
 │   └── logger.py            # Structured logging
 ├── models/
-│   └── dca_config.py        # Data models: CoinConfig (long + mixed fields), PositionState, ExecutedStep, DCAModel
+│   └── dca_config.py        # Data models: CoinConfig (long + mixed + is_testnet fields), PositionState, ExecutedStep, DCAModel
 ├── config/
-│   ├── coins.json           # Strategy definitions (coins, levels, sizes, TP, mode, leverage, ATR spacing)
+│   ├── coins.json           # Strategy definitions (coins, levels, sizes, TP, mode, leverage, ATR spacing, is_testnet)
+│   ├── accounts.json        # Binance API accounts — each flagged live or testnet (§10.4, §10.6)
 │   └── dca_models.json       # DCA Model templates — reusable bull+bear ladders for Mixed strategies
 ├── data/                    # Live position state files (one JSON per strategy)
-│                             # + signal_history.db (Market Signals history)
 ├── utils/
 │   └── calculations.py      # Pure math functions (no side effects)
 ├── algo-trading/
@@ -554,7 +555,7 @@ effective_pct = base_value             otherwise (feature off, or ATR not ready 
 
 This is applied to `dump_levels`, `bear_levels`, `take_profit_percent`, `bear_take_profit_percent`, `bull_stop_loss_percent`, and `bear_stop_loss_percent`. For example, with `atr_based_spacing=True` and a configured level of `-6` (meaning "−6× ATR%"): if live ATR% is 1.5%, the effective trigger distance from the anchor is −9%; if ATR% rises to 3% (more volatile), the same `-6` becomes −18% — the ladder automatically widens in choppier markets and tightens in calmer ones, instead of using a fixed spacing regardless of volatility.
 
-The Market Signals dashboard (§11.2) surfaces `atr_7d`/`atr_14d`/`range_pct_7d`/`range_pct_14d` so a user can gauge an asset's current volatility before choosing fixed-percent vs. ATR-based spacing for a new strategy or DCA Model.
+The Market Signals tab's Layer 3 ATR card (§11.4) surfaces a live `atr_pct` and a Calm/Normal/Elevated/High Volatility read for the selected coin, so a user can gauge current volatility before choosing fixed-percent vs. ATR-based spacing for a new strategy or DCA Model.
 
 ---
 
@@ -701,303 +702,161 @@ A model's ladders are validated the same way as `DCAModel.validate()`: `bull_lev
 - Supports both live and testnet accounts
 
 ### 10.5 Market Signals Tab
-- Live regime read for BTC, ETH, XRP, SOL, ZEC, SUI, XAU (gold), and NVDA on the 4-hour timeframe, refreshed every 15 minutes
-- Per-coin card: regime badge, 4-signal checklist, recommended strategy (saved or suggested) with DCA trigger-price chips, anchor price, and fresh-start levels
-- Action banner — **LONG NOW / SHORT NOW / WATCH / WAIT** — with a one-line plain-English condition
-- ML Analysis panel — next-candle direction, ML regime confidence, and entry-quality score/grade with top contributing factors
-- Signal History panel — per-coin summary cards plus a searchable table of every past signal computation
 
-See Section 11 for the full signal computation, strategy-matching, and ML methodology behind this tab.
+The default tab on load. Covers **BTC, ETH, SOL, ZEC, and XAUT** (Tether Gold), selected via a coin-tab strip at the top:
+- An embedded TradingView candlestick chart (4h interval) for the selected coin
+- A **Master Summary Bar** combining three independently-scored layers into one composite read
+- **Layer 1 — Macro Environment**, **Layer 2 — Market Positioning**, and **Layer 3 — Entry Timing** — each collapsible, each with its own verdict badge
+- A **DCA Model Level Visualizer** — an ATR-calibrated preview of a DCA Model's ladder against the live price
+- An **AI Analysis Panel** — an on-demand, Claude-generated narrative read of the current Layer 1/2/3 state
+
+See Section 11 for the full signal computation behind each layer, the AI panel, and the DCA Visualizer.
+
+### 10.6 LIVE / TESTNET Dashboard Mode
+
+A header-level **LIVE / TESTNET** toggle switches every tab — Dashboard, Accounts, Strategies, and the Market Signals strategy context — between live trading and Binance Testnet paper trading, without touching any live state.
+
+**How it's wired:**
+- Each Binance account in `config/accounts.json` already carried a `testnet: bool` flag (used by `get_client()`/`get_futures_client()` to route to `testnet.binance.vision` instead of the production API). The dashboard toggle is a pure UI/filter layer on top of that existing flag — it does not introduce a second trading path.
+- `CoinConfig` gained an additive `is_testnet` field (default `false`). A strategy flagged `is_testnet=true` is a paper-trading strategy: same engine code (`core/dca_engine.py` / `core/mixed_engine.py`), same state-file format, just pointed at a testnet account.
+- **Mode switch (UI only):** clicking **TESTNET** shows a one-time confirmation modal (no real orders will be placed); clicking back to **LIVE** switches immediately, no confirmation needed. The selected mode is stored in the browser's `localStorage` (`dashboard_mode`) and persists across reloads.
+- **Filtering, not isolation at the API level:** once in TESTNET mode, every list the dashboard renders — saved strategies, saved accounts, the running-engines bar, Start/Stop modals, USDT balance totals — is filtered client-side to `is_testnet`/`testnet` rows matching the active mode. The underlying `/api/strategies`, `/api/accounts`, and `/api/running` responses are unfiltered; the mode toggle decides what the UI shows, while a server-side guard (next bullet) decides what is allowed to *run*.
+- **Mode-mismatch guard:** `POST /api/start_engine` rejects any request where a strategy's `is_testnet` flag doesn't match the target account's `testnet` flag (HTTP 400) — a testnet strategy can never be started against a live account, and vice versa, regardless of what the UI currently shows.
+- **"Copy to Testnet"** (`POST /api/strategies/<id>/copy_to_testnet`) duplicates a live strategy's full configuration into a new strategy with a fresh id, `is_testnet=true`, and `reference_price` cleared — so a strategy can be rehearsed on paper money before being run live, without affecting the original.
+- **Testnet Learning Journal** (`core/testnet_journal.py`) — every time a testnet strategy's state transitions through a completed cycle, `web/app.py` snapshot-diffs the position state and appends a journal entry (entry/exit price, P&L, signal context at entry) to `data/testnet_journal.json`. The Strategies tab shows this as a table with win-rate/avg-win/avg-loss stats and a CSV export, when in TESTNET mode. This hooks in entirely from `web/app.py`'s polling, with no changes to `core/dca_engine.py`'s execution path.
+- **Visual cues while in TESTNET mode:** a non-dismissible amber banner below the header, and an amber border under the tab row — both intended to make it visually unmistakable that the dashboard is not looking at live data.
+
+**What does not change:** the live trading engine (`infinity.service`) is a separate `systemd` process from the dashboard (`infinity-web.service`, §16) and has no concept of this toggle at all — it runs whatever live strategies are enabled in `config/coins.json`, exactly as before. The toggle only affects what the Flask dashboard *displays and permits starting via its own API*; it cannot start, stop, or alter a live strategy's behavior beyond the normal Start/Stop controls that existed already.
 
 ---
 
-## 11. Market Signals & ML Analysis System
+## 11. Market Signals System
 
 ### 11.1 Overview
 
-In addition to the DCA trading engines, Infinity runs a real-time **Market Signals** system (`/api/market/signals`) that continuously evaluates **BTC, ETH, XRP, SOL, ZEC, SUI** (crypto, via Binance) plus **XAU (gold) and NVDA** (via Twelve Data) on the 4-hour timeframe. For each asset it produces:
+The Market Signals tab (§10.5) evaluates **BTC, ETH, SOL, ZEC, and XAUT** (Tether Gold) through three independently-scored layers, each answering a different question:
 
-- A rule-based **regime score** (BULL / NEUTRAL / BEAR)
-- A **strategy recommendation** — the best matching saved strategy from `config/coins.json`, or a sensible preset
-- **Anchor and DCA trigger prices** so the user knows exactly where to place orders
-- An **entry-readiness verdict** (LONG NOW / SHORT NOW / WATCH / WAIT) combining regime with RSI timing
-- Three **machine-learning models** (`core/ml_signals.py`) that independently predict direction, regime, and entry quality
-- Persistence of every fresh computation to a SQLite **Signal History** database (`core/signal_history.py`)
+| Layer | Question | Route | Cache |
+|-------|----------|-------|-------|
+| **Layer 1 — Macro Environment** | Is the broader macro backdrop favourable for risk assets right now? | `GET /api/layer1` | 900s, global (one shared cache for all coins) |
+| **Layer 2 — Market Positioning** | Is this specific coin's futures market crowded, and on which side? | `GET /api/layer2/<symbol>` | 300s, per-symbol |
+| **Layer 3 — Entry Timing** | Does the immediate price action favour entering long or short right now? | `GET /api/layer3/<symbol>` | 120s, per-symbol |
 
-All of this is rendered live on the dashboard's Market Signals and Signal History panels (Section 10).
+A client-side **Master Summary Bar** combines the three layers' verdicts into a single composite read (§11.5). On top of the three layers sit two on-demand tools: a **DCA Model Level Visualizer** that previews a DCA Model's ladder against the live price and any layer data (§11.6), and an **AI Analysis Panel** that asks Claude to narrate the current combination of signals in plain language (§11.7).
 
-### 11.2 Regime Detection — The 4-Signal Score
+Layer 1 is intentionally coin-agnostic (macro conditions don't depend on which coin is selected), while Layers 2 and 3 are fetched per-symbol and refetched whenever the user switches coins (subject to their respective caches).
 
-For each asset, the last 200 four-hour candles are fetched via `core/market_data.py`, which abstracts over two sources:
+### 11.2 Layer 1 — Macro Environment
 
-| Asset | Source | Symbol | Notes |
-|-------|--------|--------|-------|
-| BTC, ETH, XRP, SOL, ZEC, SUI | Binance public klines (`GET /api/v3/klines`, `interval=4h`, `limit=200`) | `BTCUSDT`, etc. | No API key required |
-| XAU (gold) | Twelve Data `/time_series` (`interval=4h`, `outputsize=200`) | `XAU/USD` | Requires `TWELVE_DATA_API_KEY` |
-| NVDA | Twelve Data `/time_series` | `NVDA` | Requires `TWELVE_DATA_API_KEY` |
+Seven live indicators are fetched in parallel on each cache miss:
 
-If `TWELVE_DATA_API_KEY` is unset, the XAU/NVDA cards show "Unknown — insufficient data" while the Binance-sourced cards continue working unaffected. From the closing prices the system derives:
+| Indicator | Source | Needs a key? |
+|-----------|--------|----------------|
+| Fear & Greed Index | alternative.me `/fng/` (last 30 days) | No |
+| BTC Dominance | CoinGecko `/global` | No |
+| DXY (US Dollar Index) | Twelve Data `/time_series` (1-day, 30 bars) | `TWELVE_DATA_API_KEY` |
+| Fed Funds Rate | FRED series `FEDFUNDS` | `FRED_API_KEY` |
+| US 10-Year Treasury Yield | FRED series `DGS10` | `FRED_API_KEY` |
+| CPI (YoY inflation) | FRED series `CPIAUCSL` | `FRED_API_KEY` |
+| VIX | Twelve Data `/time_series` (1-day, 7 bars) | `TWELVE_DATA_API_KEY` |
 
-| Variable | Formula |
-|----------|---------|
-| EMA50 | 50-period exponential moving average of closes |
-| EMA200 | 200-period exponential moving average of closes |
-| RSI(14) | 14-period relative strength index |
-| 7-day return | `(price - close[-43]) / close[-43] × 100` (42 candles ≈ 7 days at 4h) |
-| `atr_7d` / `atr_14d` | Average True Range (price-denominated) over the last 42 / 84 four-hour candles (≈7 / 14 days) |
-| `range_pct_7d` / `range_pct_14d` | `(highest_high - lowest_low) / highest_high × 100` over the same 42 / 84 candle windows |
+Each indicator computes its own `signal` (`+1` bullish for crypto / `0` neutral / `−1` bearish) from its own thresholds — e.g. Fear & Greed ≤44 is bullish (contrarian: fear favours buying), BTC Dominance falling >0.5% in 24h is bullish (altcoin rotation), DXY/VIX/yield/CPI rising or elevated is bearish, Fed Funds in a cutting cycle is bullish. `GET /api/layer1` itself combines whichever indicators returned `status: "ok"` into a verdict (`_layer1_verdict`): fewer than 3 usable indicators → `INSUFFICIENT_DATA`; ≥4 bullish → `FAVORABLE`; ≥4 bearish → `UNFAVORABLE`; otherwise `MIXED`.
 
-Four boolean signals are scored:
+**Manual fallback and supplementary cards.** If `TWELVE_DATA_API_KEY` or `FRED_API_KEY` is unset, the corresponding indicator returns `status: "no_key"` and the dashboard renders a manual-entry card instead (DXY, Fed Funds, 10Y Yield, CPI, VIX) — the user looks the number up themselves and the value is persisted to `localStorage` (`layer1_<key>`), substituting for the missing live value in the verdict. Four further indicators have **no live source at all** and are always manual: CME FedWatch (next-meeting cut/hike probabilities), the latest jobs report (unemployment rate + direction), the BTC Rainbow Chart band (cycle position), and Global M2 YoY growth. The dashboard recomputes its own combined verdict client-side from up to 11 possible signals (7 base indicators, live or manual-substituted, plus the 4 always-manual ones): fewer than 3 counted → `INSUFFICIENT_DATA`; ≥6 bullish → `FAVORABLE`; ≥6 bearish → `UNFAVORABLE`; otherwise `MIXED`. This client-side verdict — not the simpler one returned by the raw `/api/layer1` JSON — is what drives the Layer 1 badge and feeds the Master Summary Bar.
 
-| Signal | Description | Bullish if... |
-|--------|-------------|----------------|
-| s1 | Price vs EMA50 | price > EMA50 |
-| s2 | EMA50 vs EMA200 (Golden / Death Cross) | EMA50 > EMA200 |
-| s3 | RSI momentum | RSI(14) > 55 |
-| s4 | Weekly trend | 7-day return > 0 |
+### 11.3 Layer 2 — Market Positioning
 
-```
-score = s1 + s2 + s3 + s4   (range 0–4)
-```
+For the selected coin's Binance USD-M Futures symbol (e.g. `BTCUSDT`), three signals are pulled from public futures endpoints:
 
-| Score | Regime | Base Recommendation (`rec`) |
-|-------|--------|------------------------------|
-| 3–4 | BULL | Long DCA |
-| 2 | NEUTRAL | Mixed DCA |
-| 0–1 | BEAR | Short DCA |
+| Signal | Source | What it measures |
+|--------|--------|--------------------|
+| **Funding Rate** | `GET /fapi/v1/fundingRate` (last 90 settlements) | Current 8h funding rate; >0.05% → "HIGH — Longs Crowded", <−0.01% → "Negative — Shorts Crowded" |
+| **Open Interest** | `GET /futures/data/openInterestHist` (1h, 48 bars) + price | 24h change in OI combined with price direction, e.g. price↑ + OI↑ → "Strong — New Money Entering"; price↑ + OI↓ → "Weak — Short Covering Only" |
+| **Long/Short Ratio** | `GET /futures/data/globalLongShortAccountRatio` and `topLongShortAccountRatio` (1h, 48 bars) | Retail (global) vs. top-trader account long%/short%; flags **divergence** when the two disagree by >10 points and sit on opposite sides of 50/50 — "top traders positioned opposite to retail" |
 
-`atr_7d`, `atr_14d`, `range_pct_7d`, and `range_pct_14d` do not feed into the regime score — they are displayed on each asset's card as **volatility context**, so a user can judge whether an asset is currently calm or choppy before choosing fixed-percent DCA levels or enabling ATR-based dynamic spacing (§8.6.4) for a Mixed strategy on that asset.
+These combine into a verdict (`_layer2_verdict`): funding >0.05% *and* global longs >65% → `CAUTION_LONG` (longs are crowded and paying up — a long squeeze risk); funding <−0.01% *and* global shorts >65% → `CAUTION_SHORT`; otherwise a bull/bear tally across funding direction, crowding, and the OI label decides `NEUTRAL` or `MIXED`.
 
-### 11.3 Strategy Recommendation Engine
+**Liquidation Heatmap (manual, context-only).** A separate input card lets the user record the nearest liquidation cluster price below and above the current price (read off an external liquidation-heatmap tool) per coin, persisted to `localStorage` (`liq_below_<coin>`, `liq_above_<coin>`, `liq_ts_<coin>`) with a staleness warning after 24 hours. This value is **not scored into the Layer 2 verdict** — it feeds the DCA Model Level Visualizer's cluster warnings (§11.6) and is passed to the AI Analysis Panel (§11.7) as context.
 
-Knowing the regime is not enough — the dashboard also tells the user **which specific strategy and levels** to use.
+### 11.4 Layer 3 — Entry Timing
 
-**Step 1 — Match a saved strategy.** `_best_saved(coin, regime)` scans `config/coins.json` for strategies on that coin:
-- Regime BULL + a saved strategy whose `dump_levels` are all negative (a long strategy) → use it
-- Regime BEAR + a saved strategy whose `dump_levels` are all positive (a short strategy) → use it
-- Regime NEUTRAL → use the first saved strategy for that coin
-- Otherwise → fall back to the first saved strategy for that coin (if any exists)
+Layer 3 fetches the last 21 four-hour candles (`GET /api/v3/klines`) plus the top-20 order book (`GET /api/v3/depth`) for the selected symbol, and derives four directional signals (`+1`/`0`/`−1` each):
 
-**Step 2 — Fall back to a preset.** If no saved strategy matches, `_PRESETS` supplies a level set keyed by `(regime, score)`:
+| Signal | Logic |
+|--------|-------|
+| **Volume Divergence** | Latest candle's volume vs. the 20-candle average. >1.2× average with price up → "Confirmed Move — Real Buyers" (+1); >1.2× with price down → "Confirmed Selling" (−1); <0.8× average flips the read (low-conviction move or exhaustion) |
+| **Price Structure** | Higher-lows / lower-highs runs over the last 10 candles (≥2 consecutive higher lows → bullish structure; ≥2 consecutive lower highs → bearish; both at once → "Compression — Breakout Pending") |
+| **Momentum** | ROC6 (6-candle ≈ 24h rate of change) vs. ROC14 (14-candle ≈ 56h); positive ROC6 accelerating relative to ROC14 → "Bullish Momentum Building" (+1), and the mirror image for bearish |
+| **Order Book** | Bid value vs. ask value across the top 20 levels; >60% bid-side value → "Buy Pressure Dominant" (+1), <40% → "Sell Pressure Dominant" (−1) |
 
-| Regime / Score | Name | Levels | Take Profit |
-|-----------------|------|--------|-------------|
-| BULL / 4 | Conservative | 6%, 10%, 15% | 5% |
-| BULL / 3 | Standard | 8%, 12%, 18%, 24% | 8% |
-| NEUTRAL / 2 | Cautious | 8%, 12%, 18% | 6% |
-| BEAR / 1 | Standard Short | 6%, 10%, 15% | 5% |
-| BEAR / 0 | Aggressive Short | 8%, 12%, 18%, 24% | 8% |
+A fifth metric, **ATR(14)** on the same 4h candles, is computed for volatility context only (`signal: 0`, never counted in the verdict) — it classifies the coin as Very Calm / Normal / Elevated / High Volatility and suggests a DCA step-spacing band (e.g. "use wider spacing (10–15% steps)"), feeding the multiplier choice in the DCA Model Level Visualizer (§11.6).
 
-Each card shows whether its recommendation came from a **saved** strategy (`strat_source: "saved"`) or a **suggested** preset (`strat_source: "suggested"`).
+The four directional signals sum into a verdict (`_layer3_verdict_calc`): score ≥2 → `LONG`; score ≤−2 → `SHORT`; score == 1 → `WEAK_LONG`; score == −1 → `WEAK_SHORT`; score == 0 → `NEUTRAL`; no signals available → `UNKNOWN`.
 
-### 11.4 Anchor & DCA Trigger Prices
+### 11.5 Master Summary Bar
 
-To turn a level list into actionable order prices, the system computes an **anchor**:
+A client-side function (`updateMasterSummary()`) combines the three layers' verdict codes into one composite read, shown as a banner above the layer cards:
 
-```
-anchor = max(high) over the last 84 four-hour candles   (≈ 14 days)
-```
+| Condition | Result |
+|-----------|--------|
+| L1 `FAVORABLE` and L2 not `CAUTION_LONG` and L3 `LONG`/`WEAK_LONG` | 🟢 **ALIGNED LONG** — all layers bullish |
+| L1 `UNFAVORABLE` and L2 `CAUTION_LONG` and L3 `SHORT`/`WEAK_SHORT` | 🔴 **ALIGNED SHORT** — all layers bearish |
+| L1 `FAVORABLE` and L3 `LONG`/`WEAK_LONG`, but L2 is `CAUTION_LONG` | 🟡 **DEVELOPING** — missing L2 confirmation |
+| L1 is `MIXED` or `INSUFFICIENT_DATA` | 🟡 **MIXED** — macro not fully clear |
+| L2 is `CAUTION_LONG` or L3 is `SHORT`/`WEAK_SHORT` (none of the above matched) | 🟠 **CAUTION** — check individual layers |
+| Anything else | ⚪ **WAIT** — layers not aligned |
 
-DCA entry trigger prices are the anchor pulled back by each recommended level:
+This bar is computed entirely in the browser from the three layers' already-fetched verdict codes — it is not a separate API call, and it recomputes immediately whenever any layer's data refreshes or the coin selection changes.
 
-```
-trigger_price[i] = anchor × (1 − level[i] / 100)
-```
+### 11.6 DCA Model Level Visualizer
 
-**Levels already passed.** If price has already fallen through a trigger (`trigger_price > current_price`), that level is marked **passed** — shown with a strikethrough on the dashboard, since placing that order now would fill instantly at a worse price than originally intended.
+`POST /api/market/dca-levels` previews how a saved DCA Model (§10.3) would lay out its ladder if started right now, without creating or modifying any strategy.
 
-```
-levels_passed = count(trigger_price[i] > current_price)
-```
+Given a `model_id`, a `side` (`long` or `short`), and a multiplier (0.5×–3.0×, default 1.5×), the route:
+1. Fetches the live price for the symbol and a fresh ATR% from the same Layer 3 ATR helper (§11.4, computed over 15 candles).
+2. For each of the model's configured order sizes (`bull_order_sizes` for long, `bear_order_sizes` for short), computes a step distance scaled by ATR% and the multiplier:
+   ```
+   step_pct[i]   = (i + 1) × atr_pct × multiplier
+   step_price[i] = current_price × (1 − step_pct[i] / 100)   (long: price falls)
+   step_price[i] = current_price × (1 + step_pct[i] / 100)   (short: price rises)
+   ```
+3. Flags any step landing **past** a user-entered liquidation cluster (§11.3) as a warning, or **just short of** one (within 0.5%) as a good target, and computes a suggested alternate multiplier that would place the nearest step just outside the cluster.
+4. Computes the resulting average entry price and take-profit price/distance if every step fills, using the model's `bull_take_profit_percent` / `bear_take_profit_percent`.
 
-**Fresh-start anchor.** When one or more levels have been passed, the dashboard also computes a fresh set of trigger prices anchored to the **current price**, so the same level spacing can be deployed starting from where the market is right now:
+The visualizer is read-only — it answers "where would this model's ladder sit today, and does it clash with a known liquidation cluster", not "start this strategy".
 
-```
-fresh_anchor     = current_price
-fresh_trigger[i] = fresh_anchor × (1 − level[i] / 100)
-```
+### 11.7 AI Analysis Panel
 
-### 11.5 Entry Readiness — Action & Timing
+`POST /api/ai/analysis` sends the current Master Summary verdict, all three layers' live data (including the manual Layer 1 cards and the Layer 2 liquidation cluster inputs, if filled in), and — if open — the DCA Visualizer's current ladder, to Claude (model `claude-sonnet-4-6`, `max_tokens=1000`) and asks for a structured trading read.
 
-Regime alone tells you *direction*; it doesn't tell you *when*. The action engine combines regime with RSI to produce one of four verdicts, shown as a banner at the top of each coin's card:
+The system prompt fixes the response into exactly four sections, with these headers verbatim:
+- **`## WHAT THE MARKET IS DOING`** — 2–3 sentences combining all three layers, specific numbers only
+- **`## THE KEY TENSION`** — what's agreeing vs. conflicting between layers, and why it matters
+- **`## PROFESSIONAL ASSESSMENT`** — a conviction call (high/medium/low) referencing the 2–3 most important signals
+- **`## SUGGESTION`** — one of LONG / SHORT / WAIT, with an entry approach, ATR-based step spacing, an explicit exit/stop signal to watch, and (when a DCA Model ladder or liquidation clusters were provided) specific commentary on step placement relative to those clusters
 
-| Verdict | Meaning |
-|---------|---------|
-| **LONG NOW** | Conditions favour opening/adding to a long DCA position immediately |
-| **SHORT NOW** | Conditions favour opening/adding to a short DCA position immediately |
-| **WATCH** | Direction is known but timing isn't right yet — keep an eye on it |
-| **WAIT** | Neither direction nor timing currently favour an entry |
-
-**BULL regime:**
-
-| RSI | Action | Condition message |
-|-----|--------|--------------------|
-| < 40 | LONG NOW | "RSI oversold at X — strong dip entry" |
-| 40–49 | LONG NOW | "RSI X — decent dip, good entry" |
-| 50–59 | WATCH | "Wait for RSI to dip below 50 (now X)" |
-| ≥ 60 | WAIT | "RSI too high for long entry — wait for pullback to RSI 50 (now X)" |
-
-**BEAR regime:**
-
-| RSI | Action | Condition message |
-|-----|--------|--------------------|
-| > 65 | SHORT NOW | "RSI overbought at X — strong pump to short into" |
-| 56–65 | SHORT NOW | "RSI X — elevated, decent short entry" |
-| 46–55 | WATCH | "Wait for RSI to rise above 55 (now X)" |
-| ≤ 45 | WAIT | "RSI too low for short — wait for bounce to RSI 55+ (now X)" |
-
-**NEUTRAL regime:** always **WATCH** — "No clear trend — wait for BULL or BEAR confirmation"
-
-### 11.6 ML Analysis — Three On-the-Fly Models
-
-`core/ml_signals.py` trains three lightweight scikit-learn models **on the fly**, directly from the same 200 four-hour candles, every time signals are computed.
-
-#### 11.6.1 Shared Feature Vector
-
-All ML models draw from the same 10-feature vector, computed at candle index `i` (requires ≥52 candles of history):
-
-| # | Feature | Description |
-|---|---------|-------------|
-| 1 | `rsi14 / 100` | Normalized RSI |
-| 2 | `r1` | 1-candle return (≈4h) |
-| 3 | `r3` | 3-candle return (≈12h) |
-| 4 | `r7` | 7-candle return (≈28h) |
-| 5 | `r14` | 14-candle return (≈56h) |
-| 6 | `vol` | Std-dev of returns over the last 21 candles |
-| 7 | `price_pos` | Position within the 20-candle high/low range (0 = at low, 1 = at high) |
-| 8 | `price/ema20 − 1` | Distance from the 20-EMA |
-| 9 | `price/ema50 − 1` | Distance from the 50-EMA |
-| 10 | `ema20/ema50 − 1` | EMA alignment (trend strength) |
-
-#### 11.6.2 Model 1 — Next-Candle Direction
-
-`predict_direction(closes, highs, lows)` — **RandomForestClassifier** (60 trees, max depth 4).
-
-- Trains on every historical candle from index 60 onward, labelling each `1` (next candle closed higher) or `0` (lower)
-- The most recent 5 samples are held out from training
-- Predicts the direction of the **next 4h candle** from the current feature vector
-
-```json
-{"direction": "UP" | "DOWN", "confidence": 55.1}
-```
-
-`confidence` is the model's predicted probability for the winning class — 50% is a coin flip, 100% is certain. Returns `"UNKNOWN"` if fewer than 80 candles are available or the training labels lack variance (e.g. price only ever moved one direction).
-
-#### 11.6.3 Model 2 — ML Regime Classifier
-
-`classify_regime(closes, highs, lows, rule_score, rule_regime)` — **GradientBoostingClassifier** (60 estimators, max depth 3).
-
-- Pseudo-labels are generated for every historical candle using the same 4-signal scoring as Section 11.2 (price vs EMA50, EMA50 vs EMA200, RSI > 55, 7-day return > 0): score ≥ 3 → BULL, score ≤ 1 → BEAR, else NEUTRAL
-- The model learns to reproduce these labels from the feature vector, then predicts the regime for the *current* candle
-- Final confidence blends the model's own probability with the rule-based score:
-
-```
-confidence = ml_probability × 0.65 + (rule_score / 4 × 100) × 0.35
-```
-
-```json
-{"regime": "BULL" | "NEUTRAL" | "BEAR", "confidence": 71.4, "agrees_with_rules": true}
-```
-
-`agrees_with_rules` is `true` when the ML regime matches the rule-based regime from Section 11.2 — a quick cross-check between the two independent methods.
-
-#### 11.6.4 Model 3 — Entry Quality Score
-
-`score_entry(closes, highs, lows, rec)` — a **rule-weighted composite score**, not a trained model. Starts at 50 and adjusts based on how favourable current conditions are for the recommended direction (`rec`).
-
-- **Long DCA:** points are added for oversold RSI, price near the bottom of its 20-day range, and a recent weekly decline (better dip-buying conditions); points are subtracted for overbought RSI or a price that has already risen this week.
-- **Short / Mixed DCA:** the logic mirrors this — overbought RSI, price near the top of its range, and a recent rally add points.
-- **Both directions** receive a volatility adjustment: very high volatility (std-dev of returns > 5%) subtracts points, low volatility (< 1.2%) adds points.
-
-```json
-{
-  "score": 78,
-  "grade": "B",
-  "factors": [
-    ["RSI oversold", "+15", true],
-    ["Price in lower range", "+10", true],
-    ["Weekly decline", "+8", true],
-    ["Low volatility — stable", "+5", true]
-  ]
-}
-```
-
-| Score | Grade |
-|-------|-------|
-| 80–100 | A |
-| 65–79 | B |
-| 50–64 | C |
-| 35–49 | D |
-| 0–34 | F |
-
-The dashboard shows the grade badge plus the top 4 contributing factors, each marked with a coloured dot (green = favourable, red = unfavourable, grey = neutral).
-
-### 11.7 Signal History — Persistence Layer
-
-Every fresh signal computation (i.e. not served from the 15-minute cache) is written to a local SQLite database at `data/signal_history.db` via `core/signal_history.py`.
-
-**Schema (`signal_history` table):**
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INTEGER PK | Auto-increment row ID |
-| `ts` | TEXT | UTC timestamp of computation |
-| `coin` | TEXT | BTC / ETH / XRP / SOL |
-| `price` | REAL | Price at computation time |
-| `regime` | TEXT | BULL / NEUTRAL / BEAR |
-| `score` | INTEGER | 0–4 regime score |
-| `rsi` | REAL | RSI(14) |
-| `week_ret` | REAL | 7-day return % |
-| `rec` | TEXT | Long DCA / Short DCA / Mixed DCA |
-| `ml_direction` | TEXT | UP / DOWN / UNKNOWN |
-| `ml_direction_conf` | REAL | Model 1 confidence % |
-| `ml_regime` | TEXT | Model 2 regime |
-| `ml_regime_conf` | REAL | Model 2 confidence % |
-| `ml_agrees` | INTEGER | 1 if Model 2 agrees with the rule-based regime |
-| `entry_score` | INTEGER | Model 3 score (0–100) |
-| `entry_grade` | TEXT | Model 3 grade (A–F) |
-| `action` | TEXT | LONG NOW / SHORT NOW / WATCH / WAIT |
-| `entry_ready` | INTEGER | 1 if action is a "NOW" verdict |
-
-Indexed on `(ts, coin)` for fast time-range queries.
-
-**API:** `GET /api/signals/history?coin=BTC&days=7`
-
-```json
-{
-  "rows":    [ { "ts": "...", "coin": "BTC", "price": 68500.0, "regime": "BEAR", "...": "..." } ],
-  "summary": [ { "coin": "BTC", "regime": "BEAR", "cnt": 12, "avg_entry_score": 64.2, "avg_rsi": 58.3, "avg_price": 67890.5 } ],
-  "days": 7
-}
-```
-
-- `rows` — raw history, most recent first, optionally filtered by coin
-- `summary` — per-coin/per-regime aggregates (count, average entry score, average RSI, average price) over the window
-
-**Dashboard panel.** The Signal History panel offers a coin filter and a time-range filter (1 / 3 / 7 / 30 days), and shows:
-- Per-coin summary cards (regime distribution, average entry score, average RSI/price)
-- A table of every persisted computation: time, coin, price, regime (as filled/empty score dots), RSI, action, ML direction, and entry grade
+Every response is required to end with the disclaimer: *"⚠️ This is analytical context to support your own decision — not financial advice. You make the final call."* This is a single on-demand call per click (not part of the auto-refresh cycle) — there is no caching, scheduled polling, or alerting on top of it.
 
 ### 11.8 Refresh Cadence & Caching
 
-Signal computation calls Binance four times and trains three ML models per coin — too expensive to run on every page load. Results are cached server-side for **15 minutes** (`_SIGNALS_TTL = 900` seconds); a request with `?bust` forces a fresh computation. The dashboard auto-refreshes the Market Signals and Signal History panels on the same 15-minute interval.
+| Layer | TTL | Scope | Rationale |
+|-------|-----|-------|-----------|
+| Layer 1 | 900s (15 min) | Global — one cache entry for all coins | Macro indicators (Fed rate, CPI, DXY, etc.) don't move meaningfully within a 15-minute window, and several depend on rate-limited third-party keys (Twelve Data, FRED) |
+| Layer 2 | 300s (5 min) | Per-symbol | Funding/OI/long-short data updates on Binance's own hourly/8-hourly cadence; 5 minutes keeps the dashboard responsive without hammering the futures API on every tab switch |
+| Layer 3 | 120s (2 min) | Per-symbol | Entry timing is meant to be the most reactive layer — order book and recent-candle volume can shift materially within a couple of minutes |
 
-### 11.9 Telegram Alerts on Actionable Signals
+The DCA Model Level Visualizer and AI Analysis Panel are **not cached** — both are explicit, on-demand actions (clicking "Calculate" / "Analyze") rather than part of the passive auto-refresh cycle, and both need the live price/ATR at the moment the user asks.
 
-Whenever a coin's `action` transitions into **LONG NOW** (buy) or **SHORT NOW** (sell), `core/telegram_notifier.py` pushes an alert to a configured Telegram chat via the Bot API:
+### 11.9 Retirement of the Original Signal System
 
-```
-🟢 BUY SIGNAL — ETH
-Price: $2,456.78
-Regime: BULL (4/4) | RSI: 38.5
-Entry grade: B (78/100)
-RSI oversold at 38 — strong dip entry
-```
+Earlier versions of this whitepaper described a different, single-score Market Signals system: a 4-signal regime score (price vs. EMA50/200, RSI, weekly return) over BTC/ETH/XRP/SOL/ZEC/SUI/XAU/NVDA, three on-the-fly scikit-learn models (`core/ml_signals.py`), a SQLite Signal History database (`core/signal_history.py`), Fibonacci retracement levels (`core/fibonacci.py`), and automatic Telegram alerts on regime-transition (`core/telegram_notifier.py`) backed by `core/market_data.py` for OHLC fetching. That system has been **fully superseded** by the Layer 1/2/3 architecture in this section, and its asset coverage narrowed from BTC/ETH/XRP/SOL/ZEC/SUI/XAU/NVDA to **BTC/ETH/SOL/ZEC/XAUT** — XRP, SUI, and NVDA are no longer covered, and gold is now tracked directly as XAUT (Tether Gold, `XAUTUSDT` on Binance spot) instead of via a Twelve Data XAU/USD feed.
 
-- **Configuration** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`. If either is unset, alerting is silently disabled. `TELEGRAM_CHAT_ID` accepts a comma-separated list to notify multiple chats/recipients.
-- **Transition-based** — the last-notified action per coin is persisted to `data/telegram_notify_state.json`, so an alert fires only when a coin *enters* an actionable state, not on every 15-minute poll while it remains there.
-- **Triggered from `_compute_market_signals`** — runs on every fresh computation (background poller or `?bust`), alongside the Signal History write.
-- **`POST /api/telegram/test`** — sends a one-off confirmation message to verify the bot token and chat id are wired up correctly.
+As of this writing, the modules behind the old system are dead or orphaned from the live dashboard's perspective:
+- **`core/ml_signals.py`** — no longer imported by `web/app.py`. It survives only as an optional `--ml-filter` overlay inside `signal_lab/harness.py` (`signal_lab` is an offline research tool, not part of the live dashboard).
+- **`core/signal_history.py`**, **`core/fibonacci.py`**, **`core/market_data.py`** — fully orphaned; no remaining file in the codebase references any of them.
+- **`core/telegram_notifier.py`** — still imported, but only by the standalone `POST /api/telegram/test` route, which has no corresponding control in the dashboard UI. The automatic alert-on-transition behaviour described in earlier drafts of this document no longer exists, because the function that used to trigger it (a single combined signal computation) no longer exists in this form.
+
+None of this affects the **Weekly Regime tab** (`core/regime_detector.py`, §10), which has always been a separate feature with its own independent Fear & Greed and BTC Dominance fetches on the daily timeframe — it is untouched by the Layer 1/2/3 rewrite described in this section.
 
 ---
 
@@ -1071,7 +930,7 @@ For strategies running `mode="mixed"`, `PositionState` carries additional fields
 
 - **Exchange:** Binance (spot markets only)
 - **Order types:** Market buy, market sell
-- **Supported:** Testnet mode for safe testing
+- **Supported:** Testnet mode for safe testing — at the account level (`config/accounts.json`'s `testnet` flag) and, dashboard-wide, via the LIVE/TESTNET toggle described in §10.6
 - **Safety:** `binance_client.py` verifies fills, handles lot size precision (step size), and prevents zero-quantity orders
 
 ### 13.1 Data Sources & Timeframes
@@ -1081,15 +940,17 @@ Different parts of the system pull different kinds of Binance data, on different
 | Data | Source | Timeframe | Used by | Frequency |
 |------|--------|-----------|---------|-----------|
 | Ticker price | `GET /api/v3/ticker/price` | — (instantaneous) | Live dashboard price display, `DCAEngine.tick()` dump%/TP checks | Every 5s (dashboard poller), every 10s (engine tick) |
-| 4h klines (200 candles ≈ 33 days) | `GET /api/v3/klines` (BTC/ETH/XRP/SOL/ZEC/SUI) | 4h | Market Signals (Section 11.2) and ML models (Section 11.6) for all six; Fibonacci levels (Section 11.4) for BTC/ETH/XRP/SOL only | Recomputed every 15 min (`_SIGNALS_TTL`) by the background signal poller |
-| 4h time series (200 candles) | Twelve Data `/time_series` (XAU, NVDA) | 4h | Market Signals (Section 11.2), ML models (Section 11.6) | Same 15-min cycle as above |
+| Global macro APIs (alternative.me, CoinGecko, Twelve Data, FRED) | Various, see §11.2 | 1d (daily series) | Market Signals Layer 1 — Macro Environment (§11.2), coin-agnostic | Recomputed every 15 min (`_LAYER1_TTL`), shared across all coins |
+| Binance Futures public data | `GET /fapi/v1/fundingRate`, `/futures/data/openInterestHist`, `/futures/data/*LongShortAccountRatio` (1h bars) | 1h | Market Signals Layer 2 — Market Positioning (§11.3), per selected coin | Recomputed every 5 min (`_LAYER2_TTL`) per symbol |
+| 4h klines (21 candles ≈ 3.5 days) + order book (top 20 levels) | `GET /api/v3/klines`, `GET /api/v3/depth` | 4h | Market Signals Layer 3 — Entry Timing (§11.4), per selected coin | Recomputed every 2 min (`_LAYER3_TTL`) per symbol |
 | Daily klines (200 candles ≈ 6.5 months) | `GET /api/v3/klines` | 1d | Weekly Regime tab (`core/regime_detector.py`) — EMA50/200, ATR, Bollinger Bands, volume trend, higher-highs | On-demand when the tab is opened |
 | 1h historical OHLCV (CSV, ~61,000 candles, 2018–2025) | Pre-downloaded dataset | 1h | Backtesting & strategy optimization (Sections 8–9) | Static — loaded once per backtest run |
 
 **Why these timeframes:**
 
 - **Ticker price (no aggregation):** trading decisions for a multi-day DCA strategy don't need sub-second data, but polling too slowly risks missing a brief wick through a trigger level. 5–10s balances responsiveness against Binance's public rate limits.
-- **4h klines:** EMA200 needs 200 periods, and 200 × 4h ≈ 33 days gives EMA50/EMA200 crossovers real meaning without requiring thousands of candles. 4h is also a natural "swing" timeframe — long enough to filter 1h/15m noise, short enough to react to the multi-day trend shifts that matter for positions typically held 0.5–10 days (Section 9.3). A 15-minute refresh on a 4h candle mostly just updates the still-forming current candle, so the dashboard feels live without re-fetching on every price tick.
+- **Layer 3's short 21-candle window:** unlike a regime/trend read, entry timing (§11.4) only needs to know what happened in the last few days — volume divergence, recent structure, and ATR are all short-lookback by design. 21 four-hour candles (≈3.5 days) is enough for a 14-period ATR and a 10-candle structure read without dragging in price action from weeks ago that's no longer relevant to "should I enter in the next few hours."
+- **Layer 1's 15-minute global cache:** macro indicators (Fed funds, CPI, DXY, VIX) don't move meaningfully within a 15-minute window and several depend on rate-limited third-party keys (Twelve Data, FRED) — caching once for all coins avoids redundant calls every time the user switches the selected coin.
 - **Daily klines:** the Weekly Regime tab answers a different question — "what's the macro cycle right now" rather than "should I enter a level this week". Daily candles over ~6 months are the standard window for that read, and pairing them with Fear & Greed Index and BTC dominance (both meaningless on a 4h chart) adds macro context.
 - **1h historical data:** the optimizer's best configurations use tight DCA levels (e.g. -5%/-9%/-13%, 3% TP) that only show up at 1h granularity. ~61,000 1h candles over 7 years is large enough for statistically meaningful backtests while staying practical to grid-search — daily data would miss the tight-level fills, and minute data would be ~60× larger for no added benefit at this strategy's scale.
 
@@ -1111,6 +972,7 @@ Strategies are defined in `config/coins.json`. Each entry includes:
 | `order_sizes` | float[] | USDT amount to buy at each long step. Empty list if `step_count` is `0` |
 | `take_profit_percent` | float | Target return % to trigger sell on the long side. Must be > 0 |
 | `reference_price` | float? | Starting reference price (null = must be set manually) |
+| `is_testnet` | bool | `false` = live strategy, `true` = paper-trading strategy shown only in the dashboard's TESTNET mode (§10.6) |
 
 ### 14.1 Mixed Mode Fields (`mode="mixed"`)
 
@@ -1204,7 +1066,7 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 
 ## 18. Planned / Possible Extensions
 
-- **Email alerts** on buy/sell events (Telegram alerts already implemented — Section 11.9)
+- **Email/Telegram alerts on Market Signals transitions** — `core/telegram_notifier.py` exists and is reachable via a test endpoint (§11.9), but nothing currently triggers it automatically off Layer 1/2/3 state; re-wiring an alert (e.g. on Master Summary Bar transitions into ALIGNED LONG/SHORT) is a possible follow-up, not something already live
 - **Multiple exchange support** (OKX, Bybit)
 - **Dynamic position sizing** based on portfolio value
 - **Trailing take profit** to capture extended uptrends
@@ -1212,7 +1074,7 @@ The Mixed Strategy extends this to bear markets: when regime detection confirms 
 - **Multi-account portfolio view** — aggregate P&L across all accounts
 - **Strategy optimizer** — auto-tune DCA levels based on backtest results
 - **Direction-aware strategy matching** — restrict saved strategies suggested for Short DCA to those whose levels were originally designed for short entries, rather than mirroring long-only level sets
-- **Charting for Signal History** — equity-style charts of regime, RSI, and entry score over time per coin
+- **Historical charting for Market Signals** — the retired Signal History database (§11.9) used to persist every signal computation for charting regime/RSI/entry-score over time; an equivalent time-series view (e.g. Layer verdict history per coin) does not currently exist for the Layer 1/2/3 system and would need to be rebuilt from scratch if wanted
 - **DCA Model live link** — store a `model_id` back-reference on strategies created via "Apply" (§10.3), so a later edit to the model can optionally be re-propagated to every strategy it was applied to, instead of requiring a manual re-apply
 
 ---
@@ -1252,18 +1114,18 @@ The backtest engines (§8) execute fills against candle **high/low wicks** with 
 - If the reference is set **too low** (not actually near a local top), DCA levels may never trigger, or trigger at prices that aren't meaningfully discounted.
 - If the reference is set **too high** (well above where price ever returns), the position may never reach the deeper DCA levels needed to pull the average entry down enough for TP.
 
-The system's mechanical, rule-based execution starts *after* this one discretionary decision. Users should not read "mechanical execution" (§2) as "the system removes all judgment" — it removes judgment from *execution*, not from *anchor selection*. The Market Signals tab (§11) and its anchor/trigger-price calculations (§11.4) are aids for making this single decision more informed, not a replacement for it.
+The system's mechanical, rule-based execution starts *after* this one discretionary decision. Users should not read "mechanical execution" (§2) as "the system removes all judgment" — it removes judgment from *execution*, not from *anchor selection*. The Market Signals tab's three layers (§11) and the DCA Model Level Visualizer's ATR-anchored ladder preview (§11.6) are aids for making this single decision more informed, not a replacement for it.
 
-### 19.4 ML Models Are Exploratory, Not Validated Predictors
+### 19.4 ML Models Are Retired From the Live Dashboard, Live Only in Offline Research
 
-The three models in §11.6 are trained **on the fly on ~200 four-hour candles (≈33 days)** every time signals are computed. This is useful as a *supplementary, fast-refreshing signal*, but it falls well short of what would be needed to call these "predictive":
+Earlier versions of this whitepaper described a live "ML Analysis" panel — three scikit-learn models retrained on the fly from 200 four-hour candles on every Market Signals computation. That panel no longer exists; `core/ml_signals.py` is not imported anywhere in `web/app.py` (§11.9). Of the three models that used to back it, only the first — `predict_direction()`, a RandomForestClassifier predicting next-candle direction — is still reachable at all, as `signal_lab/harness.py`'s optional `--ml-filter` flag. The methodological caveats below are scoped to that one model, in its offline-research role, not to anything shown on the live dashboard:
 
-- A ~33-day training window is small relative to the multi-week/multi-month patterns the strategy is meant to trade around — these models cannot have learned much about regime changes that happen less often than that.
-- **Model 2's training labels are pseudo-labels generated by the same rule-based score described in §11.2** — the model is, at best, learning a smoothed/interpolated version of the rule it's being compared against. `agrees_with_rules` is therefore not an independent confirmation; the two are correlated by construction.
-- **No walk-forward validation and no out-of-sample backtest** exist for any of the three models. `predict_direction`'s reported `confidence` is a same-run probability estimate, not a validated hit rate.
-- Retraining from scratch every 15 minutes on a small, overlapping window means model output can be noisy/unstable run-to-run.
+- `predict_direction()` retrains a brand-new `RandomForestClassifier` from scratch on every call — there is no persisted/cached model. In a Signal Scan, `--ml-filter` calls it once per trade the rule-based signal opens, each time fitting fresh on whatever candle history is available up to that point and labelling each historical candle by whether the *next* one closed higher or lower.
+- The reported `confidence` is that freshly-retrained model's own same-run predicted probability — there is no separate held-out test set tracked across the whole scan, and no walk-forward accuracy metric reported anywhere in the harness output.
+- `--ml-filter`'s report is an **agreement** breakdown — whether the model's UP/DOWN call lines up with the direction the rule-based signal already traded — not an independent backtest of the model. A high agreement rate says the two methods often concur, not that either one is more accurate than chance.
+- Retraining from scratch on a small, overlapping window at every trade means the model's output can be noisy/unstable from one trade to the next, even on the same underlying data.
 
-**Takeaway:** the ML panel is best understood as additional *context* alongside the rule-based regime score and RSI-based entry timing (§11.2, §11.5) — useful for a quick "does the model agree with the rules right now?" check, not as a standalone trading signal. A user should not size positions or override the rule-based recommendation based on ML confidence scores without separately validating them.
+**Takeaway:** if `--ml-filter` is used in a Signal Scan, treat its agreement breakdown as a descriptive cross-check against the rule-based verdict — not as a validated predictor, and not as something the live dashboard's Layer 1/2/3 verdicts (§11.2–§11.4) rely on in any way.
 
 ### 19.5 Security & Deployment Hardening
 
