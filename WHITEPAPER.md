@@ -58,11 +58,13 @@ Infinity/
 │   ├── state_manager.py     # Persists position state to JSON files
 │   ├── ml_signals.py        # ML models: direction, regime & entry-quality scoring
 │   ├── signal_history.py    # SQLite persistence for market signals + ML outputs
+│   ├── testnet_journal.py   # Persists/aggregates completed Testnet-mode paper trades (§10.6)
 │   └── logger.py            # Structured logging
 ├── models/
-│   └── dca_config.py        # Data models: CoinConfig (long + mixed fields), PositionState, ExecutedStep, DCAModel
+│   └── dca_config.py        # Data models: CoinConfig (long + mixed + is_testnet fields), PositionState, ExecutedStep, DCAModel
 ├── config/
-│   ├── coins.json           # Strategy definitions (coins, levels, sizes, TP, mode, leverage, ATR spacing)
+│   ├── coins.json           # Strategy definitions (coins, levels, sizes, TP, mode, leverage, ATR spacing, is_testnet)
+│   ├── accounts.json        # Binance API accounts — each flagged live or testnet (§10.4, §10.6)
 │   └── dca_models.json       # DCA Model templates — reusable bull+bear ladders for Mixed strategies
 ├── data/                    # Live position state files (one JSON per strategy)
 │                             # + signal_history.db (Market Signals history)
@@ -709,6 +711,22 @@ A model's ladders are validated the same way as `DCAModel.validate()`: `bull_lev
 
 See Section 11 for the full signal computation, strategy-matching, and ML methodology behind this tab.
 
+### 10.6 LIVE / TESTNET Dashboard Mode
+
+A header-level **LIVE / TESTNET** toggle switches every tab — Dashboard, Accounts, Strategies, and the Market Signals strategy context — between live trading and Binance Testnet paper trading, without touching any live state.
+
+**How it's wired:**
+- Each Binance account in `config/accounts.json` already carried a `testnet: bool` flag (used by `get_client()`/`get_futures_client()` to route to `testnet.binance.vision` instead of the production API). The dashboard toggle is a pure UI/filter layer on top of that existing flag — it does not introduce a second trading path.
+- `CoinConfig` gained an additive `is_testnet` field (default `false`). A strategy flagged `is_testnet=true` is a paper-trading strategy: same engine code (`core/dca_engine.py` / `core/mixed_engine.py`), same state-file format, just pointed at a testnet account.
+- **Mode switch (UI only):** clicking **TESTNET** shows a one-time confirmation modal (no real orders will be placed); clicking back to **LIVE** switches immediately, no confirmation needed. The selected mode is stored in the browser's `localStorage` (`dashboard_mode`) and persists across reloads.
+- **Filtering, not isolation at the API level:** once in TESTNET mode, every list the dashboard renders — saved strategies, saved accounts, the running-engines bar, Start/Stop modals, USDT balance totals — is filtered client-side to `is_testnet`/`testnet` rows matching the active mode. The underlying `/api/strategies`, `/api/accounts`, and `/api/running` responses are unfiltered; the mode toggle decides what the UI shows, while a server-side guard (next bullet) decides what is allowed to *run*.
+- **Mode-mismatch guard:** `POST /api/start_engine` rejects any request where a strategy's `is_testnet` flag doesn't match the target account's `testnet` flag (HTTP 400) — a testnet strategy can never be started against a live account, and vice versa, regardless of what the UI currently shows.
+- **"Copy to Testnet"** (`POST /api/strategies/<id>/copy_to_testnet`) duplicates a live strategy's full configuration into a new strategy with a fresh id, `is_testnet=true`, and `reference_price` cleared — so a strategy can be rehearsed on paper money before being run live, without affecting the original.
+- **Testnet Learning Journal** (`core/testnet_journal.py`) — every time a testnet strategy's state transitions through a completed cycle, `web/app.py` snapshot-diffs the position state and appends a journal entry (entry/exit price, P&L, signal context at entry) to `data/testnet_journal.json`. The Strategies tab shows this as a table with win-rate/avg-win/avg-loss stats and a CSV export, when in TESTNET mode. This hooks in entirely from `web/app.py`'s polling, with no changes to `core/dca_engine.py`'s execution path.
+- **Visual cues while in TESTNET mode:** a non-dismissible amber banner below the header, and an amber border under the tab row — both intended to make it visually unmistakable that the dashboard is not looking at live data.
+
+**What does not change:** the live trading engine (`infinity.service`) is a separate `systemd` process from the dashboard (`infinity-web.service`, §16) and has no concept of this toggle at all — it runs whatever live strategies are enabled in `config/coins.json`, exactly as before. The toggle only affects what the Flask dashboard *displays and permits starting via its own API*; it cannot start, stop, or alter a live strategy's behavior beyond the normal Start/Stop controls that existed already.
+
 ---
 
 ## 11. Market Signals & ML Analysis System
@@ -1071,7 +1089,7 @@ For strategies running `mode="mixed"`, `PositionState` carries additional fields
 
 - **Exchange:** Binance (spot markets only)
 - **Order types:** Market buy, market sell
-- **Supported:** Testnet mode for safe testing
+- **Supported:** Testnet mode for safe testing — at the account level (`config/accounts.json`'s `testnet` flag) and, dashboard-wide, via the LIVE/TESTNET toggle described in §10.6
 - **Safety:** `binance_client.py` verifies fills, handles lot size precision (step size), and prevents zero-quantity orders
 
 ### 13.1 Data Sources & Timeframes
@@ -1111,6 +1129,7 @@ Strategies are defined in `config/coins.json`. Each entry includes:
 | `order_sizes` | float[] | USDT amount to buy at each long step. Empty list if `step_count` is `0` |
 | `take_profit_percent` | float | Target return % to trigger sell on the long side. Must be > 0 |
 | `reference_price` | float? | Starting reference price (null = must be set manually) |
+| `is_testnet` | bool | `false` = live strategy, `true` = paper-trading strategy shown only in the dashboard's TESTNET mode (§10.6) |
 
 ### 14.1 Mixed Mode Fields (`mode="mixed"`)
 
