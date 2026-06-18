@@ -329,6 +329,11 @@
   .ms-ai-gen-btn { width: 100%; padding: 14px 24px; background: #000000; color: #FFFFFF; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s; letter-spacing: .2px; }
   .ms-ai-gen-btn:hover:not(:disabled) { background: #222222; }
   .ms-ai-gen-btn:disabled { background: #444444; cursor: not-allowed; }
+  .ms-ai-gen-wrap { position: relative; }
+  .ms-ai-gen-btn.locked { background: #c7c7cc; color: #8a8a8e; cursor: not-allowed; }
+  .ms-ai-gen-btn.locked:hover { background: #c7c7cc; }
+  .ms-ai-gen-tip { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 8px; background: #1d1d1f; color: #fff; font-size: 11px; line-height: 1.4; padding: 8px 10px; border-radius: 6px; white-space: nowrap; box-shadow: var(--shadow); z-index: 5; }
+  .ms-ai-gen-tip.show { display: block; }
   .ms-ai-output-wrap { position: relative; margin-top: 18px; }
   .ms-ai-output { display: none; }
   .ms-ai-output.visible { display: block; }
@@ -488,6 +493,13 @@
   .ms-pt-rr-cell { display: flex; flex-direction: column; gap: 2px; }
   .ms-pt-rr-lbl { font-size: 10.5px; color: var(--muted); letter-spacing: .3px; }
   .ms-pt-rr-val { font-size: 14px; font-weight: 700; }
+
+  .ms-pt-progress-wrap { margin-top: 16px; }
+  .ms-pt-progress-lbl { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .3px; margin-bottom: 6px; }
+  .ms-pt-progress-lbl.done { color: var(--green); }
+  .ms-pt-progress-track { height: 8px; border-radius: 4px; background: var(--border2); overflow: hidden; }
+  .ms-pt-progress-track.complete { box-shadow: 0 0 0 1px var(--green) inset; }
+  .ms-pt-progress-fill { height: 100%; width: 0%; background: var(--green); border-radius: 4px; transition: width .2s; }
 
   .ms-ai-style-row { display: flex; gap: 8px; margin: 10px 0 14px; }
   .ms-ai-style-btn { flex: 1; font-size: 12px; font-weight: 700; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border2); background: var(--surface); color: var(--text2); cursor: pointer; }
@@ -2376,6 +2388,14 @@
         </div>
       </div>
 
+      <!-- Checklist completion progress -->
+      <div class="ms-pt-progress-wrap">
+        <div class="ms-pt-progress-lbl" id="ms-pt-progress-lbl"><span id="ms-pt-progress-count">0</span> of 5 complete</div>
+        <div class="ms-pt-progress-track" id="ms-pt-progress-track">
+          <div class="ms-pt-progress-fill" id="ms-pt-progress-fill"></div>
+        </div>
+      </div>
+
       <!-- Risk:Reward summary -->
       <div class="ms-pt-rr-box" id="ms-pt-rr-box">
         <div class="ms-pt-rr-cell"><span class="ms-pt-rr-lbl">RISK</span><span class="ms-pt-rr-val" id="ms-pt-rr-risk">—</span></div>
@@ -2440,7 +2460,10 @@
         <button class="ms-ai-style-btn" id="ms-ai-style-plain" onclick="setAiStyle('plain')">Plain English</button>
       </div>
 
-      <button class="ms-ai-gen-btn" id="ms-ai-gen-btn" onclick="generateAiAnalysis()">⚡ Generate Professional Analysis</button>
+      <div class="ms-ai-gen-wrap">
+        <button class="ms-ai-gen-btn locked" id="ms-ai-gen-btn" onclick="ptGenerateClick()">⚡ Generate Professional Analysis</button>
+        <div class="ms-ai-gen-tip" id="ms-ai-gen-tip">Complete all 5 items first.</div>
+      </div>
 
       <div class="ms-ai-output-wrap" id="ms-ai-output-wrap">
         <div class="ms-ai-output" id="ms-ai-output"></div>
@@ -5646,6 +5669,41 @@ let _ptSyncTimer       = null;
 function ptCheckSet(n, on) {
   const el = document.getElementById(`ms-pt-check-${n}`);
   if (el) el.classList.toggle('on', !!on);
+  ptUpdateProgress();
+}
+
+function ptUpdateProgress() {
+  const done = [1, 2, 3, 4, 5].filter(n => {
+    const el = document.getElementById(`ms-pt-check-${n}`);
+    return el && el.classList.contains('on');
+  }).length;
+
+  const countEl = document.getElementById('ms-pt-progress-count');
+  const fillEl  = document.getElementById('ms-pt-progress-fill');
+  const trackEl = document.getElementById('ms-pt-progress-track');
+  const lblEl   = document.getElementById('ms-pt-progress-lbl');
+  if (countEl) countEl.textContent = done;
+  if (fillEl)  fillEl.style.width = `${done / 5 * 100}%`;
+  if (trackEl) trackEl.classList.toggle('complete', done === 5);
+  if (lblEl)   lblEl.classList.toggle('done', done === 5);
+
+  const genBtn = document.getElementById('ms-ai-gen-btn');
+  if (genBtn) genBtn.classList.toggle('locked', done < 5);
+}
+
+let _ptGenTipTimer = null;
+function ptGenerateClick() {
+  const genBtn = document.getElementById('ms-ai-gen-btn');
+  if (genBtn && genBtn.classList.contains('locked')) {
+    const tip = document.getElementById('ms-ai-gen-tip');
+    if (tip) {
+      tip.classList.add('show');
+      clearTimeout(_ptGenTipTimer);
+      _ptGenTipTimer = setTimeout(() => tip.classList.remove('show'), 2500);
+    }
+    return;
+  }
+  generateAiAnalysis();
 }
 
 function ptGetEntryPrice() {

@@ -29,7 +29,7 @@ This is **not** a maximum-profit strategy. The goal is not to catch tops or bott
 | **Survivability** | The default Spot DCA strategy never uses leverage or futures. A 100% drop cannot wipe out more than the capital allocated to that strategy. |
 | **Mechanical execution** | Every decision is rule-based. There is no discretion, no panic selling, no FOMO buying outside the configured levels. |
 | **Volatility harvesting** | Crypto markets are highly volatile. Infinity turns that volatility into an asset — each dip is an opportunity to accumulate at a lower average cost. |
-| **Stable compounding** | Small, consistent profits (5–10% per cycle) accumulate over time. A 5% gain repeated 20 times grows capital by 165%. |
+| **Stable compounding** | Small, consistent profits accumulate over time. §9.1's backtests are built around an empirically-derived 3% take-profit — it is the single most recurring parameter across the top-performing configurations. After realistic Binance spot round-trip costs (~0.1–0.2%, see §19.1, which are not modeled in the §9 backtests), the net edge per cycle is closer to 1–2%. A 1.5% gain repeated 20 times grows capital by roughly 35%. |
 | **Long-term capital growth** | The system is designed to run indefinitely, cycling through bull and bear periods without human intervention. |
 
 > **A note on leverage:** The Survivability guarantee above describes the default **Spot DCA** strategy type, which remains leverage-free. A separate **Mixed Long/Short DCA** strategy type (`mode="mixed"`, see §1 and §8.6) is available for users who explicitly opt in per coin/strategy — either directly or via a DCA Model template (§10.3). That strategy type carries leverage and liquidation risk by design and does not share the capital-bounded guarantee — it is an isolated, user-selected choice that does not affect the leverage-free default.
@@ -103,6 +103,20 @@ The reference price can be:
 - The current market price (most common — set it when you believe the asset is near a local top)
 - A recent all-time high
 - Any manual price you choose
+
+### 4.1.1 Flush-and-Reclaim Anchor (Preferred Method)
+
+A more defensible way to choose the reference price than "current price, eyeballed near a top" is to anchor it to a specific, observable price-action event instead of a subjective guess:
+
+1. **Identify a Layer 2 liquidation cluster below the current price** (§11.3) — read off an external liquidation-heatmap tool and entered into the dashboard's cluster card.
+2. **Wait for price to flush down into that cluster** — a sharp move into the cluster level, consistent with forced liquidations clearing out leveraged positions there.
+3. **Wait for price to reclaim the cluster on a 4H candle close** — the candle closes back above the cluster level, not just wicking through it intraday.
+4. **Use the reclaim candle's close as the reference price** — this is the value entered into the dashboard or CLI to start the strategy (§4.1).
+5. **Start the strategy with that reference price.**
+
+**Why this is better than an eyeballed top.** The anchor is tied to an observable, timestamped event instead of a subjective "this looks like a top" judgment. The flush suggests forced sellers have already been cleared out at that level — their liquidation-triggering positions no longer exist to sell again. The reclaim suggests real buying demand absorbed the flush rather than the level simply being passed through on the way to somewhere lower. Together, they argue the flushed level is a more durable line than an arbitrary recent high.
+
+**Honest caveat.** This is still a manual technique — there is no code anywhere in the system that detects a "flush" or a "reclaim." The user is still the one watching the chart, reading the cluster value, and deciding when a 4H close counts as a genuine reclaim. It replaces one judgment call (set the price near a top) with a different, more anchored judgment call (read a confirmed event off a chart). See §19.3 for the limits of even this improved version.
 
 ### 4.2 Dump Levels & Buy Steps
 
@@ -707,10 +721,11 @@ The default tab on load. Covers **BTC, ETH, SOL, ZEC, and XAUT** (Tether Gold), 
 - An embedded TradingView candlestick chart (4h interval) for the selected coin
 - A **Master Summary Bar** combining three independently-scored layers into one composite read
 - **Layer 1 — Macro Environment**, **Layer 2 — Market Positioning**, and **Layer 3 — Entry Timing** — each collapsible, each with its own verdict badge
+- A **Pre-Trade Checklist** — a five-item worksheet (signal alignment, entry, take profit, stop loss, position size) with a built-in take-profit analysis and a live risk:reward summary
 - A **DCA Model Level Visualizer** — an ATR-calibrated preview of a DCA Model's ladder against the live price
-- An **AI Analysis Panel** — an on-demand, Claude-generated narrative read of the current Layer 1/2/3 state
+- An **AI Analysis Panel** — an on-demand, Claude-generated narrative read of the current Layer 1/2/3 state, in a Professional or Plain English style
 
-See Section 11 for the full signal computation behind each layer, the AI panel, and the DCA Visualizer.
+See Section 11 for the full signal computation behind each layer, the checklist, the AI panel, and the DCA Visualizer.
 
 ### 10.6 LIVE / TESTNET Dashboard Mode
 
@@ -723,10 +738,13 @@ A header-level **LIVE / TESTNET** toggle switches every tab — Dashboard, Accou
 - **Filtering, not isolation at the API level:** once in TESTNET mode, every list the dashboard renders — saved strategies, saved accounts, the running-engines bar, Start/Stop modals, USDT balance totals — is filtered client-side to `is_testnet`/`testnet` rows matching the active mode. The underlying `/api/strategies`, `/api/accounts`, and `/api/running` responses are unfiltered; the mode toggle decides what the UI shows, while a server-side guard (next bullet) decides what is allowed to *run*.
 - **Mode-mismatch guard:** `POST /api/start_engine` rejects any request where a strategy's `is_testnet` flag doesn't match the target account's `testnet` flag (HTTP 400) — a testnet strategy can never be started against a live account, and vice versa, regardless of what the UI currently shows.
 - **"Copy to Testnet"** (`POST /api/strategies/<id>/copy_to_testnet`) duplicates a live strategy's full configuration into a new strategy with a fresh id, `is_testnet=true`, and `reference_price` cleared — so a strategy can be rehearsed on paper money before being run live, without affecting the original.
-- **Testnet Learning Journal** (`core/testnet_journal.py`) — every time a testnet strategy's state transitions through a completed cycle, `web/app.py` snapshot-diffs the position state and appends a journal entry (entry/exit price, P&L, signal context at entry) to `data/testnet_journal.json`. The Strategies tab shows this as a table with win-rate/avg-win/avg-loss stats and a CSV export, when in TESTNET mode. This hooks in entirely from `web/app.py`'s polling, with no changes to `core/dca_engine.py`'s execution path.
+- **Testnet Learning Journal** (`core/testnet_journal.py`) — every time a testnet strategy's state transitions through a completed cycle, `web/app.py` snapshot-diffs the position state and appends a journal entry (entry/exit price, P&L, signal context at entry) to `data/testnet_journal.json`. The Strategies tab shows this as a table with win-rate/avg-win/avg-loss stats and a CSV export, when in TESTNET mode. This hooks in entirely from `web/app.py`'s polling, with no changes to `core/dca_engine.py`'s execution path. If a Pre-Trade Checklist TP plan (§11.10) was synced for that coin before the trade closed, the entry also carries a `tp_analysis` comparison against the actual exit, and once 10+ entries have that data the journal additionally shows a TP-accuracy summary (§11.10).
 - **Visual cues while in TESTNET mode:** a non-dismissible amber banner below the header, and an amber border under the tab row — both intended to make it visually unmistakable that the dashboard is not looking at live data.
 
 **What does not change:** the live trading engine (`infinity.service`) is a separate `systemd` process from the dashboard (`infinity-web.service`, §16) and has no concept of this toggle at all — it runs whatever live strategies are enabled in `config/coins.json`, exactly as before. The toggle only affects what the Flask dashboard *displays and permits starting via its own API*; it cannot start, stop, or alter a live strategy's behavior beyond the normal Start/Stop controls that existed already.
+
+> ⚠️ Planned — not yet implemented in code.
+> A more fully isolated testnet deployment has been discussed but not built: a separate `infinity-testnet.service` systemd unit running `main.py` with a dedicated `--testnet` CLI flag, reading from its own `config/testnet_coins.json` file (mirroring `coins.json`'s schema) instead of sharing one config file and one engine process with live strategies. Today there is exactly one `coins.json`, one engine process per running strategy, and one `is_testnet` boolean field distinguishing rows within the same file — the process- and config-level isolation described above is architectural intent, not current behavior. Designed but awaiting build.
 
 ---
 
@@ -742,7 +760,7 @@ The Market Signals tab (§10.5) evaluates **BTC, ETH, SOL, ZEC, and XAUT** (Teth
 | **Layer 2 — Market Positioning** | Is this specific coin's futures market crowded, and on which side? | `GET /api/layer2/<symbol>` | 300s, per-symbol |
 | **Layer 3 — Entry Timing** | Does the immediate price action favour entering long or short right now? | `GET /api/layer3/<symbol>` | 120s, per-symbol |
 
-A client-side **Master Summary Bar** combines the three layers' verdicts into a single composite read (§11.5). On top of the three layers sit two on-demand tools: a **DCA Model Level Visualizer** that previews a DCA Model's ladder against the live price and any layer data (§11.6), and an **AI Analysis Panel** that asks Claude to narrate the current combination of signals in plain language (§11.7).
+A client-side **Master Summary Bar** combines the three layers' verdicts into a single composite read (§11.5). On top of the three layers sit three on-demand tools: a **Pre-Trade Checklist** that walks through a trade setup and its take-profit logic before any order is placed (§11.10), a **DCA Model Level Visualizer** that previews a DCA Model's ladder against the live price and any layer data (§11.6), and an **AI Analysis Panel** that asks Claude to narrate the current combination of signals — including the checklist's take-profit plan, when one exists — in plain language (§11.7).
 
 Layer 1 is intentionally coin-agnostic (macro conditions don't depend on which coin is selected), while Layers 2 and 3 are fetched per-symbol and refetched whenever the user switches coins (subject to their respective caches).
 
@@ -763,6 +781,8 @@ Seven live indicators are fetched in parallel on each cache miss:
 Each indicator computes its own `signal` (`+1` bullish for crypto / `0` neutral / `−1` bearish) from its own thresholds — e.g. Fear & Greed ≤44 is bullish (contrarian: fear favours buying), BTC Dominance falling >0.5% in 24h is bullish (altcoin rotation), DXY/VIX/yield/CPI rising or elevated is bearish, Fed Funds in a cutting cycle is bullish. `GET /api/layer1` itself combines whichever indicators returned `status: "ok"` into a verdict (`_layer1_verdict`): fewer than 3 usable indicators → `INSUFFICIENT_DATA`; ≥4 bullish → `FAVORABLE`; ≥4 bearish → `UNFAVORABLE`; otherwise `MIXED`.
 
 **Manual fallback and supplementary cards.** If `TWELVE_DATA_API_KEY` or `FRED_API_KEY` is unset, the corresponding indicator returns `status: "no_key"` and the dashboard renders a manual-entry card instead (DXY, Fed Funds, 10Y Yield, CPI, VIX) — the user looks the number up themselves and the value is persisted to `localStorage` (`layer1_<key>`), substituting for the missing live value in the verdict. Four further indicators have **no live source at all** and are always manual: CME FedWatch (next-meeting cut/hike probabilities), the latest jobs report (unemployment rate + direction), the BTC Rainbow Chart band (cycle position), and Global M2 YoY growth. The dashboard recomputes its own combined verdict client-side from up to 11 possible signals (7 base indicators, live or manual-substituted, plus the 4 always-manual ones): fewer than 3 counted → `INSUFFICIENT_DATA`; ≥6 bullish → `FAVORABLE`; ≥6 bearish → `UNFAVORABLE`; otherwise `MIXED`. This client-side verdict — not the simpler one returned by the raw `/api/layer1` JSON — is what drives the Layer 1 badge and feeds the Master Summary Bar.
+
+**Manual card staleness.** Every manual entry (the 5 no-key fallback cards plus the 4 always-manual ones) timestamps itself when saved and re-renders a freshness note on every load: under 24 hours shows a green "✓ Updated _N_ hours ago"; 24 hours to 7 days shows an amber "⚠️ Entered _N_ days ago — verify current value"; past 7 days shows a red "⚠️ Value is _N_ days old — likely outdated". The value still counts toward the verdict regardless of staleness — the warning is a prompt for the user to re-check it, not an automatic exclusion.
 
 ### 11.3 Layer 2 — Market Positioning
 
@@ -808,6 +828,18 @@ A client-side function (`updateMasterSummary()`) combines the three layers' verd
 
 This bar is computed entirely in the browser from the three layers' already-fetched verdict codes — it is not a separate API call, and it recomputes immediately whenever any layer's data refreshes or the coin selection changes.
 
+### 11.5A Layer Interconnections
+
+It's tempting to assume the three layers form a pipeline — Layer 1 gating Layer 2, Layer 2 gating Layer 3 — but that is not how they're built. Each layer fetches and computes its verdict completely independently, on its own cache TTL and its own `setInterval` (§11.8); none of the three layer routes reads another layer's output, and there is no point in the code where one layer blocks or withholds another from rendering. A user can have an `UNFAVORABLE` Layer 1 and a `LONG` Layer 3 on screen at the same time — nothing stops that from being displayed.
+
+The one place the three layers actually meet is the **Master Summary Bar** (§11.5): a single client-side function reads all three already-computed verdict codes at once and maps the combination to one composite badge. That combination is the entire extent of "Layer 1 affecting Layer 2" or "Layer 3 affecting Layer 1" — there is no code where one layer's verdict re-scores or re-interprets another's.
+
+There are, however, two genuine one-directional data hand-offs that exist outside the verdict logic, both feeding *into* tools below the layer cards rather than back into another layer's verdict:
+- **Layer 2's liquidation cluster inputs** (§11.3) feed the DCA Model Level Visualizer's cluster warnings (§11.6) and the Pre-Trade Checklist's Take Profit Scenario 1 Target/Stretch levels and Scenario 2 distance check (§11.10).
+- **Layer 3's ATR%** (§11.4) feeds the DCA Model Level Visualizer's step spacing and suggested multiplier (§11.6), and the Pre-Trade Checklist's Take Profit Scenario 1 levels and Scenario 2 ATR-multiple check (§11.10).
+
+Neither hand-off changes how Layer 1 or Layer 2 itself is scored — they only supply numbers to the Visualizer and the Checklist, which are downstream, advisory tools, not additional layers in the verdict chain.
+
 ### 11.6 DCA Model Level Visualizer
 
 `POST /api/market/dca-levels` previews how a saved DCA Model (§10.3) would lay out its ladder if started right now, without creating or modifying any strategy.
@@ -820,22 +852,34 @@ Given a `model_id`, a `side` (`long` or `short`), and a multiplier (0.5×–3.0�
    step_price[i] = current_price × (1 − step_pct[i] / 100)   (long: price falls)
    step_price[i] = current_price × (1 + step_pct[i] / 100)   (short: price rises)
    ```
-3. Flags any step landing **past** a user-entered liquidation cluster (§11.3) as a warning, or **just short of** one (within 0.5%) as a good target, and computes a suggested alternate multiplier that would place the nearest step just outside the cluster.
-4. Computes the resulting average entry price and take-profit price/distance if every step fills, using the model's `bull_take_profit_percent` / `bear_take_profit_percent`.
+3. Flags any step landing **past** a user-entered liquidation cluster (§11.3) as a warning, or **just short of** one (within 0.5%) as a good target, and computes a suggested alternate multiplier that would place the nearest step just outside the cluster. An **"Apply _N_× multiplier"** button on the warning sets the slider directly to that suggested value and recalculates.
+4. Computes the resulting average entry price and take-profit price/distance if every step fills, using the model's `bull_take_profit_percent` / `bear_take_profit_percent`, and renders each step as a row in a visual ladder (price, % distance, cumulative size).
+5. Flags any step within 0.5% of the current price with an "⚡ Step _N_ approaching" note, so a step about to trigger doesn't go unnoticed between refreshes.
+
+While a model is selected, the visualizer silently recalculates every 60 seconds in the background (no loading state shown) so the ladder and the approaching-step alert stay current with the live price without the user needing to click "Calculate" again.
 
 The visualizer is read-only — it answers "where would this model's ladder sit today, and does it clash with a known liquidation cluster", not "start this strategy".
 
 ### 11.7 AI Analysis Panel
 
-`POST /api/ai/analysis` sends the current Master Summary verdict, all three layers' live data (including the manual Layer 1 cards and the Layer 2 liquidation cluster inputs, if filled in), and — if open — the DCA Visualizer's current ladder, to Claude (model `claude-sonnet-4-6`, `max_tokens=1000`) and asks for a structured trading read.
+`POST /api/ai/analysis` sends the current Master Summary verdict, all three layers' live data (including the manual Layer 1 cards and the Layer 2 liquidation cluster inputs, if filled in), the Pre-Trade Checklist's current TP plan if one exists for the selected coin (§11.10), and — if open — the DCA Visualizer's current ladder, to Claude (model `claude-sonnet-4-6`, `max_tokens=1300`) and asks for a structured trading read.
 
-The system prompt fixes the response into exactly four sections, with these headers verbatim:
+The panel offers two response styles, chosen with a **Professional / Plain English** toggle (`style: "professional" | "plain"` in the request body, default `professional`) — both read the same underlying data, just narrated differently.
+
+**Professional** fixes the response into four sections, with these headers verbatim:
 - **`## WHAT THE MARKET IS DOING`** — 2–3 sentences combining all three layers, specific numbers only
 - **`## THE KEY TENSION`** — what's agreeing vs. conflicting between layers, and why it matters
 - **`## PROFESSIONAL ASSESSMENT`** — a conviction call (high/medium/low) referencing the 2–3 most important signals
 - **`## SUGGESTION`** — one of LONG / SHORT / WAIT, with an entry approach, ATR-based step spacing, an explicit exit/stop signal to watch, and (when a DCA Model ladder or liquidation clusters were provided) specific commentary on step placement relative to those clusters
 
+**Plain English** asks for the same four-part structure in jargon-free language, headers **`## WHAT'S HAPPENING RIGHT NOW`**, **`## WHAT'S PULLING IN DIFFERENT DIRECTIONS`**, **`## WHAT AN EXPERIENCED TRADER WOULD THINK`**, **`## IS YOUR PLAN GOOD?`** (BUY / SELL / WAIT) — same content requirements as the Professional sections, but any trading term is explained inline rather than assumed.
+
+When a Pre-Trade Checklist TP plan is present, a fifth section is appended: Professional gets **`## PLAN VALIDATION`** (compares the trader's Confirmed TP against the market-offered Target TP from Scenario 1, judges whether a higher target is momentum-justified or just greed and whether a lower one is appropriately conservative or leaves profit on the table, and checks the TP against the liquidation clusters). Plain English instead folds the same comparison into its existing **`## IS YOUR PLAN GOOD?`** section via a fish-market analogy — Minimum/Target/Stretch TP as three sizes of fish, and the number of green checks from Scenario 2 deciding whether "the fish the trader wants is available at this market today." When DCA Model ladder data is present, both styles get an addendum asking for commentary on step placement relative to ATR and any liquidation clusters.
+
 Every response is required to end with the disclaimer: *"⚠️ This is analytical context to support your own decision — not financial advice. You make the final call."* This is a single on-demand call per click (not part of the auto-refresh cycle) — there is no caching, scheduled polling, or alerting on top of it.
+
+> ⚠️ Planned — not yet implemented in code.
+> An earlier design called for two simultaneous AI calls on every click — one Professional and one Plain English response generated together, so both were always available without re-querying. The current implementation makes a single call per click and branches on the `style` field instead; switching styles triggers a fresh call rather than revealing an already-generated second response. Designed but awaiting build.
 
 ### 11.8 Refresh Cadence & Caching
 
@@ -857,6 +901,64 @@ As of this writing, the modules behind the old system are dead or orphaned from 
 - **`core/telegram_notifier.py`** — still imported, but only by the standalone `POST /api/telegram/test` route, which has no corresponding control in the dashboard UI. The automatic alert-on-transition behaviour described in earlier drafts of this document no longer exists, because the function that used to trigger it (a single combined signal computation) no longer exists in this form.
 
 None of this affects the **Weekly Regime tab** (`core/regime_detector.py`, §10), which has always been a separate feature with its own independent Fear & Greed and BTC Dominance fetches on the daily timeframe — it is untouched by the Layer 1/2/3 rewrite described in this section.
+
+Also unaffected: **`core/regime_live.py`** (§8.6) is a different module from anything named in this section, and is not part of the "old signal system" being retired. It still actively feeds the live `MixedEngine` for any running `mode="mixed"` strategy, unchanged by this rewrite. It is not imported by `web/app.py` and never fed the Market Signals dashboard — it only ever fed the live trading engine, and continues to.
+
+### 11.10 Pre-Trade Checklist
+
+Sitting between the Layer 1/2/3 cards and the DCA Model Level Visualizer (§11.6), the Pre-Trade Checklist is a five-item, entirely client-side worksheet for walking through a trade setup before any order is placed. It resets whenever the selected coin changes — entry, stop, size, and TP are inherently tied to one specific setup — and is purely advisory: it never calls `/api/start_engine` or otherwise touches a strategy.
+
+| Item | What it checks |
+|------|-----------------|
+| **1. Signal Alignment** | Auto-derived from the Master Summary Bar (§11.5) — green only when the verdict contains "ALIGNED" |
+| **2. Entry Price** | A manual price, or "Use live price" to pull the current Layer 3 price |
+| **3. Take Profit** | Two analysis modes — see below |
+| **4. Stop Loss** | A manual price below entry; shows the derived % distance |
+| **5. Position Size** | A manual USDT amount, used only for the dollar figures in the R:R summary |
+
+A live **Risk:Reward summary** (`RISK` / `REWARD` / `R:R`) recomputes from Entry, Stop, Confirmed TP, and Position Size on every change.
+
+**Take Profit, Scenario 1 — "What the market is offering."** Three levels are derived from the entry price and the live Layer 3 ATR% (§11.4), recalculating in real time as either changes:
+
+```
+Minimum = entry × (1 + ATR% / 100)              "1× ATR — normal candle range"
+Target  = nearest_cluster_above × 0.995         "Nearest cluster above - 0.5%"   (if a Layer 2 cluster-above value is entered)
+        | entry × (1 + ATR% × 2.5 / 100)         "2.5× ATR — estimated target"     (otherwise)
+Stretch = second_cluster_above × 0.995          "Second cluster above - 0.5%"    (if a second cluster price is entered)
+        | entry × (1 + ATR% × 4 / 100)           "4× ATR — strong trend target"    (otherwise)
+```
+
+Target is auto-selected into Confirmed TP the first time Entry Price is filled in, unless the user has already typed something into Confirmed TP themselves. Each level has a "Use this" button and a one-line tooltip explaining it in plain terms (a small fish / the most likely fish / the biggest fish, mirroring the AI panel's Plain English analogy in §11.7).
+
+**Take Profit, Scenario 2 — "Is your target achievable?"** The user types a desired TP%, and three checks run against it: whether it sits within the nearest liquidation cluster's distance from entry, how many multiples of ATR% it represents (≤2× green / ≤4× yellow "possible but needs a strong move" / >4× red "very unlikely without a major catalyst"), and whether the current Layer 3 verdict (§11.4) supports that direction (`LONG`/`WEAK_LONG` green, `NEUTRAL` yellow, `SHORT`/`WEAK_SHORT` red). The number of green checks drives an overall verdict — 3 green: achievable; 2: possible but not ideal; 1: a stretch (suggests using the Scenario 1 Target instead); 0: unlikely (suggests accepting the Scenario 1 Target% instead). A "Use this as my TP" button sets Confirmed TP from the typed %.
+
+**Agreement indicator.** Once both scenarios have a value, a banner compares the user's desired % against the Scenario 1 Target%: **ALIGNED** (within 0.5%), **CONSERVATIVE** (user's target is lower), **AMBITIOUS BUT SUPPORTED** (higher, but ≥2 of Scenario 2's checks are green), or **TARGET LIKELY TOO HIGH** (higher, with <2 checks green).
+
+**Server-side hand-off.** The checklist's full state is debounced (600ms) and posted to `POST /api/checklist/tp-plan` as `{coin, plan}`, which the server caches in memory keyed by coin (`_tp_plan_cache` — not persisted to disk, cleared on app restart). Two things consume that cache:
+- The **AI Analysis Panel** (§11.7) includes the cached plan in its prompt whenever one exists for the selected coin.
+- **`_track_testnet_journal()`** (§10.6) pops the cached plan for a coin the moment that coin's testnet trade closes, and attaches a `tp_analysis` object to the journal entry comparing the plan's Minimum/Target/Stretch levels and Confirmed TP against the trade's actual exit (`reached_minimum`/`reached_target`/`reached_stretch` booleans, plus a `tp_accuracy` ratio of actual % gain to confirmed-target %). Once 10 or more journal entries carry this data, `GET /api/testnet/journal`'s `tp_accuracy` field — and the Strategies tab's Learning Journal UI — additionally surface a summary: % of trades that reached each level, average actual vs. average target %, and the best-performing level.
+
+Because the cache is per-coin, in-memory, and only ever populated by an open checklist, a trade that closes without a synced plan for its coin simply gets no `tp_analysis` attached — both consumers degrade to their pre-existing behaviour with no plan present.
+
+---
+
+## 11A. Decision Pipeline — From Signal to Journaled Trade
+
+None of the individual pieces below are new — each is documented in its own section above. This section is purely about the order a user actually moves through them, end to end, from looking at the Market Signals tab to a closed, journaled trade.
+
+1. **Check the Master Summary Bar** (§11.5) for a composite read, then open the individual Layer 1/2/3 cards (§11.2–§11.4) behind it to see what's actually driving that read.
+2. **Set or confirm the reference price** for the strategy you intend to run (§4.1) — optionally using the flush-and-reclaim technique (§4.1.1), anchored to a Layer 2 liquidation cluster (§11.3) instead of an eyeballed top.
+3. **Fill in the Pre-Trade Checklist** (§11.10) for the coin — entry, take profit (Scenario 1 and/or Scenario 2), stop loss, and position size. The checklist is independent of everything else on the tab; nothing in the dashboard requires it to be filled in before any other action becomes available.
+4. **Optionally preview the DCA Model ladder** (§11.6) for the model you intend to use, checking step placement against ATR and any liquidation cluster.
+5. **Optionally request the AI Analysis Panel's read** (§11.7). The "Generate" button is not gated on checklist completeness — it can be clicked at any time, with or without a filled-in checklist; if a checklist plan exists for the coin, it's included in the prompt automatically, and if not, the panel just runs without one.
+6. **Go to the Strategies tab** and create or edit the strategy with the chosen reference price and DCA model, optionally as a testnet rehearsal via "Copy to Testnet" (§10.6).
+7. **Start the engine.** From this point the checklist, the AI panel, and the rest of the Market Signals tab have no further involvement — the running strategy is driven entirely by `core/dca_engine.py` / `core/mixed_engine.py`'s own polling loop (§6, §8.6), independently of whatever the dashboard happens to be showing.
+8. **The engine polls, executes DCA steps, and eventually hits take profit** (§4.5, §6) according to its own configured levels — not the checklist's Confirmed TP, which is advisory only and never wired into the engine's exit logic.
+9. **If the strategy was testnet** (`is_testnet=true`), the trade's close is detected by `web/app.py`'s polling and appended to the Testnet Learning Journal (§10.6), including a `tp_analysis` comparison against the checklist's plan if one was synced for that coin before the close (§11.10).
+10. **The Strategies tab's Learning Journal table** shows the result, and once 10 or more entries exist, the TP-accuracy summary (§10.6, §11.10) starts aggregating across trades.
+
+> ⚠️ Planned — not yet implemented in code.
+> The checklist's first item could instead be a manual LONG/SHORT direction toggle, rather than (or in addition to) the auto-derived Signal Alignment check it is today (§11.10, Item 1). Designed but awaiting build.
 
 ---
 
@@ -1115,6 +1217,8 @@ The backtest engines (§8) execute fills against candle **high/low wicks** with 
 - If the reference is set **too high** (well above where price ever returns), the position may never reach the deeper DCA levels needed to pull the average entry down enough for TP.
 
 The system's mechanical, rule-based execution starts *after* this one discretionary decision. Users should not read "mechanical execution" (§2) as "the system removes all judgment" — it removes judgment from *execution*, not from *anchor selection*. The Market Signals tab's three layers (§11) and the DCA Model Level Visualizer's ATR-anchored ladder preview (§11.6) are aids for making this single decision more informed, not a replacement for it.
+
+§4.1.1 describes a flush-and-reclaim technique that partially mitigates the weakness described above: instead of picking a reference price from a subjective read of the chart, the user can anchor it to a specific liquidation cluster flushing and then being reclaimed on a 4H close. This does not remove the discretionary element — the user still has to correctly identify the cluster and correctly judge whether a candle close counts as a genuine reclaim — but it gives that discretion a concrete, observable event to point to instead of an unfalsifiable feeling about where "the top" is. The method replaces "I think this is near the top" with "I observed buyers step in after the cluster swept" — a more defensible rationale, but still requiring accurate real-time observation and correct cluster identification.
 
 ### 19.4 ML Models Are Retired From the Live Dashboard, Live Only in Offline Research
 
