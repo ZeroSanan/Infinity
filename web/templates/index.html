@@ -69,8 +69,16 @@
   }
   @media (max-width: 860px) { .ms-layer2-grid { grid-template-columns: 1fr; } }
 
-  .ms-chart-area { width: 100%; height: 400px; position: relative; }
-  @media (max-width: 640px) { .ms-chart-area { height: 280px; } }
+  .ms-chart-area { width: 100%; height: 600px; position: relative; }
+  @media (max-width: 640px) { .ms-chart-area { height: 380px; } }
+  .ms-chart-area.is-fullscreen {
+    position: fixed; inset: 0; width: 100vw; height: 100vh;
+    z-index: 9000; background: #fff; border-radius: 0;
+  }
+  .ms-chart-hdr { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+  #ms-chart-fullscreen-btn.is-fullscreen {
+    position: fixed; top: 14px; right: 14px; z-index: 9001;
+  }
 
   .ms-panel {
     background: var(--surface2);
@@ -2103,6 +2111,9 @@
 
     <!-- TradingView Chart -->
     <div class="card card-padded" style="margin-bottom:20px">
+      <div class="ms-chart-hdr">
+        <button class="btn btn-ghost btn-sm" id="ms-chart-fullscreen-btn" onclick="toggleMsChartFullscreen()">⛶ Fullscreen</button>
+      </div>
       <div id="ms-chart-container" class="ms-chart-area"></div>
     </div>
 
@@ -4044,6 +4055,25 @@ function renderMsChart(coin){
     container_id: 'ms-chart-container',
   });
 }
+
+function toggleMsChartFullscreen() {
+  const container = document.getElementById('ms-chart-container');
+  const btn = document.getElementById('ms-chart-fullscreen-btn');
+  if (!container || !btn) return;
+  const goingFullscreen = !container.classList.contains('is-fullscreen');
+  container.classList.toggle('is-fullscreen', goingFullscreen);
+  btn.classList.toggle('is-fullscreen', goingFullscreen);
+  btn.textContent = goingFullscreen ? '✕ Exit Fullscreen' : '⛶ Fullscreen';
+  document.body.style.overflow = goingFullscreen ? 'hidden' : '';
+  window.dispatchEvent(new Event('resize'));
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const container = document.getElementById('ms-chart-container');
+    if (container && container.classList.contains('is-fullscreen')) toggleMsChartFullscreen();
+  }
+});
 
 // ── Running bar ───────────────────────────────────────────────────────────────
 async function refreshRunning(){
