@@ -321,9 +321,16 @@ def _build_tp_analysis(plan: dict, exit_price: float, pnl_pct: float) -> dict:
     s1_stretch = (plan.get("scenario1") or {}).get("stretch") or {}
     s2         = plan.get("scenario2") or {}
     confirmed  = plan.get("confirmed") or {}
+    is_short   = plan.get("direction") == "short"
 
     confirmed_tp_pct = confirmed.get("pct")
     tp_accuracy = round(pnl_pct / confirmed_tp_pct * 100, 1) if confirmed_tp_pct else None
+
+    def _reached(level: dict) -> bool | None:
+        price = level.get("price")
+        if not price:
+            return None
+        return (exit_price <= price) if is_short else (exit_price >= price)
 
     return {
         "scenario1_target_pct": s1_target.get("pct"),
@@ -334,9 +341,9 @@ def _build_tp_analysis(plan: dict, exit_price: float, pnl_pct: float) -> dict:
         "confirmed_tp_pct": confirmed_tp_pct,
         "actual_exit": exit_price,
         "actual_pct": pnl_pct,
-        "reached_minimum": (exit_price >= s1_minimum["price"]) if s1_minimum.get("price") else None,
-        "reached_target": (exit_price >= s1_target["price"]) if s1_target.get("price") else None,
-        "reached_stretch": (exit_price >= s1_stretch["price"]) if s1_stretch.get("price") else None,
+        "reached_minimum": _reached(s1_minimum),
+        "reached_target": _reached(s1_target),
+        "reached_stretch": _reached(s1_stretch),
         "tp_accuracy": tp_accuracy,
     }
 

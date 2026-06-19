@@ -428,6 +428,19 @@
   .ms-pt-item-num { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .5px; }
   .ms-pt-item-label { font-size: 13px; font-weight: 700; }
   .ms-pt-item-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+  .ms-pt-dir-row { display: flex; gap: 0; width: fit-content; border-radius: 99px; overflow: hidden; border: 1px solid var(--border2); margin-bottom: 10px; }
+  .ms-pt-dir-btn { padding: 7px 18px; border: none; background: var(--surface2); color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .3px; cursor: pointer; transition: background .15s, color .15s; }
+  .ms-pt-dir-btn.long.active  { background: var(--green-bg); color: #1d8a3b; }
+  .ms-pt-dir-btn.short.active { background: var(--red-bg);   color: #c41f1f; }
+
+  .ms-pt-ack-row { margin-top: 10px; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px; }
+  .ms-pt-ack-row.wait-warn { background: var(--orange-bg); border-color: rgba(255,149,0,.4); }
+  .ms-pt-ack-label { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.45; color: var(--text2); cursor: pointer; }
+  .ms-pt-ack-row.wait-warn .ms-pt-ack-label { color: #a05c00; font-weight: 600; }
+  .ms-pt-ack-label input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; flex-shrink: 0; margin-top: 1px; }
+  .ms-pt-ack-row.wait-warn input[type=checkbox] { accent-color: var(--orange); }
+
   .ms-pt-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .ms-pt-input-wrap { display: flex; align-items: center; gap: 4px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px; padding: 0 8px; min-width: 130px; }
   .ms-pt-input-wrap span { color: var(--muted); font-size: 13px; }
@@ -2297,7 +2310,20 @@
             <div class="ms-pt-item-label">Signal Alignment</div>
           </div>
         </div>
+
+        <div class="ms-pt-dir-row">
+          <button class="ms-pt-dir-btn long active" id="ms-pt-dir-long" onclick="ptSetDirection('long')">LONG</button>
+          <button class="ms-pt-dir-btn short" id="ms-pt-dir-short" onclick="ptSetDirection('short')">SHORT</button>
+        </div>
+
         <div class="ms-pt-item-sub" id="ms-pt-signal-sub">Waiting on Master Verdict…</div>
+
+        <div class="ms-pt-ack-row" id="ms-pt-ack-row">
+          <label class="ms-pt-ack-label">
+            <input type="checkbox" id="ms-pt-ack-check" onchange="ptRecalcAll()">
+            <span id="ms-pt-ack-text">I have reviewed the current signal state and choose to proceed with this <strong>LONG</strong> plan</span>
+          </label>
+        </div>
       </div>
 
       <!-- Item 2 — Entry Price -->
@@ -2330,7 +2356,7 @@
             <div class="ms-pt-scn-hdr">WHAT THE MARKET IS OFFERING</div>
             <div id="ms-pt-s1-levels"></div>
             <div class="ms-pt-cluster2-row">
-              <label for="ms-pt-cluster2">Second cluster ABOVE price (optional, refines Stretch TP):
+              <label for="ms-pt-cluster2">Second cluster <span id="ms-pt-cluster2-dir">ABOVE</span> price (optional, refines Stretch TP):
                 <div class="ms-pt-input-wrap" style="margin-top:4px"><span>$</span><input type="number" min="0" id="ms-pt-cluster2" placeholder="e.g. 69200" oninput="ptRecalcAll()"></div>
               </label>
             </div>
@@ -2733,6 +2759,7 @@ function selectMsCoin(coin, btn) {
   loadLayer3();
   renderMsChart(coin);
   liqRestoreValues();
+  ptRestoreDirection();
   ptResetChecklist();
   if (_dcaSelectedId) calcDcaLevels(false);
 }
@@ -5665,6 +5692,7 @@ let _ptConfirmedDetail = null;   // levelKey for scenario1, desired_pct for scen
 let _ptS1Levels        = null;
 let _ptS2Result        = null;
 let _ptSyncTimer       = null;
+let _ptDirection       = 'long';   // 'long' | 'short' — Item 1 direction toggle, persisted per coin
 
 function ptCheckSet(n, on) {
   const el = document.getElementById(`ms-pt-check-${n}`);
@@ -5763,40 +5791,74 @@ const PT_TOOLTIPS = {
   stretch: 'This is the biggest fish in the market — possible on a strong trend day, but not guaranteed to be available.',
 };
 
+function ptDirectionKey(coin) { return `pt_direction_${coin}`; }
+
+function ptSetDirection(dir) {
+  _ptDirection = (dir === 'short') ? 'short' : 'long';
+  const longBtn  = document.getElementById('ms-pt-dir-long');
+  const shortBtn = document.getElementById('ms-pt-dir-short');
+  if (longBtn)  longBtn.classList.toggle('active', _ptDirection === 'long');
+  if (shortBtn) shortBtn.classList.toggle('active', _ptDirection === 'short');
+  try { localStorage.setItem(ptDirectionKey(msCoin), _ptDirection); } catch(e) {}
+  ptRecalcAll();
+}
+
+function ptRestoreDirection() {
+  let dir = 'long';
+  try { dir = localStorage.getItem(ptDirectionKey(msCoin)) || 'long'; } catch(e) {}
+  _ptDirection = (dir === 'short') ? 'short' : 'long';
+  const longBtn  = document.getElementById('ms-pt-dir-long');
+  const shortBtn = document.getElementById('ms-pt-dir-short');
+  if (longBtn)  longBtn.classList.toggle('active', _ptDirection === 'long');
+  if (shortBtn) shortBtn.classList.toggle('active', _ptDirection === 'short');
+}
+
 function ptRecalcScenario1() {
   const wrap = document.getElementById('ms-pt-s1-levels');
   if (!wrap) return;
   const entry  = ptGetEntryPrice();
   const atrPct = _l3AtrPct;
+
+  const dirSpan = document.getElementById('ms-pt-cluster2-dir');
+  const isShort = _ptDirection === 'short';
+  if (dirSpan) dirSpan.textContent = isShort ? 'BELOW' : 'ABOVE';
+
   if (entry == null || atrPct == null) {
     wrap.innerHTML = `<div class="ms-pt-s2-empty">Enter an entry price and wait for ATR data to load…</div>`;
     _ptS1Levels = null;
     return;
   }
 
-  const clusterAboveEl = document.getElementById('ms-ai-liq-above');
-  const clusterAbove   = clusterAboveEl && parseFloat(clusterAboveEl.value) > 0 ? parseFloat(clusterAboveEl.value) : null;
-  const cluster2El     = document.getElementById('ms-pt-cluster2');
-  const cluster2Above  = cluster2El && parseFloat(cluster2El.value) > 0 ? parseFloat(cluster2El.value) : null;
+  const clusterEl     = document.getElementById(isShort ? 'ms-ai-liq-below' : 'ms-ai-liq-above');
+  const clusterVal    = clusterEl && parseFloat(clusterEl.value) > 0 ? parseFloat(clusterEl.value) : null;
+  const cluster2El    = document.getElementById('ms-pt-cluster2');
+  const cluster2Val   = cluster2El && parseFloat(cluster2El.value) > 0 ? parseFloat(cluster2El.value) : null;
+  const dirMult       = isShort ? -1 : 1;
 
-  const minimum = { price: entry * (1 + atrPct / 100), label: '1× ATR — normal candle range' };
+  const minimum = { price: entry * (1 + dirMult * atrPct / 100), label: '1× ATR — normal candle range' };
 
   let target;
-  if (clusterAbove) {
-    target = { price: clusterAbove * 0.995, label: 'Nearest cluster above - 0.5%' };
+  if (clusterVal) {
+    target = {
+      price: isShort ? clusterVal * 1.005 : clusterVal * 0.995,
+      label: isShort ? 'Nearest cluster below + 0.5%' : 'Nearest cluster above - 0.5%',
+    };
   } else {
     target = {
-      price: entry * (1 + atrPct * 2.5 / 100),
+      price: entry * (1 + dirMult * atrPct * 2.5 / 100),
       label: '2.5× ATR — estimated target',
-      note:  'Enter liquidation cluster above in Layer 2 for a more accurate target',
+      note:  `Enter liquidation cluster ${isShort ? 'below' : 'above'} in Layer 2 for a more accurate target`,
     };
   }
 
   let stretch;
-  if (cluster2Above) {
-    stretch = { price: cluster2Above * 0.995, label: 'Second cluster above - 0.5%' };
+  if (cluster2Val) {
+    stretch = {
+      price: isShort ? cluster2Val * 1.005 : cluster2Val * 0.995,
+      label: isShort ? 'Second cluster below + 0.5%' : 'Second cluster above - 0.5%',
+    };
   } else {
-    stretch = { price: entry * (1 + atrPct * 4 / 100), label: '4× ATR — strong trend target' };
+    stretch = { price: entry * (1 + dirMult * atrPct * 4 / 100), label: '4× ATR — strong trend target' };
   }
 
   for (const lvl of [minimum, target, stretch]) lvl.pct = (lvl.price - entry) / entry * 100;
@@ -5828,16 +5890,17 @@ function ptRecalcScenario2() {
     return;
   }
 
-  const entry  = ptGetEntryPrice();
-  const atrPct = _l3AtrPct;
-  const clusterAboveEl = document.getElementById('ms-ai-liq-above');
-  const clusterAbove   = clusterAboveEl && parseFloat(clusterAboveEl.value) > 0 ? parseFloat(clusterAboveEl.value) : null;
+  const entry   = ptGetEntryPrice();
+  const atrPct  = _l3AtrPct;
+  const isShort = _ptDirection === 'short';
+  const clusterEl  = document.getElementById(isShort ? 'ms-ai-liq-below' : 'ms-ai-liq-above');
+  const clusterVal = clusterEl && parseFloat(clusterEl.value) > 0 ? parseFloat(clusterEl.value) : null;
 
   let greenCount = 0;
   const checks = [];
 
-  if (clusterAbove && entry) {
-    const clusterDistPct = (clusterAbove - entry) / entry * 100;
+  if (clusterVal && entry) {
+    const clusterDistPct = isShort ? (entry - clusterVal) / entry * 100 : (clusterVal - entry) / entry * 100;
     if (theirPct <= clusterDistPct) {
       greenCount++;
       checks.push({ status: 'green', text: `✅ A liquidation cluster sits at ${clusterDistPct.toFixed(2)}% — your target is within mechanical range` });
@@ -5845,7 +5908,7 @@ function ptRecalcScenario2() {
       checks.push({ status: 'yellow', text: `⚠️ No cluster target at this level — the nearest cluster sits at ${clusterDistPct.toFixed(2)}%, below your ${theirPct.toFixed(2)}% target, so there's no clear liquidity pool to fuel a move that far` });
     }
   } else {
-    checks.push({ status: 'grey', text: '— Enter cluster above in Layer 2 for cluster analysis' });
+    checks.push({ status: 'grey', text: `— Enter cluster ${isShort ? 'below' : 'above'} in Layer 2 for cluster analysis` });
   }
 
   if (atrPct) {
@@ -5863,12 +5926,14 @@ function ptRecalcScenario2() {
   }
 
   const l3 = _l3VerdictCode;
-  if (l3 === 'LONG' || l3 === 'WEAK_LONG') {
+  const l3Favorable   = isShort ? (l3 === 'SHORT' || l3 === 'WEAK_SHORT') : (l3 === 'LONG' || l3 === 'WEAK_LONG');
+  const l3Unfavorable = isShort ? (l3 === 'LONG' || l3 === 'WEAK_LONG') : (l3 === 'SHORT' || l3 === 'WEAK_SHORT');
+  if (l3Favorable) {
     greenCount++;
-    checks.push({ status: 'green', text: `✅ Momentum (Layer 3: ${l3}) supports upside continuation` });
+    checks.push({ status: 'green', text: `✅ Momentum (Layer 3: ${l3}) supports ${isShort ? 'downside' : 'upside'} continuation` });
   } else if (l3 === 'NEUTRAL') {
     checks.push({ status: 'yellow', text: '🟡 Momentum (Layer 3: NEUTRAL) is not currently confirming a move in either direction' });
-  } else if (l3 === 'SHORT' || l3 === 'WEAK_SHORT') {
+  } else if (l3Unfavorable) {
     checks.push({ status: 'red', text: `❌ Momentum (Layer 3: ${l3}) is currently against this target` });
   } else {
     checks.push({ status: 'grey', text: '— Layer 3 data loading' });
@@ -5892,7 +5957,7 @@ function ptRecalcScenario2() {
   if (verdictEl) verdictEl.innerHTML = `<div class="ms-pt-s2-verdict ${verdict.status}">${esc(verdict.text)}</div>`;
   if (useBtn) useBtn.style.display = '';
 
-  _ptS2Result = { desired_pct: theirPct, price: entry ? entry * (1 + theirPct / 100) : null, checks, green_count: greenCount, verdict };
+  _ptS2Result = { desired_pct: theirPct, price: entry ? entry * (1 + (isShort ? -1 : 1) * theirPct / 100) : null, checks, green_count: greenCount, verdict };
 }
 
 function ptUseScenario2() {
@@ -5906,7 +5971,7 @@ function ptUpdateAgreement() {
   const s1 = _ptS1Levels, s2 = _ptS2Result;
   if (!s1 || !s1.target || !s2) { box.style.display = 'none'; return; }
 
-  const diff = s2.desired_pct - s1.target.pct;
+  const diff = s2.desired_pct - Math.abs(s1.target.pct);
   let cls, text;
   if (Math.abs(diff) <= 0.5) {
     cls = 'aligned';
@@ -6005,8 +6070,9 @@ function ptRecalcRR() {
     return;
   }
 
-  const riskPct   = (entry - stop) / entry * 100;
-  const rewardPct = (tp - entry) / entry * 100;
+  const isShort   = _ptDirection === 'short';
+  const riskPct   = isShort ? (stop - entry) / entry * 100 : (entry - stop) / entry * 100;
+  const rewardPct = isShort ? (entry - tp) / entry * 100 : (tp - entry) / entry * 100;
   const sizeVal   = (!isNaN(size) && size > 0) ? size : null;
 
   if (riskEl)   riskEl.textContent   = `${riskPct.toFixed(2)}%`   + (sizeVal ? ` (-$${Math.abs(sizeVal * riskPct / 100).toFixed(0)})` : '');
@@ -6015,15 +6081,30 @@ function ptRecalcRR() {
 }
 
 function ptUpdateSignalAlignment() {
-  const sub  = document.getElementById('ms-pt-signal-sub');
-  const mvEl = document.getElementById('ms-master-verdict');
-  const mv   = mvEl ? mvEl.textContent.trim() : '';
-  ptCheckSet(1, /ALIGNED/.test(mv));
+  const sub     = document.getElementById('ms-pt-signal-sub');
+  const mvEl    = document.getElementById('ms-master-verdict');
+  const mv      = mvEl ? mvEl.textContent.trim() : '';
+  const isWait  = mvEl ? mvEl.classList.contains('grey') : false;
+  const ackRow  = document.getElementById('ms-pt-ack-row');
+  const ackText = document.getElementById('ms-pt-ack-text');
+  const ackChk  = document.getElementById('ms-pt-ack-check');
+  const dirWord = _ptDirection === 'short' ? 'SHORT' : 'LONG';
+
   if (sub) sub.textContent = mv ? `Master Verdict: ${mv}` : 'Waiting on Master Verdict…';
+
+  if (ackRow) ackRow.classList.toggle('wait-warn', isWait);
+  if (ackText) {
+    ackText.innerHTML = isWait
+      ? '⚠️ All layers show WAIT — no alignment detected. I understand this is a low-confidence setup and choose to proceed anyway'
+      : `I have reviewed the current signal state and choose to proceed with this <strong>${dirWord}</strong> plan`;
+  }
+
+  ptCheckSet(1, !!(ackChk && ackChk.checked));
 }
 
 function ptUpdateChecks() {
   const entry = ptGetEntryPrice();
+  const isShort = _ptDirection === 'short';
 
   const entryEl = document.getElementById('ms-pt-entry');
   const entryVal = entryEl ? parseFloat(entryEl.value) : NaN;
@@ -6031,11 +6112,13 @@ function ptUpdateChecks() {
 
   const confirmedEl = document.getElementById('ms-pt-confirmed');
   const confirmedVal = confirmedEl ? parseFloat(confirmedEl.value) : NaN;
-  ptCheckSet(3, !isNaN(confirmedVal) && confirmedVal > 0 && entry != null && confirmedVal > entry);
+  const tpOk = !isNaN(confirmedVal) && confirmedVal > 0 && entry != null && (isShort ? confirmedVal < entry : confirmedVal > entry);
+  ptCheckSet(3, tpOk);
 
   const stopEl = document.getElementById('ms-pt-stop');
   const stopVal = stopEl ? parseFloat(stopEl.value) : NaN;
-  ptCheckSet(4, !isNaN(stopVal) && stopVal > 0 && entry != null && stopVal < entry);
+  const stopOk = !isNaN(stopVal) && stopVal > 0 && entry != null && (isShort ? stopVal > entry : stopVal < entry);
+  ptCheckSet(4, stopOk);
 
   const sizeEl = document.getElementById('ms-pt-size');
   const sizeVal = sizeEl ? parseFloat(sizeEl.value) : NaN;
@@ -6060,6 +6143,7 @@ function collectPreTradePlan() {
   const numVal = (id) => { const el = document.getElementById(id); const n = el ? parseFloat(el.value) : NaN; return (!isNaN(n) && n > 0) ? n : null; };
 
   return {
+    direction:   _ptDirection,
     entry_price: entry,
     atr_pct:     _l3AtrPct,
     scenario1:   _ptS1Levels,
@@ -6106,6 +6190,8 @@ function ptResetChecklist() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  const ackChk = document.getElementById('ms-pt-ack-check');
+  if (ackChk) ackChk.checked = false;
   [1, 2, 3, 4, 5].forEach(n => ptCheckSet(n, false));
   const agreementBox = document.getElementById('ms-pt-agreement');
   if (agreementBox) agreementBox.style.display = 'none';
@@ -6411,6 +6497,7 @@ loadLayer1();
 loadLayer3();
 renderMsChart(msCoin);
 liqRestoreValues();
+ptRestoreDirection();
 ptRecalcAll();
 loadDcaModels();
 initLayerCollapseState();
