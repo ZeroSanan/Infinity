@@ -28,6 +28,7 @@ if _ALGO_PATH not in sys.path:
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from binance.exceptions import BinanceAPIException
 from core.binance_client import BinanceSpotClient
@@ -35,6 +36,7 @@ from core.binance_futures_client import BinanceFuturesClient
 from core.dca_engine import DCAEngine
 from core.mixed_engine import MixedEngine
 from core.regime_detector import RegimeDetector
+from core.signal_recorder import SignalRecorder
 from core.state_manager import load_state, save_state, reset_state
 from core.testnet_journal import (
     load_journal as load_testnet_journal,
@@ -742,8 +744,7 @@ def _layer2_verdict(funding: Optional[dict], oi: Optional[dict], ls: Optional[di
     return {"code": "NEUTRAL", "label": "NEUTRAL", "emoji": "🟢", "color": "green"}
 
 
-@app.route("/api/layer2/<symbol>")
-def api_layer2(symbol):
+def _get_layer2_data(symbol: str) -> dict:
     """Layer 2 (Market Positioning): funding rate, open interest, and
     long/short ratios from Binance public futures data, plus a combined
     verdict. Cached per symbol for _LAYER2_TTL seconds."""
@@ -751,7 +752,7 @@ def api_layer2(symbol):
     now = time.time()
     cached = _layer2_cache.get(symbol)
     if cached and now - cached["ts"] < _LAYER2_TTL:
-        return jsonify(cached["data"])
+        return cached["data"]
 
     result: dict = {"symbol": symbol}
 
@@ -778,7 +779,12 @@ def api_layer2(symbol):
     result["timestamp"] = int(now * 1000)
 
     _layer2_cache[symbol] = {"data": result, "ts": now}
-    return jsonify(result)
+    return result
+
+
+@app.route("/api/layer2/<symbol>")
+def api_layer2(symbol):
+    return jsonify(_get_layer2_data(symbol))
 
 
 # ── Routes — Layer 3 (Entry Timing) ────────────────────────────────────────────
@@ -1015,8 +1021,7 @@ def _layer3_verdict_calc(vol: Optional[dict], structure: Optional[dict],
     return v
 
 
-@app.route("/api/layer3/<symbol>")
-def api_layer3(symbol):
+def _get_layer3_data(symbol: str) -> dict:
     """Layer 3 (Entry Timing): volume divergence, price structure, momentum,
     order book imbalance, and ATR volatility from Binance public API.
     Cached per symbol for _LAYER3_TTL seconds."""
@@ -1024,7 +1029,7 @@ def api_layer3(symbol):
     now    = time.time()
     cached = _layer3_cache.get(symbol)
     if cached and now - cached["ts"] < _LAYER3_TTL:
-        return jsonify(cached["data"])
+        return cached["data"]
 
     result: dict = {"symbol": symbol}
 
@@ -1033,7 +1038,7 @@ def api_layer3(symbol):
     except Exception as exc:
         result["error"]     = str(exc)
         result["timestamp"] = int(now * 1000)
-        return jsonify(result)
+        return result
 
     for key, fn in [
         ("volume_divergence", lambda: _layer3_volume_divergence(klines)),
@@ -1062,7 +1067,12 @@ def api_layer3(symbol):
     result["timestamp"] = int(now * 1000)
 
     _layer3_cache[symbol] = {"data": result, "ts": now}
-    return jsonify(result)
+    return result
+
+
+@app.route("/api/layer3/<symbol>")
+def api_layer3(symbol):
+    return jsonify(_get_layer3_data(symbol))
 
 
 # ── AI Analysis route ──────────────────────────────────────────────────────────
@@ -1879,15 +1889,14 @@ def _layer1_verdict(result: dict) -> dict:
     return {"code": "MIXED", "label": "MIXED", "emoji": "🟡", "color": "yellow"}
 
 
-@app.route("/api/layer1")
-def api_layer1():
+def _get_layer1_data() -> dict:
     """Layer 1 (Macro Environment): Fear & Greed, BTC Dominance, DXY, Fed
     Funds Rate, 10Y Treasury Yield, CPI, and VIX, plus a combined macro
     verdict. Cached for _LAYER1_TTL seconds."""
     now = time.time()
     cached = _layer1_cache.get("data")
     if cached and now - _layer1_cache["ts"] < _LAYER1_TTL:
-        return jsonify(cached)
+        return cached
 
     fetchers = {
         "fear_greed":    _layer1_fear_greed,
@@ -1917,7 +1926,64 @@ def api_layer1():
 
     _layer1_cache["data"] = result
     _layer1_cache["ts"] = now
-    return jsonify(result)
+    return result
+
+
+@app.route("/api/layer1")
+def api_layer1():
+    return jsonify(_get_layer1_data())
+
+
+# ── Signal History Recording ────────────────────────────────────────────────
+# Persists periodic Layer 1/2/3 snapshots (see core/signal_recorder.py) so the
+# dashboard can show how indicators have been trending, on top of the
+# snapshot-only live cards above. Purely additive — reads already-cached/live
+# layer data and writes to its own file; never touches live trading state.
+
+_SIGNAL_HISTORY_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ZECUSDT", "XAUTUSDT"]
+recorder = SignalRecorder()
+
+
+def _record_layer1_job():
+    try:
+        data = _get_layer1_data()
+        if data and data.get("verdict"):
+            recorder.record_layer1(data)
+    except Exception as exc:
+        print(f"⚠️  Signal history: layer1 recording failed: {exc}")
+
+
+def _record_layer2_job():
+    for symbol in _SIGNAL_HISTORY_SYMBOLS:
+        try:
+            data = _get_layer2_data(symbol)
+            if data and data.get("verdict"):
+                master = _signal_snapshot(symbol)["master"]
+                recorder.record_layer2(symbol, data, master)
+        except Exception as exc:
+            print(f"⚠️  Signal history: layer2 recording failed for {symbol}: {exc}")
+
+
+def _record_layer3_job():
+    for symbol in _SIGNAL_HISTORY_SYMBOLS:
+        try:
+            data = _get_layer3_data(symbol)
+            if data and not data.get("error"):
+                recorder.record_layer3(symbol, data)
+        except Exception as exc:
+            print(f"⚠️  Signal history: layer3 recording failed for {symbol}: {exc}")
+
+
+@app.route("/api/signal_history/<symbol>")
+def api_signal_history(symbol):
+    """GET /api/signal_history/<symbol>?days=7  (days capped at 21)
+
+    Returns the last N days of Layer 1/2/3 snapshots for the given symbol.
+    Layer 1 is global but included in the response for context."""
+    symbol = symbol.upper()
+    days = int(request.args.get("days", 7))
+    days = max(1, min(days, 21))
+    return jsonify(recorder.get_history(symbol, days))
 
 
 @app.route("/api/running")
@@ -3677,6 +3743,12 @@ for _acct in _accounts:
     except Exception:
         pass
 threading.Thread(target=_price_poller, daemon=True).start()
+
+_signal_scheduler = BackgroundScheduler(timezone="UTC")
+_signal_scheduler.add_job(_record_layer1_job, "interval", hours=6, id="record_l1")
+_signal_scheduler.add_job(_record_layer2_job, "interval", hours=1, id="record_l2")
+_signal_scheduler.add_job(_record_layer3_job, "cron", hour=0, minute=0, id="record_l3")
+_signal_scheduler.start()
 
 
 if __name__ == "__main__":

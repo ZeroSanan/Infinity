@@ -18,6 +18,9 @@ algo-trading/data/
 # Runtime database (signal history — generated on VPS)
 data/signal_history.db
 
+# Signal History feature — Layer 1/2/3 time-series snapshots (generated on VPS)
+data/signal_history.json
+
 # Telegram alert dedup state (generated on VPS)
 data/telegram_notify_state.json
 

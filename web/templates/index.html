@@ -423,6 +423,26 @@
   .ms-ob-pct .ask { color: #c41f1f; }
   .ms-l3-dca-note { font-style: italic; margin-top: 4px; }
 
+  /* ── Trend arrows (Layer 2 card) ── */
+  .ms-trend-arrow { font-size: 12px; font-weight: 700; margin-left: 4px; }
+  .ms-trend-arrow.up   { color: var(--green); }
+  .ms-trend-arrow.down { color: var(--red); }
+  .ms-trend-arrow.flat { color: var(--muted); }
+
+  /* ── Signal History ── */
+  .ms-hist-panel { margin-top: 24px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .ms-hist-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+  .ms-hist-days-row { display: flex; gap: 0; margin-bottom: 16px; max-width: 280px; }
+  .ms-hist-days-btn { flex: 1; padding: 8px 16px; background: #f3f4f6; border: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; font-weight: 700; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+  .ms-hist-days-btn:not(:last-child) { border-right-width: 0; }
+  .ms-hist-days-btn:first-child { border-radius: 6px 0 0 6px; }
+  .ms-hist-days-btn:last-child { border-radius: 0 6px 6px 0; }
+  .ms-hist-days-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ms-hist-table-title { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--text2); margin: 18px 0 8px; }
+  .ms-hist-table-title:first-of-type { margin-top: 0; }
+  .ms-hist-table-wrap { overflow-x: auto; }
+  .ms-hist-table-wrap .ms-dca-tbl th, .ms-hist-table-wrap .ms-dca-tbl td { font-size: 12px; }
+
   /* ── Pre-Trade Checklist ── */
   .ms-pt-panel { margin-top: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
   .ms-pt-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
@@ -2164,6 +2184,7 @@
             <div class="ms-panel-head"><span>Funding Rate</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.funding.title, MS_MODAL.funding.body)" aria-label="About Funding Rate" title="About Funding Rate">ⓘ</button></div>
             <div class="ms-stat-row">
               <div class="ms-stat-value" id="ms-funding-value">—</div>
+              <span class="ms-trend-arrow" id="ms-funding-trend"></span>
               <span class="ms-pill grey" id="ms-funding-pill">—</span>
             </div>
             <svg id="ms-funding-spark" class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none"></svg>
@@ -2188,7 +2209,7 @@
             <div class="ms-bar-group">
               <div class="ms-bar-label">Global (Retail)</div>
               <div class="ms-bar"><div class="ms-bar-long" id="ms-global-long-bar" style="width:50%"></div><div class="ms-bar-short" id="ms-global-short-bar" style="width:50%"></div></div>
-              <div class="ms-bar-pct"><span class="long" id="ms-global-long-pct">—</span><span class="short" id="ms-global-short-pct">—</span></div>
+              <div class="ms-bar-pct"><span class="long" id="ms-global-long-pct">—</span><span class="ms-trend-arrow" id="ms-global-long-trend"></span><span class="short" id="ms-global-short-pct">—</span></div>
               <span class="ms-pill grey" id="ms-global-pill">—</span>
             </div>
             <div class="ms-bar-group">
@@ -2483,6 +2504,58 @@
       </div>
     </div>
 
+    <!-- Signal History -->
+    <div class="ms-hist-panel" id="ms-hist-panel">
+      <div class="ms-layer-hdr" onclick="toggleLayer('hist')" style="margin-top:0">
+        <span class="ms-layer-arrow" id="ms-lhist-arrow">▼</span>
+        <span class="ms-layer-title">SIGNAL HISTORY</span>
+      </div>
+      <div class="ms-layer-body" id="ms-layerhist-body">
+        <div class="ms-hist-subtitle">How Layer 1/2/3 indicators have been trending — not just the current snapshot.</div>
+
+        <div class="ms-hist-days-row">
+          <button class="ms-hist-days-btn active" id="ms-hist-days-7" onclick="setHistDays(7)">7D</button>
+          <button class="ms-hist-days-btn" id="ms-hist-days-14" onclick="setHistDays(14)">14D</button>
+          <button class="ms-hist-days-btn" id="ms-hist-days-21" onclick="setHistDays(21)">21D</button>
+        </div>
+
+        <div id="ms-hist-loading" class="ms-dca-updating">⟳ Loading history…</div>
+        <div id="ms-hist-empty" class="ms-dca-empty" style="display:none">No history yet — snapshots accumulate automatically as the dashboard runs (Layer 2 hourly, Layer 1 every 6h, Layer 3 once daily).</div>
+
+        <div id="ms-hist-content" style="display:none">
+          <!-- Layer 2 History (most prominent) -->
+          <div class="ms-hist-table-title">Layer 2 — Market Positioning</div>
+          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l2-tbl">
+            <thead><tr>
+              <th>Time</th><th>Funding</th><th>OI Change</th><th>OI Label</th>
+              <th>Global Long%</th><th>Top Trader Long%</th><th>Verdict</th><th>Master Summary</th>
+            </tr></thead>
+            <tbody id="ms-hist-l2-body"></tbody>
+          </table></div>
+
+          <!-- Layer 1 History -->
+          <div class="ms-hist-table-title">Layer 1 — Macro Environment</div>
+          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l1-tbl">
+            <thead><tr>
+              <th>Time</th><th>Fear/Greed</th><th>BTC Dom</th><th>DXY</th><th>VIX</th>
+              <th>Fed Rate</th><th>Bullish</th><th>Bearish</th><th>Verdict</th>
+            </tr></thead>
+            <tbody id="ms-hist-l1-body"></tbody>
+          </table></div>
+
+          <!-- Layer 3 History (daily) -->
+          <div class="ms-hist-table-title">Layer 3 — Entry Timing (Daily)</div>
+          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l3-tbl">
+            <thead><tr>
+              <th>Date</th><th>Volume</th><th>Structure</th><th>Momentum</th><th>Order Book</th>
+              <th>ATR%</th><th>Score</th><th>Verdict</th>
+            </tr></thead>
+            <tbody id="ms-hist-l3-body"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
     <!-- AI Analysis Panel -->
     <div class="ms-ai-panel" id="ms-ai-panel">
       <div class="ms-ai-title">🤖 AI Market Analysis</div>
@@ -2768,6 +2841,7 @@ function selectMsCoin(coin, btn) {
   renderMsTestnetContext();
   loadLayer2();
   loadLayer3();
+  loadSignalHistory();
   renderMsChart(coin);
   liqRestoreValues();
   ptRestoreDirection();
@@ -2782,6 +2856,7 @@ async function loadLayer2() {
     renderOpenInterest(data.open_interest);
     renderLongShort(data.long_short);
     renderVerdict(data.verdict);
+    updateLayer2TrendArrows(data);
   } catch (e) {
     renderVerdict(null);
   }
@@ -5414,7 +5489,7 @@ function toggleLayer(n) {
 }
 
 function initLayerCollapseState() {
-  [1, 2, 3].forEach(n => {
+  [1, 2, 3, 'hist'].forEach(n => {
     const body  = document.getElementById('ms-layer' + n + '-body');
     const arrow = document.getElementById('ms-l' + n + '-arrow');
     if (!body) return;
@@ -5455,6 +5530,177 @@ function updateMasterSummary() {
   el.textContent = text;
   el.className   = 'ms-master-verdict ' + cls;
   ptUpdateSignalAlignment();
+}
+
+// ── Signal History ────────────────────────────────────────────────────────────
+// Color maps mirror the same code → color mapping the live verdict badges use
+// server-side (see _layer1_verdict/_layer2_verdict/_layer3_verdict_calc and
+// _signal_snapshot in web/app.py) so history pills match live pills exactly.
+const HIST_L1_COLOR     = { FAVORABLE: 'green', UNFAVORABLE: 'red', MIXED: 'yellow', INSUFFICIENT_DATA: 'grey' };
+const HIST_L2_COLOR     = { CAUTION_LONG: 'red', CAUTION_SHORT: 'blue', MIXED: 'yellow', NEUTRAL: 'green' };
+const HIST_L3_COLOR     = { LONG: 'green', SHORT: 'red', WEAK_LONG: 'yellow', WEAK_SHORT: 'yellow', NEUTRAL: 'grey', UNKNOWN: 'grey' };
+const HIST_MASTER_COLOR = { 'ALIGNED LONG': 'green', 'ALIGNED SHORT': 'red', DEVELOPING: 'yellow', MIXED: 'yellow', CAUTION: 'orange', WAIT: 'grey' };
+
+let _histDays = 7;
+
+function histPill(code, colorMap) {
+  if (!code) return '<span class="ms-pill grey">—</span>';
+  const color = colorMap[code] || 'grey';
+  return `<span class="ms-pill ${color}">${esc(code.replace(/_/g, ' '))}</span>`;
+}
+
+function histSignalCell(sig) {
+  if (sig == null) return '<span style="color:var(--muted)">—</span>';
+  const color = sig > 0 ? 'var(--green)' : sig < 0 ? 'var(--red)' : 'var(--muted)';
+  const text  = sig > 0 ? '+1' : sig < 0 ? '-1' : '0';
+  return `<span style="color:${color};font-weight:700">${text}</span>`;
+}
+
+function histFundingCell(rate) {
+  if (rate == null) return '—';
+  const color = rate < 0 ? 'var(--green)' : rate > 0.0005 ? 'var(--red)' : 'var(--muted)';
+  return `<span style="color:${color}">${msFmtPct(rate * 100)}</span>`;
+}
+
+function histLongPctCell(pct) {
+  if (pct == null) return '—';
+  const color = pct > 65 ? 'var(--red)' : pct < 45 ? 'var(--green)' : 'var(--muted)';
+  return `<span style="color:${color}">${Number(pct).toFixed(1)}%</span>`;
+}
+
+function histFmtTs(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return '—';
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${mm}/${dd} ${hh}:${mi}`;
+}
+
+function histFmtDate(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return '—';
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function setHistDays(days) {
+  _histDays = days;
+  [7, 14, 21].forEach(d => {
+    const btn = document.getElementById('ms-hist-days-' + d);
+    if (btn) btn.classList.toggle('active', d === days);
+  });
+  loadSignalHistory();
+}
+
+async function loadSignalHistory() {
+  const loading = document.getElementById('ms-hist-loading');
+  const empty   = document.getElementById('ms-hist-empty');
+  const content = document.getElementById('ms-hist-content');
+  if (loading) loading.style.display = '';
+  if (empty)   empty.style.display   = 'none';
+  if (content) content.style.display = 'none';
+  try {
+    const data = await api(`/api/signal_history/${MS_SYMBOLS[msCoin]}?days=${_histDays}`);
+    renderSignalHistory(data);
+  } catch (e) {
+    renderSignalHistory({ layer1: [], layer2: [], layer3: [] });
+  }
+}
+
+function renderSignalHistory(data) {
+  const loading = document.getElementById('ms-hist-loading');
+  const empty   = document.getElementById('ms-hist-empty');
+  const content = document.getElementById('ms-hist-content');
+  const l1 = data.layer1 || [], l2 = data.layer2 || [], l3 = data.layer3 || [];
+  if (loading) loading.style.display = 'none';
+
+  if (!l1.length && !l2.length && !l3.length) {
+    if (empty)   empty.style.display   = '';
+    if (content) content.style.display = 'none';
+    return;
+  }
+  if (empty)   empty.style.display   = 'none';
+  if (content) content.style.display = '';
+
+  const l2Body = document.getElementById('ms-hist-l2-body');
+  if (l2Body) {
+    l2Body.innerHTML = l2.slice().reverse().map(s => `
+      <tr>
+        <td>${histFmtTs(s.ts)}</td>
+        <td>${histFundingCell(s.funding_rate)}</td>
+        <td>${s.oi_change_24h_pct != null ? (s.oi_change_24h_pct >= 0 ? '+' : '') + Number(s.oi_change_24h_pct).toFixed(2) + '%' : '—'}</td>
+        <td>${esc(s.oi_label || '—')}</td>
+        <td>${histLongPctCell(s.global_long_pct)}</td>
+        <td>${s.top_trader_long_pct != null ? Number(s.top_trader_long_pct).toFixed(1) + '%' : '—'}</td>
+        <td>${histPill(s.verdict, HIST_L2_COLOR)}</td>
+        <td>${histPill(s.master_summary, HIST_MASTER_COLOR)}</td>
+      </tr>`).join('');
+  }
+
+  const l1Body = document.getElementById('ms-hist-l1-body');
+  if (l1Body) {
+    l1Body.innerHTML = l1.slice().reverse().map(s => `
+      <tr>
+        <td>${histFmtTs(s.ts)}</td>
+        <td>${s.fear_greed_value != null ? s.fear_greed_value + (s.fear_greed_label ? ' (' + esc(s.fear_greed_label) + ')' : '') : '—'}</td>
+        <td>${s.btc_dominance != null ? Number(s.btc_dominance).toFixed(1) + '%' : '—'}</td>
+        <td>${s.dxy_value != null ? Number(s.dxy_value).toFixed(2) : '—'}</td>
+        <td>${s.vix_value != null ? Number(s.vix_value).toFixed(1) : '—'}</td>
+        <td>${s.fed_funds_rate != null ? Number(s.fed_funds_rate).toFixed(2) + '%' : '—'}</td>
+        <td>${s.bullish_count != null ? s.bullish_count : '—'}</td>
+        <td>${s.bearish_count != null ? s.bearish_count : '—'}</td>
+        <td>${histPill(s.verdict, HIST_L1_COLOR)}</td>
+      </tr>`).join('');
+  }
+
+  const l3Body = document.getElementById('ms-hist-l3-body');
+  if (l3Body) {
+    l3Body.innerHTML = l3.slice().reverse().map(s => `
+      <tr>
+        <td>${histFmtDate(s.ts)}</td>
+        <td title="${esc(s.volume_divergence_label || '')}">${histSignalCell(s.volume_divergence_signal)}</td>
+        <td title="${esc(s.price_structure_label || '')}">${histSignalCell(s.price_structure_signal)}</td>
+        <td title="${esc(s.momentum_label || '')}">${histSignalCell(s.momentum_signal)}</td>
+        <td title="${esc(s.order_book_label || '')}">${histSignalCell(s.order_book_signal)}</td>
+        <td>${s.atr_pct != null ? Number(s.atr_pct).toFixed(2) + '%' : '—'}</td>
+        <td>${s.total_score != null ? s.total_score : '—'}</td>
+        <td>${histPill(s.verdict, HIST_L3_COLOR)}</td>
+      </tr>`).join('');
+  }
+}
+
+// ── Layer 2 trend arrows (current value vs. 24h historical average) ──────────
+function histAvg(arr) {
+  return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+}
+
+function setTrendArrow(el, current, average, threshold) {
+  if (!el) return;
+  if (current == null || average == null) { el.textContent = ''; el.className = 'ms-trend-arrow'; return; }
+  const diff = current - average;
+  if (diff > threshold)       { el.textContent = '↑'; el.className = 'ms-trend-arrow up'; }
+  else if (diff < -threshold) { el.textContent = '↓'; el.className = 'ms-trend-arrow down'; }
+  else                         { el.textContent = '→'; el.className = 'ms-trend-arrow flat'; }
+}
+
+async function updateLayer2TrendArrows(liveData) {
+  const fundEl = document.getElementById('ms-funding-trend');
+  const longEl = document.getElementById('ms-global-long-trend');
+  if (!fundEl && !longEl) return;
+  const curFunding = (liveData.funding && !liveData.funding.error) ? liveData.funding.current : null;
+  const curLong    = (liveData.long_short && !liveData.long_short.error) ? liveData.long_short.global.long_pct : null;
+  try {
+    const hist  = await api(`/api/signal_history/${MS_SYMBOLS[msCoin]}?days=2`);
+    const snaps = (hist.layer2 || []).slice(-24);
+    const fundingAvg = histAvg(snaps.map(s => s.funding_rate).filter(v => v != null));
+    const longAvg    = histAvg(snaps.map(s => s.global_long_pct).filter(v => v != null));
+    setTrendArrow(fundEl, curFunding, fundingAvg, 0.00001);
+    setTrendArrow(longEl, curLong, longAvg, 1);
+  } catch (e) {
+    setTrendArrow(fundEl, null, null, 0);
+    setTrendArrow(longEl, null, null, 0);
+  }
 }
 
 // ── DCA Model Level Visualizer ───────────────────────────────────────────────
@@ -6525,6 +6771,7 @@ refresh();
 loadLayer2();
 loadLayer1();
 loadLayer3();
+loadSignalHistory();
 renderMsChart(msCoin);
 liqRestoreValues();
 ptRestoreDirection();
@@ -6537,6 +6784,7 @@ setInterval(refreshRunning, 5000);
 setInterval(() => loadLayer2(), 300000);
 setInterval(() => loadLayer1(), 900000);
 setInterval(() => loadLayer3(), 120000);
+setInterval(() => loadSignalHistory(), 300000);
 setInterval(updateL1Timestamp, 60000);
 setInterval(() => { if (_dcaSelectedId) calcDcaLevels(false); }, 60000);
 </script>
