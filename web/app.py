@@ -716,8 +716,100 @@ def _layer2_long_short(symbol: str) -> dict:
     }
 
 
-def _layer2_verdict(funding: Optional[dict], oi: Optional[dict], ls: Optional[dict]) -> dict:
-    """Combine funding, open interest, and long/short ratio into one verdict."""
+def _layer2_position_ratio(symbol: str) -> dict:
+    """Top-trader long/short ratio by POSITION SIZE (dollar-weighted).
+
+    Distinct from _layer2_long_short's "top" ratio, which is account
+    headcount. Despite the response's field names (longAccount/shortAccount),
+    this endpoint — Binance's "Top Trader Long Short Position Ratio" — reports
+    the $ size of positions held, not the number of accounts holding them.
+    """
+    import requests
+
+    data = requests.get(
+        f"{_BINANCE_FAPI}/futures/data/topLongShortPositionRatio",
+        params={"symbol": symbol, "period": "1h", "limit": 48}, timeout=8,
+    ).json()
+    if not isinstance(data, list) or not data:
+        raise ValueError("no position ratio data")
+
+    latest = data[-1]
+    return {
+        "status": "ok",
+        "long_pct": float(latest["longAccount"]) * 100,
+        "short_pct": float(latest["shortAccount"]) * 100,
+        "ratio": float(latest["longShortRatio"]),
+    }
+
+
+def compute_position_account_divergence(account_long_pct: float, position_long_pct: float) -> dict:
+    """
+    WHY POSITION RATIO DIVERGENCE IS SIGNIFICANT:
+
+    Total long $ always equals total short $ in futures markets
+    (every contract has two sides)
+
+    Therefore: if 66% of TOP TRADER ACCOUNTS are long
+    but only 55% of TOP TRADER POSITION VALUE is long
+    it means: the LONG accounts are smaller (less capital per account)
+              the SHORT accounts are larger (more capital per account)
+
+    Translation: The few traders with BIG positions are actually
+                 MORE SHORT than the headcount would suggest.
+                 Real money (dollar-weighted) is leaning SHORT
+                 even though more individual accounts are LONG.
+
+    This is one of the most powerful divergence signals available
+    because it reveals institutional positioning without them
+    having to announce it publicly.
+
+    The opposite (position_long > account_long by significant margin):
+    = The big money accounts are carrying heavier long exposure
+    = Despite similar headcount, they're committing more capital to longs
+    = Structurally more bullish than the ratio alone shows
+    """
+    gap = position_long_pct - account_long_pct
+    abs_gap = abs(gap)
+
+    if abs_gap < 5:
+        significance = "minimal"
+    elif abs_gap < 10:
+        significance = "meaningful"
+    else:
+        significance = "significant"
+
+    direction = "longs_larger_than_headcount" if gap > 0 else "shorts_larger_than_headcount"
+
+    return {
+        "gap_pct": round(gap, 2),
+        "abs_gap_pct": round(abs_gap, 2),
+        "significance": significance,
+        "direction": direction,
+    }
+
+
+def _position_ratio_note(position_ratio: dict) -> Optional[str]:
+    """Plain-English summary of the position-vs-account divergence, shown
+    below the Layer 2 verdict badge when the divergence is significant."""
+    significance = position_ratio.get("significance")
+    if significance is None:
+        return None
+    if significance != "significant":
+        return "Position ratio aligned with account ratio"
+
+    direction = position_ratio.get("divergence_direction")
+    gap = abs(position_ratio.get("divergence_from_account") or 0)
+    if direction == "shorts_larger_than_headcount":
+        return (f"Position ratio shows big money {gap:.1f}pts more SHORT than headcount — "
+                f"large capital leaning more bearish than account ratio alone suggests")
+    return (f"Position ratio shows big money {gap:.1f}pts more LONG than headcount — "
+            f"large capital leaning more bullish than account ratio alone suggests")
+
+
+def _layer2_verdict(funding: Optional[dict], oi: Optional[dict], ls: Optional[dict],
+                     position: Optional[dict] = None) -> dict:
+    """Combine funding, open interest, long/short ratio, and (when available)
+    the position-ratio divergence into one verdict."""
     funding_high = bool(funding and funding["current"] > 0.0005)
     funding_negative = bool(funding and funding["current"] < -0.0001)
     longs_crowded = bool(ls and ls["global"]["long_pct"] > 65)
@@ -728,15 +820,22 @@ def _layer2_verdict(funding: Optional[dict], oi: Optional[dict], ls: Optional[di
     if funding_negative and shorts_crowded:
         return {"code": "CAUTION_SHORT", "label": "CAUTION SHORT", "emoji": "🔵", "color": "blue"}
 
+    position_bullish = bool(position and position.get("significance") == "significant"
+                             and position.get("divergence_direction") == "longs_larger_than_headcount")
+    position_bearish = bool(position and position.get("significance") == "significant"
+                             and position.get("divergence_direction") == "shorts_larger_than_headcount")
+
     bullish = sum([
         funding_negative,
         shorts_crowded,
         bool(oi and oi["label"].startswith("Strong —")),
+        position_bullish,
     ])
     bearish = sum([
         funding_high,
         longs_crowded,
         bool(oi and oi["label"].startswith("Strong Selling")),
+        position_bearish,
     ])
 
     if bullish and bearish:
@@ -771,10 +870,30 @@ def _get_layer2_data(symbol: str) -> dict:
     except Exception as exc:
         result["long_short"] = {"error": str(exc)}
 
+    try:
+        result["position_ratio"] = _layer2_position_ratio(symbol)
+    except Exception as exc:
+        result["position_ratio"] = {"status": "error", "long_pct": None, "short_pct": None, "error": str(exc)}
+
+    position_ratio = result["position_ratio"]
+    long_short = result["long_short"]
+    if position_ratio.get("status") == "ok" and "error" not in long_short:
+        divergence = compute_position_account_divergence(
+            long_short["top"]["long_pct"], position_ratio["long_pct"])
+        position_ratio["divergence_from_account"] = divergence["gap_pct"]
+        position_ratio["divergence_direction"] = divergence["direction"]
+        position_ratio["significance"] = divergence["significance"]
+    else:
+        position_ratio["divergence_from_account"] = None
+        position_ratio["divergence_direction"] = None
+        position_ratio["significance"] = None
+    position_ratio["note"] = _position_ratio_note(position_ratio)
+
     result["verdict"] = _layer2_verdict(
         result["funding"] if "error" not in result["funding"] else None,
         result["open_interest"] if "error" not in result["open_interest"] else None,
         result["long_short"] if "error" not in result["long_short"] else None,
+        position_ratio if position_ratio.get("status") == "ok" else None,
     )
     result["timestamp"] = int(now * 1000)
 

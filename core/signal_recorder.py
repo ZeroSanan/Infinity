@@ -75,11 +75,12 @@ class SignalRecorder:
         """Called every 1 hour per symbol. Extracts fields from the live
         /api/layer2/<symbol> response dict and appends to
         history["layer2"][symbol]."""
-        funding = layer2_data.get("funding") or {}
-        oi      = layer2_data.get("open_interest") or {}
-        ls      = layer2_data.get("long_short") or {}
-        glob    = ls.get("global") or {}
-        top     = ls.get("top") or {}
+        funding  = layer2_data.get("funding") or {}
+        oi       = layer2_data.get("open_interest") or {}
+        ls       = layer2_data.get("long_short") or {}
+        glob     = ls.get("global") or {}
+        top      = ls.get("top") or {}
+        position = layer2_data.get("position_ratio") or {}
 
         snapshot = {
             "ts": _now_iso(),
@@ -95,6 +96,11 @@ class SignalRecorder:
             "top_trader_long_pct": top.get("long_pct"),
             "top_trader_short_pct": top.get("short_pct"),
             "divergence": bool(ls.get("divergence")),
+            "position_long_pct": position.get("long_pct"),
+            "position_short_pct": position.get("short_pct"),
+            "position_account_gap": position.get("divergence_from_account"),
+            "position_divergence_direction": position.get("divergence_direction"),
+            "position_divergence_significance": position.get("significance"),
             "verdict": (layer2_data.get("verdict") or {}).get("code"),
             "master_summary": master_summary,
         }
