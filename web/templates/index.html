@@ -69,6 +69,12 @@
   }
   @media (max-width: 860px) { .ms-layer2-grid { grid-template-columns: 1fr; } }
 
+  /* Layer 2's own grid holds 4 panels (Funding, OI, Account Ratio, Position
+     Ratio) — 2x2 so the two ratio cards sit side by side for comparison.
+     Scoped by id so Layer 3's identical .ms-layer2-grid (5 panels) is unaffected. */
+  #ms-layer2-grid { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 860px) { #ms-layer2-grid { grid-template-columns: 1fr; } }
+
   .ms-chart-area { width: 100%; height: 600px; position: relative; }
   @media (max-width: 640px) { .ms-chart-area { height: 380px; } }
   .ms-chart-area.is-fullscreen {
@@ -2177,7 +2183,7 @@
         <span class="ms-layer-badge grey" id="ms-l2-badge">⚪ Loading</span>
       </div>
       <div class="ms-layer-body" id="ms-layer2-body">
-        <div class="ms-layer2-grid">
+        <div class="ms-layer2-grid" id="ms-layer2-grid">
 
           <!-- Funding Rate -->
           <div class="ms-panel">
@@ -2221,6 +2227,40 @@
             <div class="ms-divergence" id="ms-divergence" style="display:none"></div>
           </div>
 
+          <!-- Position Ratio (Dollar-Weighted) -->
+          <div class="ms-panel">
+            <div class="ms-panel-head"><span>Position Ratio (Dollar-Weighted)</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.positionratio.title, MS_MODAL.positionratio.body)" aria-label="About Position Ratio" title="About Position Ratio">ⓘ</button></div>
+
+            <div id="ms-position-live">
+              <div class="ms-bar-group">
+                <div class="ms-bar-label">Top Traders — by $ size</div>
+                <div class="ms-bar"><div class="ms-bar-long" id="ms-position-long-bar" style="width:50%"></div><div class="ms-bar-short" id="ms-position-short-bar" style="width:50%"></div></div>
+                <div class="ms-bar-pct"><span class="long" id="ms-position-long-pct">—</span><span class="short" id="ms-position-short-pct">—</span></div>
+              </div>
+            </div>
+
+            <div id="ms-position-manual" style="display:none">
+              <div class="ms-stat-sub">No live data — enter manually</div>
+              <div class="ms-stat-sub">Source: coinglass.com → Long/Short → Position tab</div>
+              <div class="ms-liq-input-row" style="flex-direction:row;gap:8px;margin-top:6px">
+                <label class="ms-liq-input-lbl" style="flex:1" for="ms-position-manual-long">Long %
+                  <div class="ms-liq-input-wrap"><input type="number" min="0" max="100" step="0.1" id="ms-position-manual-long" oninput="positionRenderManualState()" placeholder="e.g. 58.9"><span>%</span></div>
+                </label>
+                <label class="ms-liq-input-lbl" style="flex:1" for="ms-position-manual-short">Short %
+                  <div class="ms-liq-input-wrap"><input type="number" min="0" max="100" step="0.1" id="ms-position-manual-short" oninput="positionRenderManualState()" placeholder="e.g. 41.1"><span>%</span></div>
+                </label>
+              </div>
+              <div class="ms-liq-save-row">
+                <button class="ms-liq-save-btn" onclick="positionSaveManual()">Save</button>
+                <span class="ms-liq-saved-ind" id="ms-position-manual-saved"></span>
+              </div>
+              <a href="https://www.coinglass.com/pro/futures/LongShortRatio" target="_blank" rel="noopener" class="ms-l1-link-btn">Open Coinglass Position Ratio →</a>
+            </div>
+
+            <span class="ms-pill grey" id="ms-position-badge">—</span>
+            <div class="ms-stat-sub" id="ms-position-gap-note"></div>
+          </div>
+
         </div>
 
         <!-- Liquidation Heatmap -->
@@ -2252,6 +2292,7 @@
           <div class="ms-verdict-emoji" id="ms-verdict-emoji">—</div>
           <div class="ms-verdict-label" id="ms-verdict-label">Loading…</div>
         </div>
+        <div class="ms-divergence" id="ms-verdict-divergence" style="display:none;margin-top:8px"></div>
         <div class="ms-verdict-note">Combines Funding Rate, Open Interest, and Long/Short Ratio signals. Reflects crowd positioning only — not a trade recommendation. Check Layer 1 (macro) and Layer 3 (entry timing) before acting.</div>
       </div>
 
@@ -2528,7 +2569,8 @@
           <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l2-tbl">
             <thead><tr>
               <th>Time</th><th>Funding</th><th>OI Change</th><th>OI Label</th>
-              <th>Global Long%</th><th>Top Trader Long%</th><th>Verdict</th><th>Master Summary</th>
+              <th>Global Long%</th><th>Top Trader Long%</th><th>Position Long%</th><th>Gap</th>
+              <th>Verdict</th><th>Master Summary</th>
             </tr></thead>
             <tbody id="ms-hist-l2-body"></tbody>
           </table></div>
@@ -2844,6 +2886,7 @@ function selectMsCoin(coin, btn) {
   loadSignalHistory();
   renderMsChart(coin);
   liqRestoreValues();
+  positionRestoreManual();
   ptRestoreDirection();
   ptResetChecklist();
   if (_dcaSelectedId) calcDcaLevels(false);
@@ -2855,10 +2898,14 @@ async function loadLayer2() {
     renderFunding(data.funding);
     renderOpenInterest(data.open_interest);
     renderLongShort(data.long_short);
+    renderPositionRatio(data.position_ratio, data.long_short);
     renderVerdict(data.verdict);
+    renderPositionDivergenceNote(data.position_ratio);
     updateLayer2TrendArrows(data);
   } catch (e) {
     renderVerdict(null);
+    renderPositionRatio(null, null);
+    renderPositionDivergenceNote(null);
   }
 }
 
@@ -2964,6 +3011,122 @@ function renderLongShort(ls) {
     divergence.textContent = '⚠ ' + ls.divergence_message;
   } else {
     divergence.style.display = 'none';
+  }
+}
+
+// ── Position Ratio (dollar-weighted top-trader long/short) ────────────────────
+let _positionAccountTop = null;
+
+function applyPositionBadge(gap) {
+  const badge = document.getElementById('ms-position-badge');
+  const note  = document.getElementById('ms-position-gap-note');
+  if (!badge) return;
+  if (gap == null || isNaN(gap)) {
+    badge.textContent = '—'; badge.className = 'ms-pill grey';
+    if (note) note.textContent = '';
+    return;
+  }
+  let label, color;
+  if (gap > 10)        { label = 'BIG MONEY MORE LONG';  color = 'green'; }
+  else if (gap > 5)     { label = 'LONGS HEAVIER';        color = 'ltgreen'; }
+  else if (gap >= -5)   { label = 'ALIGNED WITH CROWD';   color = 'grey'; }
+  else if (gap >= -10)  { label = 'SHORTS HEAVIER';       color = 'orange'; }
+  else                  { label = 'BIG MONEY MORE SHORT'; color = 'red'; }
+  badge.textContent = label;
+  badge.className = 'ms-pill ' + color;
+  if (note) note.textContent = (gap >= 0 ? '+' : '') + gap.toFixed(1) + 'pts vs account ratio';
+}
+
+function fillPositionBar(longPct, shortPct, gap) {
+  const el = id => document.getElementById('ms-' + id);
+  el('position-long-bar').style.width = longPct + '%';
+  el('position-short-bar').style.width = shortPct + '%';
+  el('position-long-pct').textContent = longPct.toFixed(1) + '% Long';
+  el('position-short-pct').textContent = shortPct.toFixed(1) + '% Short';
+  applyPositionBadge(gap);
+}
+
+function renderPositionRatio(pr, ls) {
+  const live   = document.getElementById('ms-position-live');
+  const manual = document.getElementById('ms-position-manual');
+  if (pr && pr.status === 'ok') {
+    if (live)   live.style.display = '';
+    if (manual) manual.style.display = 'none';
+    fillPositionBar(pr.long_pct, pr.short_pct, pr.divergence_from_account);
+  } else {
+    if (live)   live.style.display = 'none';
+    if (manual) manual.style.display = '';
+    _positionAccountTop = (ls && !ls.error) ? ls.top.long_pct : null;
+    positionRestoreManual();
+  }
+}
+
+function positionManualKey(coin, side) { return `position_ratio_${side}_${coin}`; }
+function positionManualTsKey(coin) { return `position_ratio_ts_${coin}`; }
+
+function positionSaveManual() {
+  const longInput  = document.getElementById('ms-position-manual-long');
+  const shortInput = document.getElementById('ms-position-manual-short');
+  try {
+    if (longInput)  localStorage.setItem(positionManualKey(msCoin, 'long'), longInput.value);
+    if (shortInput) localStorage.setItem(positionManualKey(msCoin, 'short'), shortInput.value);
+    localStorage.setItem(positionManualTsKey(msCoin), String(Date.now()));
+  } catch (e) {}
+  positionRenderManualState();
+}
+
+function positionRestoreManual() {
+  const longInput  = document.getElementById('ms-position-manual-long');
+  const shortInput = document.getElementById('ms-position-manual-short');
+  try {
+    if (longInput)  longInput.value  = localStorage.getItem(positionManualKey(msCoin, 'long'))  || '';
+    if (shortInput) shortInput.value = localStorage.getItem(positionManualKey(msCoin, 'short')) || '';
+  } catch (e) {}
+  positionRenderManualState();
+}
+
+function positionRenderManualState() {
+  const longInput = document.getElementById('ms-position-manual-long');
+  const ind = document.getElementById('ms-position-manual-saved');
+  const longVal = longInput ? parseFloat(longInput.value) : NaN;
+
+  if (ind) {
+    let ts = null;
+    try { ts = parseInt(localStorage.getItem(positionManualTsKey(msCoin)), 10); } catch (e) {}
+    if (!ts || isNaN(ts)) {
+      ind.textContent = ''; ind.className = 'ms-liq-saved-ind';
+    } else {
+      const ageMs  = Date.now() - ts;
+      const ageHrs = ageMs / 3600000;
+      const ageStr = ageMs < 60000 ? 'just now'
+        : ageHrs < 1  ? `${Math.round(ageMs/60000)}m ago`
+        : ageHrs < 24 ? `${Math.round(ageHrs)}h ago`
+        : `${Math.round(ageHrs/24)}d ago`;
+      if (ageHrs > 1) {
+        ind.textContent = `⚠️ Stale — saved ${ageStr}, check Coinglass for latest`;
+        ind.className = 'ms-liq-saved-ind warn';
+      } else {
+        ind.textContent = `✓ Saved (updated ${ageStr})`;
+        ind.className = 'ms-liq-saved-ind ok';
+      }
+    }
+  }
+
+  if (!isNaN(longVal) && _positionAccountTop != null) {
+    applyPositionBadge(longVal - _positionAccountTop);
+  } else {
+    applyPositionBadge(null);
+  }
+}
+
+function renderPositionDivergenceNote(pr) {
+  const el = document.getElementById('ms-verdict-divergence');
+  if (!el) return;
+  if (pr && pr.status === 'ok' && pr.significance === 'significant' && pr.note) {
+    el.textContent = '⚠ ' + pr.note;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
   }
 }
 
@@ -3632,6 +3795,20 @@ const MS_MODAL = {
       <p>🔵 <strong>Shorts above 65% — Crowd Heavily Short</strong><br>Contrarian caution. Conditions favor an upward squeeze. Do not open new shorts with the crowd.</p>
       <p>🟢 <strong>45% to 55% either way — Balanced</strong><br>No extreme signal from positioning alone.</p>
       <p><strong>WHEN TOP TRADERS DIFFER FROM RETAIL</strong><br>If retail is 70% long but top traders are only 45% long — sophisticated money is not following the crowd. This divergence is one of the strongest warning signals on this card. Smart money sees something retail does not.</p>
+    `
+  },
+  positionratio: {
+    title: 'Position Ratio (Dollar-Weighted) — What It Means',
+    body: `
+      <p>Unlike the Account Ratio which counts traders, Position Ratio measures the actual dollar size of long vs short positions held by top traders. When Position Ratio diverges from Account Ratio, it reveals whether large capital is positioned differently from the headcount — a key signal of where real money sits.</p>
+      <p><strong>HOW TO READ THE BADGE</strong></p>
+      <p>🟢 <strong>BIG MONEY MORE LONG</strong><br>Position long% exceeds top-trader account long% by more than 10 points — large capital is carrying more long exposure than the headcount suggests.</p>
+      <p><strong>LONGS HEAVIER</strong><br>5-10 point gap in the long direction.</p>
+      <p><strong>ALIGNED WITH CROWD</strong><br>Within 5 points either way — big money and the headcount agree.</p>
+      <p><strong>SHORTS HEAVIER</strong><br>5-10 point gap in the short direction.</p>
+      <p>🔴 <strong>BIG MONEY MORE SHORT</strong><br>Position long% trails account long% by more than 10 points — the largest positions are actually more bearish than the account count implies.</p>
+      <p><strong>WHY THIS MATTERS</strong><br>Total long $ always equals total short $ in futures (every contract has two sides). If account headcount is mostly long but position $ is closer to balanced, the long accounts are smaller and the short accounts are carrying more capital — real money is leaning more short than the crowd count implies, without having to announce it.</p>
+      <p>If no live data is available for a coin, look up the value on Coinglass (Long/Short Ratio → Position tab) and enter it manually below.</p>
     `
   },
   fng: {
@@ -5568,6 +5745,17 @@ function histLongPctCell(pct) {
   return `<span style="color:${color}">${Number(pct).toFixed(1)}%</span>`;
 }
 
+function histGapCell(gap) {
+  if (gap == null) return '—';
+  let color;
+  if (gap > 10)        color = 'var(--green)';
+  else if (gap > 5)     color = '#8cd671';
+  else if (gap >= -5)   color = 'var(--muted)';
+  else if (gap >= -10)  color = '#a05c00';
+  else                  color = 'var(--red)';
+  return `<span style="color:${color}">${gap >= 0 ? '+' : ''}${Number(gap).toFixed(1)}</span>`;
+}
+
 function histFmtTs(iso) {
   const d = iso ? new Date(iso) : null;
   if (!d || isNaN(d.getTime())) return '—';
@@ -5633,6 +5821,8 @@ function renderSignalHistory(data) {
         <td>${esc(s.oi_label || '—')}</td>
         <td>${histLongPctCell(s.global_long_pct)}</td>
         <td>${s.top_trader_long_pct != null ? Number(s.top_trader_long_pct).toFixed(1) + '%' : '—'}</td>
+        <td>${histLongPctCell(s.position_long_pct)}</td>
+        <td>${histGapCell(s.position_account_gap)}</td>
         <td>${histPill(s.verdict, HIST_L2_COLOR)}</td>
         <td>${histPill(s.master_summary, HIST_MASTER_COLOR)}</td>
       </tr>`).join('');
