@@ -906,6 +906,135 @@ def api_layer2(symbol):
     return jsonify(_get_layer2_data(symbol))
 
 
+# ── Routes — Market Mechanics ─────────────────────────────────────────────────
+# Surfaces raw order-flow and exchange-activity indicators that answer HOW price
+# is moving (not just WHERE it is):
+#   - Taker buy/sell ratio: who is initiating moves (buyers vs sellers aggressive)
+#   - Spot vs futures volume: real ownership vs leveraged speculation driving price
+
+_BINANCE_SPOT = "https://api.binance.com"
+_mm_cache: dict = {}
+_MM_TTL = 300  # seconds — matches _LAYER2_TTL so recordings stay in sync
+
+
+def _mm_taker_ratio(symbol: str) -> dict:
+    """Taker buy/sell volume ratio (1h periods, last 48h).
+
+    buySellRatio > 1 = more aggressive buy volume than sell volume.
+    buy_pct = buySellRatio / (1 + buySellRatio) * 100.
+    """
+    import requests
+    data = requests.get(
+        f"{_BINANCE_FAPI}/futures/data/takerlongshortRatio",
+        params={"symbol": symbol, "period": "1h", "limit": 48}, timeout=8,
+    ).json()
+    if not isinstance(data, list) or not data:
+        raise ValueError("no taker ratio data")
+    latest = data[-1]
+    ratio = float(latest["buySellRatio"])
+    buy_pct = ratio / (1 + ratio) * 100
+    sell_pct = 100 - buy_pct
+    # 24-point sparkline (raw ratio, last 24h)
+    history = [float(d["buySellRatio"]) for d in data[-24:]]
+    if buy_pct > 60:
+        label, color = "Buyers Aggressive — Initiating Moves", "green"
+    elif buy_pct < 40:
+        label, color = "Sellers Aggressive — Initiating Moves", "red"
+    else:
+        label, color = "Balanced — No Clear Aggressor", "grey"
+    return {
+        "status": "ok",
+        "buy_pct": round(buy_pct, 2),
+        "sell_pct": round(sell_pct, 2),
+        "ratio": round(ratio, 4),
+        "label": label,
+        "color": color,
+        "history": history,
+    }
+
+
+def _mm_spot_volume(symbol: str) -> dict:
+    """24h spot USD volume from Binance spot 24hr ticker."""
+    import requests
+    data = requests.get(
+        f"{_BINANCE_SPOT}/api/v3/ticker/24hr",
+        params={"symbol": symbol}, timeout=8,
+    ).json()
+    return {"status": "ok", "volume_usd": float(data["quoteVolume"])}
+
+
+def _mm_futures_volume(symbol: str) -> dict:
+    """24h perpetual futures USD volume from Binance futures 24hr ticker."""
+    import requests
+    data = requests.get(
+        f"{_BINANCE_FAPI}/fapi/v1/ticker/24hr",
+        params={"symbol": symbol}, timeout=8,
+    ).json()
+    return {"status": "ok", "volume_usd": float(data["quoteVolume"])}
+
+
+def _get_market_mechanics_data(symbol: str) -> dict:
+    """Market Mechanics: taker buy/sell ratio + spot/futures 24h volume.
+    Cached per symbol for _MM_TTL seconds (same as Layer 2 to stay in sync)."""
+    symbol = symbol.upper()
+    now = time.time()
+    cached = _mm_cache.get(symbol)
+    if cached and now - cached["ts"] < _MM_TTL:
+        return cached["data"]
+
+    result: dict = {"symbol": symbol}
+
+    try:
+        result["taker"] = _mm_taker_ratio(symbol)
+    except Exception as exc:
+        result["taker"] = {"status": "error", "error": str(exc)}
+
+    spot_usd, fut_usd = None, None
+    try:
+        sv = _mm_spot_volume(symbol)
+        spot_usd = sv["volume_usd"]
+        result["spot_volume"] = sv
+    except Exception as exc:
+        result["spot_volume"] = {"status": "error", "error": str(exc)}
+
+    try:
+        fv = _mm_futures_volume(symbol)
+        fut_usd = fv["volume_usd"]
+        result["futures_volume"] = fv
+    except Exception as exc:
+        result["futures_volume"] = {"status": "error", "error": str(exc)}
+
+    if spot_usd and fut_usd and spot_usd > 0:
+        ratio = round(fut_usd / spot_usd, 2)
+        if ratio < 3:
+            label, color = "Spot Dominant — Real Ownership Driving", "green"
+        elif ratio < 8:
+            label, color = "Balanced — Mixed Spot/Futures Activity", "grey"
+        elif ratio < 15:
+            label, color = "Futures Dominant — Leveraged Speculation Driving", "orange"
+        else:
+            label, color = "Extreme Futures Dominance — High Leverage Risk", "red"
+        result["volume_ratio"] = {
+            "status": "ok",
+            "spot_usd": spot_usd,
+            "futures_usd": fut_usd,
+            "ratio": ratio,
+            "label": label,
+            "color": color,
+        }
+    else:
+        result["volume_ratio"] = {"status": "error"}
+
+    result["timestamp"] = int(now * 1000)
+    _mm_cache[symbol] = {"data": result, "ts": now}
+    return result
+
+
+@app.route("/api/market_mechanics/<symbol>")
+def api_market_mechanics(symbol):
+    return jsonify(_get_market_mechanics_data(symbol))
+
+
 # ── Routes — Layer 3 (Entry Timing) ────────────────────────────────────────────
 
 def _layer3_klines(symbol: str, limit: int = 21) -> list:
@@ -2078,7 +2207,11 @@ def _record_layer2_job():
             data = _get_layer2_data(symbol)
             if data and data.get("verdict"):
                 master = _signal_snapshot(symbol)["master"]
-                recorder.record_layer2(symbol, data, master)
+                try:
+                    mechanics = _get_market_mechanics_data(symbol)
+                except Exception:
+                    mechanics = None
+                recorder.record_layer2(symbol, data, master, mechanics)
         except Exception as exc:
             print(f"⚠️  Signal history: layer2 recording failed for {symbol}: {exc}")
 

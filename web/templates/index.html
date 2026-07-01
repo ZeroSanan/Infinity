@@ -435,6 +435,29 @@
   .ms-trend-arrow.down { color: var(--red); }
   .ms-trend-arrow.flat { color: var(--muted); }
 
+  /* ── Market Mechanics ── */
+  .ms-mech-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 860px) { .ms-mech-grid { grid-template-columns: 1fr; } }
+  .ms-mech-whale-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-top: 0; }
+  .ms-mech-whale-tbl { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+  .ms-mech-whale-tbl th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .4px; color: var(--text2); padding: 6px 8px; border-bottom: 1px solid var(--border2); }
+  .ms-mech-whale-tbl td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .ms-mech-whale-tbl tr:last-child td { border-bottom: none; }
+  .ms-mech-whale-tbl tr.near-price td:first-child { border-left: 3px solid var(--accent); }
+  .ms-mech-near-badge { font-size: 10px; font-weight: 700; color: var(--blue); margin-left: 4px; }
+  .ms-mech-add-form { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); align-items: flex-end; }
+  .ms-mech-add-form label { font-size: 11px; color: var(--text2); display: flex; flex-direction: column; gap: 3px; }
+  .ms-mech-add-form input, .ms-mech-add-form select { border: 1px solid var(--border2); background: var(--surface2); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); font-family: inherit; }
+  .ms-mech-add-form input { width: 90px; }
+  .ms-mech-add-form input[name=notes] { width: 140px; }
+  .ms-mech-whale-actions { display: flex; gap: 4px; }
+  .ms-mech-action-btn { border: none; background: none; cursor: pointer; font-size: 12px; padding: 2px 5px; border-radius: 4px; color: var(--text2); }
+  .ms-mech-action-btn:hover { background: var(--surface2); }
+  .ms-mech-status-sel { border: 1px solid var(--border2); background: var(--surface2); border-radius: 4px; font-size: 11px; padding: 2px 4px; color: var(--text); font-family: inherit; }
+  .ms-mech-dir-buy { color: #1d8a3b; font-weight: 700; }
+  .ms-mech-dir-sell { color: #c41f1f; font-weight: 700; }
+  .ms-mech-stale-warn { font-size: 11px; color: #a05c00; margin-top: 6px; }
+
   /* ── Signal History ── */
   .ms-hist-panel { margin-top: 24px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
   .ms-hist-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
@@ -2296,6 +2319,160 @@
         <div class="ms-verdict-note">Combines Funding Rate, Open Interest, and Long/Short Ratio signals. Reflects crowd positioning only — not a trade recommendation. Check Layer 1 (macro) and Layer 3 (entry timing) before acting.</div>
       </div>
 
+      <!-- ⚙️ MARKET MECHANICS — collapsed by default -->
+      <div class="ms-layer-hdr" onclick="toggleMechPanel()" style="cursor:pointer">
+        <span class="ms-layer-arrow" id="ms-mech-arrow">▶</span>
+        <span class="ms-layer-title">⚙️ MARKET MECHANICS</span>
+        <span class="ms-layer-badge grey" id="ms-mech-badge">⚪ Expand to load</span>
+      </div>
+      <div class="ms-layer-body" id="ms-mech-body" style="display:none">
+        <div class="ms-l1-timestamp" id="ms-mech-timestamp">Last updated: —</div>
+
+        <!-- 2-column grid: Taker | 24h Liquidations | Spot/Futures | Exchange Flow -->
+        <div class="ms-mech-grid">
+
+          <!-- Card: Taker Buy/Sell Ratio (live) -->
+          <div class="ms-panel" id="ms-mech-taker-panel">
+            <div class="ms-panel-head"><span>Taker Buy/Sell Ratio</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.taker.title, MS_MODAL.taker.body)" aria-label="About Taker Ratio" title="About Taker Ratio">ⓘ</button></div>
+            <div id="ms-mech-taker-live">
+              <div class="ms-bar-group">
+                <div class="ms-bar-label">Aggressive order flow — last 1h</div>
+                <div class="ms-bar"><div class="ms-bar-long" id="ms-mech-taker-buy-bar" style="width:50%"></div><div class="ms-bar-short" id="ms-mech-taker-sell-bar" style="width:50%"></div></div>
+                <div class="ms-bar-pct"><span class="long" id="ms-mech-taker-buy-pct">—</span><span class="short" id="ms-mech-taker-sell-pct">—</span></div>
+              </div>
+              <svg id="ms-mech-taker-spark" class="ms-sparkline" viewBox="0 0 300 46" preserveAspectRatio="none" style="margin-top:6px"></svg>
+            </div>
+            <div id="ms-mech-taker-err" style="display:none" class="ms-stat-sub">No live data available for this coin</div>
+            <span class="ms-pill grey" id="ms-mech-taker-badge">—</span>
+          </div>
+
+          <!-- Card: 24h Liquidations (manual entry) -->
+          <div class="ms-panel">
+            <div class="ms-panel-head"><span>24h Liquidations</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.liq24h.title, MS_MODAL.liq24h.body)" aria-label="About Liquidations" title="About Liquidations">ⓘ</button></div>
+            <div class="ms-stat-sub" style="margin-bottom:6px">Enter from Coinglass header bar — updates automatically on their site.</div>
+            <div class="ms-liq-input-row" style="flex-direction:row;gap:8px">
+              <label class="ms-liq-input-lbl" style="flex:1" for="ms-mech-liq-total">Total ($M)
+                <div class="ms-liq-input-wrap"><span>$</span><input type="number" min="0" step="1" id="ms-mech-liq-total" oninput="liq24hRenderState()" placeholder="e.g. 1493"><span>M</span></div>
+              </label>
+              <label class="ms-liq-input-lbl" style="flex:1" for="ms-mech-liq-long">Longs ($M)
+                <div class="ms-liq-input-wrap"><span>$</span><input type="number" min="0" step="1" id="ms-mech-liq-long" oninput="liq24hRenderState()" placeholder="e.g. 1100"><span>M</span></div>
+              </label>
+              <label class="ms-liq-input-lbl" style="flex:1" for="ms-mech-liq-short">Shorts ($M)
+                <div class="ms-liq-input-wrap"><span>$</span><input type="number" min="0" step="1" id="ms-mech-liq-short" oninput="liq24hRenderState()" placeholder="e.g. 393"><span>M</span></div>
+              </label>
+            </div>
+            <div class="ms-liq-save-row">
+              <button class="ms-liq-save-btn" onclick="liq24hSave()">Save</button>
+              <span class="ms-liq-saved-ind" id="ms-mech-liq-saved"></span>
+            </div>
+            <span class="ms-pill grey" id="ms-mech-liq-badge">—</span>
+            <div class="ms-stat-sub" id="ms-mech-liq-note" style="margin-top:4px"></div>
+            <a href="https://coinglass.com" target="_blank" rel="noopener" class="ms-l1-link-btn" style="margin-top:6px;display:inline-block">Open Coinglass →</a>
+          </div>
+
+          <!-- Card: Spot vs Futures Volume (live) -->
+          <div class="ms-panel">
+            <div class="ms-panel-head"><span>Spot vs Futures Volume (24h)</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.spotfutures.title, MS_MODAL.spotfutures.body)" aria-label="About Spot/Futures Volume" title="About Spot/Futures Volume">ⓘ</button></div>
+            <div id="ms-mech-vol-live">
+              <div class="ms-stat-row" style="margin-bottom:4px">
+                <span class="ms-stat-label">Spot 24h</span>
+                <span class="ms-stat-value" id="ms-mech-spot-vol" style="font-size:15px">—</span>
+              </div>
+              <div class="ms-stat-row" style="margin-bottom:4px">
+                <span class="ms-stat-label">Futures 24h</span>
+                <span class="ms-stat-value" id="ms-mech-fut-vol" style="font-size:15px">—</span>
+              </div>
+              <div class="ms-stat-row">
+                <span class="ms-stat-label">Ratio (Fut÷Spot)</span>
+                <span class="ms-stat-value" id="ms-mech-vol-ratio" style="font-size:15px">—</span>
+              </div>
+            </div>
+            <div id="ms-mech-vol-err" style="display:none" class="ms-stat-sub">No live data available for this coin</div>
+            <span class="ms-pill grey" id="ms-mech-vol-badge" style="margin-top:8px">—</span>
+          </div>
+
+          <!-- Card: Exchange Net Flow (manual) -->
+          <div class="ms-panel">
+            <div class="ms-panel-head"><span>Exchange Net Flow</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.exchangeflow.title, MS_MODAL.exchangeflow.body)" aria-label="About Exchange Net Flow" title="About Exchange Net Flow">ⓘ</button></div>
+            <div class="ms-stat-sub" style="margin-bottom:8px">Check CryptoQuant or Glassnode. Update daily.</div>
+            <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+              <div>
+                <div class="ms-stat-sub" style="margin-bottom:3px">Direction</div>
+                <select id="ms-mech-ef-dir" class="ms-mech-status-sel" style="font-size:12px;padding:5px 8px" onchange="efRenderState()">
+                  <option value="">— select —</option>
+                  <option value="OUTFLOW">OUTFLOW (accumulation)</option>
+                  <option value="INFLOW">INFLOW (distribution risk)</option>
+                  <option value="NEUTRAL">NEUTRAL</option>
+                </select>
+              </div>
+              <div>
+                <div class="ms-stat-sub" style="margin-bottom:3px">Size</div>
+                <select id="ms-mech-ef-size" class="ms-mech-status-sel" style="font-size:12px;padding:5px 8px" onchange="efRenderState()">
+                  <option value="">— select —</option>
+                  <option value="Small">Small (&lt;1K BTC/day)</option>
+                  <option value="Medium">Medium (1K–5K BTC/day)</option>
+                  <option value="Large">Large (&gt;5K BTC/day)</option>
+                </select>
+              </div>
+            </div>
+            <input type="text" id="ms-mech-ef-notes" placeholder="Trend notes (e.g. 3-day sustained outflow)" oninput="efRenderState()" style="width:100%;border:1px solid var(--border2);background:var(--surface2);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--text);font-family:inherit;box-sizing:border-box;margin-bottom:6px">
+            <div class="ms-liq-save-row">
+              <button class="ms-liq-save-btn" onclick="efSave()">Save</button>
+              <span class="ms-liq-saved-ind" id="ms-mech-ef-saved"></span>
+            </div>
+            <span class="ms-pill grey" id="ms-mech-ef-badge" style="margin-top:6px">—</span>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+              <a href="https://cryptoquant.com/asset/btc/chart/exchange-flows/exchange-netflow-total" target="_blank" rel="noopener" class="ms-l1-link-btn">CryptoQuant →</a>
+              <a href="https://studio.glassnode.com/metrics?a=BTC&m=distribution.BalanceExchanges" target="_blank" rel="noopener" class="ms-l1-link-btn">Glassnode →</a>
+            </div>
+          </div>
+
+        </div><!-- end ms-mech-grid -->
+
+        <!-- Full-width: Whale Order Watchlist -->
+        <div class="ms-mech-whale-panel">
+          <div class="ms-panel-head">
+            <span>Whale Order Watchlist</span>
+            <button class="ms-info-btn" onclick="openMsModal(MS_MODAL.whale.title, MS_MODAL.whale.body)" aria-label="About Whale Watchlist" title="About Whale Watchlist">ⓘ</button>
+          </div>
+          <div class="ms-stat-sub">Large resting orders ($15M+) from Coinglass. Track status — filled/cancelled orders reveal where large players accumulated or distributed.</div>
+
+          <table class="ms-mech-whale-tbl">
+            <thead><tr>
+              <th>Price</th><th>Est. Size</th><th>Dir</th><th>Age</th><th>Status</th><th>Near?</th><th>Notes</th><th></th>
+            </tr></thead>
+            <tbody id="ms-mech-whale-body"><tr><td colspan="8" style="color:var(--muted);text-align:center;padding:12px">No orders tracked yet — add below</td></tr></tbody>
+          </table>
+
+          <!-- Add order form -->
+          <div class="ms-mech-add-form" id="ms-mech-whale-add-form">
+            <label>Price ($)
+              <input type="number" min="0" name="price" id="ms-whale-price" placeholder="e.g. 93000">
+            </label>
+            <label>Size ($M)
+              <input type="number" min="0" step="0.1" name="size" id="ms-whale-size" placeholder="e.g. 15.5">
+            </label>
+            <label>Direction
+              <select name="direction" id="ms-whale-dir">
+                <option value="BUY">BUY</option>
+                <option value="SELL">SELL</option>
+              </select>
+            </label>
+            <label>Notes
+              <input type="text" name="notes" id="ms-whale-notes" placeholder="e.g. Old patient whale">
+            </label>
+            <label style="justify-content:flex-end">
+              <button class="ms-liq-save-btn" onclick="whaleAddOrder()" style="margin-top:4px">+ Add Order</button>
+            </label>
+          </div>
+
+          <div style="margin-top:8px">
+            <a href="https://www.coinglass.com/large-orderbook-statistics" target="_blank" rel="noopener" class="ms-l1-link-btn">Check Whale Orders on Coinglass →</a>
+          </div>
+        </div><!-- end whale panel -->
+
+      </div><!-- end ms-mech-body -->
+
       <!-- LAYER 3 — ENTRY TIMING -->
       <div class="ms-layer-hdr" onclick="toggleLayer(3)">
         <span class="ms-layer-arrow" id="ms-l3-arrow">▼</span>
@@ -2396,6 +2573,24 @@
             <input type="checkbox" id="ms-pt-ack-check" onchange="ptRecalcAll()">
             <span id="ms-pt-ack-text">I have reviewed the current signal state and choose to proceed with this <strong>LONG</strong> plan</span>
           </label>
+        </div>
+      </div>
+
+      <!-- Item 1.5 — Market Mechanics Check -->
+      <div class="ms-pt-item">
+        <div class="ms-pt-item-hdr">
+          <span class="ms-pt-check" id="ms-pt-check-15">✓</span>
+          <div>
+            <div class="ms-pt-item-num">ITEM 1.5</div>
+            <div class="ms-pt-item-label">Market Mechanics Check</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+          <label class="ms-pt-ack-label"><input type="checkbox" id="ms-mech-chk-taker" onchange="ptCheckMechanics()"> <span>Taker Buy/Sell Ratio reviewed</span></label>
+          <label class="ms-pt-ack-label"><input type="checkbox" id="ms-mech-chk-liq" onchange="ptCheckMechanics()"> <span>24h Liquidations checked</span></label>
+          <label class="ms-pt-ack-label"><input type="checkbox" id="ms-mech-chk-vol" onchange="ptCheckMechanics()"> <span>Spot vs Futures Volume assessed</span></label>
+          <label class="ms-pt-ack-label"><input type="checkbox" id="ms-mech-chk-whale" onchange="ptCheckMechanics()"> <span>Whale Order Watchlist scanned</span></label>
+          <label class="ms-pt-ack-label"><input type="checkbox" id="ms-mech-chk-ef" onchange="ptCheckMechanics()"> <span>Exchange Net Flow checked</span></label>
         </div>
       </div>
 
@@ -2593,6 +2788,16 @@
               <th>ATR%</th><th>Score</th><th>Verdict</th>
             </tr></thead>
             <tbody id="ms-hist-l3-body"></tbody>
+          </table></div>
+
+          <!-- Market Mechanics History (hourly, piggybacks on Layer 2 snapshots) -->
+          <div class="ms-hist-table-title">Market Mechanics (Hourly)</div>
+          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-mech-tbl">
+            <thead><tr>
+              <th>Time</th><th>Taker Buy%</th><th>Taker Label</th>
+              <th>Spot Vol</th><th>Futures Vol</th><th>S/F Ratio</th><th>Vol Label</th>
+            </tr></thead>
+            <tbody id="ms-hist-mech-body"></tbody>
           </table></div>
         </div>
       </div>
@@ -2887,6 +3092,10 @@ function selectMsCoin(coin, btn) {
   renderMsChart(coin);
   liqRestoreValues();
   positionRestoreManual();
+  liq24hRestore(coin);
+  efRestore(coin);
+  whaleRestoreWatchlist(coin);
+  if (_mechPanelLoaded) loadMarketMechanics();
   ptRestoreDirection();
   ptResetChecklist();
   if (_dcaSelectedId) calcDcaLevels(false);
@@ -4047,6 +4256,60 @@ const MS_MODAL = {
       <p><strong>PRACTICAL USE</strong><br>Before entering, check whether a large liquidation cluster sits just above your entry (potential squeeze that traps longs) or just below (potential wick target before any reversal). The heatmap does not predict direction — it shows where forced exits are waiting.</p>
       <p><strong>IMPORTANT</strong><br>Context only — not a directional signal. Always combine with Layer 1 (macro environment), Layer 2 (market positioning), and Layer 3 (entry timing) before making any decision.</p>
     `
+  },
+  taker: {
+    title: 'Taker Buy/Sell Ratio — What It Means',
+    body: `
+      <p>Every transaction on a futures exchange has a <strong>maker</strong> (the passive limit order sitting on the book) and a <strong>taker</strong> (the aggressive order that hits the book immediately). The taker side reveals who is <em>initiating</em> moves.</p>
+      <p><strong>HIGH BUY RATIO (above 60%)</strong><br>More market participants are aggressively buying futures — hitting asks. Buyers are initiating. This suggests conviction on the long side but also means buyers have already paid up. If this coincides with elevated funding, it can signal an overextended market.</p>
+      <p><strong>HIGH SELL RATIO (above 60%)</strong><br>More participants are aggressively selling — hitting bids. Sellers are initiating. Combined with negative OI divergence (OI falling as price falls), this confirms a genuine bear move rather than a short-squeeze recovery.</p>
+      <p><strong>BALANCED (40–60%)</strong><br>Neither side is decisively initiating. Consolidation or indecision. Often seen before breakouts in either direction.</p>
+      <p><strong>THE SPARKLINE</strong><br>Shows the last 24 periods of buy/sell ratio history. A sustained trend (buyers consistently above 55% for 12+ hours) is a stronger signal than a single spike that reverts within one period.</p>
+      <p><strong>IMPORTANT</strong><br>Taker ratio measures aggression, not direction per se. Cross-reference with Open Interest and Funding Rate before drawing conclusions.</p>
+    `
+  },
+  liq24h: {
+    title: '24h Liquidations — What It Means',
+    body: `
+      <p>Liquidations occur when a leveraged position is forcibly closed because it no longer has sufficient margin to support the loss. The exchange liquidates the position to recover the loan.</p>
+      <p><strong>LONG-HEAVY LIQUIDATIONS (65%+ of total are longs)</strong><br>Price dropped sharply enough to cascade through stacked long positions. Forced selling amplified the move downward. After a long-liquidation cascade exhausts itself, selling pressure disappears — potential local bottom.</p>
+      <p><strong>SHORT-HEAVY LIQUIDATIONS (65%+ of total are shorts)</strong><br>Price rose sharply through stacked short positions. Forced short-covering amplified the move upward. Once the cascade ends, buying pressure from forced shorts disappears — potential local top.</p>
+      <p><strong>BALANCED</strong><br>Both sides liquidating roughly equally. No cascade is driving the move — price action has mixed conviction.</p>
+      <p><strong>HOW TO ENTER DATA</strong><br>Check Coinglass (linked below the card) for 24-hour liquidation totals. The value refreshes throughout the day as new liquidations accumulate. Enter the most recent 24h total, breakdown between long and short liquidations.</p>
+      <p><strong>STALENESS</strong><br>Liquidation data older than 2 hours shows a warning. Re-check before entering a position, as liquidation conditions can change rapidly during volatile sessions.</p>
+    `
+  },
+  spotfutures: {
+    title: 'Spot vs Futures Volume — What It Means',
+    body: `
+      <p>This ratio compares 24-hour trading volume in the <strong>spot market</strong> (direct asset ownership) against the <strong>futures market</strong> (leveraged derivatives).</p>
+      <p><strong>SPOT DOMINANT (ratio below 3x)</strong><br>Real money is doing the buying or selling — participants are taking actual ownership of the asset rather than betting on price with leverage. Moves backed by spot volume have more conviction and are less susceptible to cascades.</p>
+      <p><strong>BALANCED (3–8x)</strong><br>Normal mixed activity. Both real buyers and leveraged speculators are active. No extreme positioning on either side.</p>
+      <p><strong>FUTURES DOMINANT (8–15x)</strong><br>Most volume is leveraged speculation, not real ownership transfer. Moves can be amplified but also reversed quickly when leveraged positions close. Be cautious about chasing breakouts in this environment.</p>
+      <p><strong>EXTREME FUTURES DOMINANCE (above 15x)</strong><br>Near-pure speculation. Very high leverage in the system. Small moves can trigger cascades. Treat breakouts skeptically — many will fail to hold when leverage unwinds.</p>
+    `
+  },
+  exchangeflow: {
+    title: 'Exchange Net Flow — What It Means',
+    body: `
+      <p>Exchange Net Flow measures how much cryptocurrency is moving <strong>into</strong> or <strong>out of</strong> exchange wallets over a given period. It is sourced from on-chain data (CryptoQuant, Glassnode).</p>
+      <p><strong>OUTFLOW (coins leaving exchanges)</strong><br>Participants are withdrawing to self-custody. This typically indicates an intention to hold long-term — you don't withdraw to a cold wallet if you plan to sell soon. Sustained large outflows reduce available supply on exchanges and historically precede price appreciation. <strong>Bullish signal.</strong></p>
+      <p><strong>INFLOW (coins entering exchanges)</strong><br>Participants are depositing to exchanges, typically to sell or use as collateral. Large sustained inflows increase available sell supply and historically precede distribution. <strong>Bearish signal.</strong></p>
+      <p><strong>NEUTRAL</strong><br>Flows roughly in balance — no directional conviction from on-chain behavior.</p>
+      <p><strong>HOW TO USE</strong><br>This is a slow-moving macro indicator. A single day of inflow after weeks of outflow is noise. Look for sustained directional trends over 3–7+ days before drawing conclusions. Always combine with Layer 1 macro and Layer 2 market positioning.</p>
+      <p><strong>DATA SOURCES</strong><br>CryptoQuant and Glassnode are the two most-cited sources. Both offer free tier access with 24h-delayed data sufficient for this purpose.</p>
+    `
+  },
+  whale: {
+    title: 'Whale Order Watchlist — What It Means',
+    body: `
+      <p>Large resting orders ($15M+ in notional value) from sophisticated participants — institutions, large funds, high-net-worth traders — often cluster at significant price levels. Tracking them reveals where large capital plans to enter or exit.</p>
+      <p><strong>LARGE BID (buy order below current price)</strong><br>A large participant has placed a significant buy order. If price reaches that level, substantial buying pressure exists. Large bids often act as temporary support, but they can also be pulled before being filled (spoofing is common). Track the status — if the order disappears before being touched, it was likely a spoof.</p>
+      <p><strong>LARGE ASK (sell order above current price)</strong><br>A large participant plans to sell at that level. Significant resistance. If price approaches and the order remains firm, it will absorb buying pressure. If it's pulled before being hit, that removal of overhead resistance is itself a bullish signal.</p>
+      <p><strong>NEAR PRICE (within 5%)</strong><br>Orders within 5% of current price are highlighted. These are immediately relevant — they will be tested soon and their presence (or removal) will become a real data point within the current trading session.</p>
+      <p><strong>TRACKING FILLS AND CANCELLATIONS</strong><br>A filled large bid that holds price = real support confirmed. A cancelled large bid just before price arrives = spoof removed, likely to drop through. Update statuses as events unfold — the historical record of large order behavior at key levels is valuable context.</p>
+      <p><strong>DATA SOURCE</strong><br>Coinglass large order book statistics (linked below the watchlist).</p>
+    `
   }
 };
 
@@ -4070,7 +4333,7 @@ function showPage(id, btn){
   if(id === 'strategies'){ loadAccounts(); loadStrategies(); }
   if(id === 'dca-models') { loadDCAModels(); }
   if(id === 'regime')     loadRegimeState();
-  if(id === 'market-signals') { loadLayer2(); loadLayer1(); loadLayer3(); renderMsChart(msCoin); liqRestoreValues(); }
+  if(id === 'market-signals') { loadLayer2(); loadLayer1(); loadLayer3(); renderMsChart(msCoin); liqRestoreValues(); liq24hRestore(msCoin); efRestore(msCoin); whaleRestoreWatchlist(msCoin); }
 }
 
 // ── Strategy tabs ─────────────────────────────────────────────────────────────
@@ -5858,6 +6121,26 @@ function renderSignalHistory(data) {
         <td>${histPill(s.verdict, HIST_L3_COLOR)}</td>
       </tr>`).join('');
   }
+
+  const mechBody = document.getElementById('ms-hist-mech-body');
+  if (mechBody) {
+    const fmtV = v => {
+      if (v == null) return '—';
+      if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+      if (v >= 1e6) return '$' + (v / 1e6).toFixed(0) + 'M';
+      return '$' + Number(v).toFixed(0);
+    };
+    mechBody.innerHTML = l2.slice().reverse().map(s => `
+      <tr>
+        <td>${histFmtTs(s.ts)}</td>
+        <td>${histTakerBuyCell(s.taker_buy_pct)}</td>
+        <td>${esc(s.taker_label || '—')}</td>
+        <td>${fmtV(s.spot_volume_24h)}</td>
+        <td>${fmtV(s.futures_volume_24h)}</td>
+        <td>${histVolumeRatioCell(s.spot_futures_ratio)}</td>
+        <td>${esc(s.volume_label || '—')}</td>
+      </tr>`).join('');
+  }
 }
 
 // ── Layer 2 trend arrows (current value vs. 24h historical average) ──────────
@@ -6167,22 +6450,23 @@ function ptCheckSet(n, on) {
 }
 
 function ptUpdateProgress() {
-  const done = [1, 2, 3, 4, 5].filter(n => {
+  const done = [1, '15', 2, 3, 4, 5].filter(n => {
     const el = document.getElementById(`ms-pt-check-${n}`);
     return el && el.classList.contains('on');
   }).length;
+  const total = 6;
 
   const countEl = document.getElementById('ms-pt-progress-count');
   const fillEl  = document.getElementById('ms-pt-progress-fill');
   const trackEl = document.getElementById('ms-pt-progress-track');
   const lblEl   = document.getElementById('ms-pt-progress-lbl');
   if (countEl) countEl.textContent = done;
-  if (fillEl)  fillEl.style.width = `${done / 5 * 100}%`;
-  if (trackEl) trackEl.classList.toggle('complete', done === 5);
-  if (lblEl)   lblEl.classList.toggle('done', done === 5);
+  if (fillEl)  fillEl.style.width = `${done / total * 100}%`;
+  if (trackEl) trackEl.classList.toggle('complete', done === total);
+  if (lblEl)   lblEl.classList.toggle('done', done === total);
 
   const genBtn = document.getElementById('ms-ai-gen-btn');
-  if (genBtn) genBtn.classList.toggle('locked', done < 5);
+  if (genBtn) genBtn.classList.toggle('locked', done < total);
 }
 
 let _ptGenTipTimer = null;
@@ -6658,10 +6942,366 @@ function ptResetChecklist() {
   });
   const ackChk = document.getElementById('ms-pt-ack-check');
   if (ackChk) ackChk.checked = false;
-  [1, 2, 3, 4, 5].forEach(n => ptCheckSet(n, false));
+  [1, '15', 2, 3, 4, 5].forEach(n => ptCheckSet(n, false));
+  ['ms-mech-chk-taker','ms-mech-chk-liq','ms-mech-chk-vol','ms-mech-chk-whale','ms-mech-chk-ef'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.checked = false;
+  });
   const agreementBox = document.getElementById('ms-pt-agreement');
   if (agreementBox) agreementBox.style.display = 'none';
   ptRecalcAll();
+}
+
+// ── Market Mechanics ─────────────────────────────────────────────────────────
+
+let _mechPanelLoaded = false;
+
+function toggleMechPanel() {
+  const body  = document.getElementById('ms-mech-body');
+  const arrow = document.getElementById('ms-mech-arrow');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (arrow) arrow.textContent = open ? '▶' : '▼';
+  if (!open && !_mechPanelLoaded) {
+    _mechPanelLoaded = true;
+    loadMarketMechanics();
+  }
+}
+
+async function loadMarketMechanics() {
+  try {
+    const data = await api(`/api/market_mechanics/${MS_SYMBOLS[msCoin]}`);
+    renderTakerRatio(data.taker);
+    renderSpotFuturesVol(data.volume_ratio);
+    const ts = document.getElementById('ms-mech-timestamp');
+    if (ts && data.timestamp) {
+      const d = new Date(data.timestamp);
+      ts.textContent = 'Last updated: ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+  } catch(e) {
+    const badge = document.getElementById('ms-mech-badge');
+    if (badge) { badge.textContent = '⚠ Load failed'; badge.className = 'ms-layer-badge red'; }
+  }
+}
+
+function renderTakerRatio(taker) {
+  const live  = document.getElementById('ms-mech-taker-live');
+  const err   = document.getElementById('ms-mech-taker-err');
+  const badge = document.getElementById('ms-mech-taker-badge');
+  const mechBadge = document.getElementById('ms-mech-badge');
+  if (!taker || taker.status !== 'ok') {
+    if (live)  live.style.display  = 'none';
+    if (err)   err.style.display   = '';
+    if (badge) { badge.textContent = '—'; badge.className = 'ms-pill grey'; }
+    return;
+  }
+  if (live) live.style.display = '';
+  if (err)  err.style.display  = 'none';
+  const buyBar  = document.getElementById('ms-mech-taker-buy-bar');
+  const sellBar = document.getElementById('ms-mech-taker-sell-bar');
+  const buyPct  = document.getElementById('ms-mech-taker-buy-pct');
+  const sellPct = document.getElementById('ms-mech-taker-sell-pct');
+  if (buyBar)  buyBar.style.width  = taker.buy_pct  + '%';
+  if (sellBar) sellBar.style.width = taker.sell_pct + '%';
+  if (buyPct)  buyPct.textContent  = taker.buy_pct.toFixed(1)  + '% Buy';
+  if (sellPct) sellPct.textContent = taker.sell_pct.toFixed(1) + '% Sell';
+  const svg = document.getElementById('ms-mech-taker-spark');
+  if (svg && taker.history && taker.history.length > 1) {
+    const H = taker.history;
+    const min = Math.min(...H), max = Math.max(...H);
+    const range = (max - min) || 1;
+    const pts = H.map((v, i) => {
+      const x = (i / (H.length - 1)) * 298 + 1;
+      const y = 44 - ((v - min) / range * 42);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    svg.innerHTML = `<polyline fill="none" stroke="var(--accent)" stroke-width="1.5" points="${pts}"/>`;
+  }
+  if (badge) { badge.textContent = taker.label || '—'; badge.className = `ms-pill ${taker.color || 'grey'}`; }
+  if (mechBadge) {
+    mechBadge.textContent = taker.label ? '⚡ ' + taker.label : '⚡ Loaded';
+    mechBadge.className   = `ms-layer-badge ${taker.color || 'grey'}`;
+  }
+}
+
+function renderSpotFuturesVol(vr) {
+  const live  = document.getElementById('ms-mech-vol-live');
+  const err   = document.getElementById('ms-mech-vol-err');
+  const badge = document.getElementById('ms-mech-vol-badge');
+  if (!vr || vr.status !== 'ok') {
+    if (live)  live.style.display  = 'none';
+    if (err)   err.style.display   = '';
+    if (badge) { badge.textContent = '—'; badge.className = 'ms-pill grey'; }
+    return;
+  }
+  if (live) live.style.display = '';
+  if (err)  err.style.display  = 'none';
+  const fmtVol = v => {
+    if (v == null) return '—';
+    if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return '$' + (v / 1e6).toFixed(0) + 'M';
+    return '$' + Number(v).toFixed(0);
+  };
+  const spotEl  = document.getElementById('ms-mech-spot-vol');
+  const futEl   = document.getElementById('ms-mech-fut-vol');
+  const ratioEl = document.getElementById('ms-mech-vol-ratio');
+  if (spotEl)  spotEl.textContent  = fmtVol(vr.spot_usd);
+  if (futEl)   futEl.textContent   = fmtVol(vr.futures_usd);
+  if (ratioEl) ratioEl.textContent = vr.ratio != null ? vr.ratio.toFixed(2) + 'x' : '—';
+  if (badge) { badge.textContent = vr.label || '—'; badge.className = `ms-pill ${vr.color || 'grey'}`; }
+}
+
+// ── Liquidations 24h ────────────────────────────────────────────────────────
+
+function liq24hSave() {
+  const total = document.getElementById('ms-mech-liq-total');
+  const long  = document.getElementById('ms-mech-liq-long');
+  const short = document.getElementById('ms-mech-liq-short');
+  try {
+    if (total) localStorage.setItem(`liq24h_total_${msCoin}`, total.value);
+    if (long)  localStorage.setItem(`liq24h_long_${msCoin}`,  long.value);
+    if (short) localStorage.setItem(`liq24h_short_${msCoin}`, short.value);
+    localStorage.setItem(`liq24h_ts_${msCoin}`, String(Date.now()));
+  } catch(e) {}
+  liq24hRenderState();
+}
+
+function liq24hRestore(coin) {
+  const c = coin || msCoin;
+  const total = document.getElementById('ms-mech-liq-total');
+  const long  = document.getElementById('ms-mech-liq-long');
+  const short = document.getElementById('ms-mech-liq-short');
+  try {
+    if (total) total.value = localStorage.getItem(`liq24h_total_${c}`) || '';
+    if (long)  long.value  = localStorage.getItem(`liq24h_long_${c}`)  || '';
+    if (short) short.value = localStorage.getItem(`liq24h_short_${c}`) || '';
+  } catch(e) {}
+  liq24hRenderState();
+}
+
+function liq24hRenderState() {
+  const saved = document.getElementById('ms-mech-liq-saved');
+  const note  = document.getElementById('ms-mech-liq-note');
+  const badge = document.getElementById('ms-mech-liq-badge');
+  const total = document.getElementById('ms-mech-liq-total');
+  const long  = document.getElementById('ms-mech-liq-long');
+  const short = document.getElementById('ms-mech-liq-short');
+  let ts = null;
+  try { ts = parseInt(localStorage.getItem(`liq24h_ts_${msCoin}`), 10); } catch(e) {}
+  if (saved) {
+    if (!ts || isNaN(ts)) { saved.textContent = ''; saved.className = 'ms-liq-saved-ind'; }
+    else {
+      const ageMs  = Date.now() - ts;
+      const ageHrs = ageMs / 3600000;
+      const ageStr = ageMs < 60000 ? 'just now' : ageHrs < 1 ? `${Math.round(ageMs/60000)}m ago` : `${Math.round(ageHrs)}h ago`;
+      if (ageHrs > 2) {
+        saved.textContent = `⚠️ Stale — saved ${Math.round(ageHrs)}h ago`;
+        saved.className = 'ms-liq-saved-ind warn';
+      } else {
+        saved.textContent = `✓ Saved (${ageStr})`;
+        saved.className = 'ms-liq-saved-ind ok';
+      }
+    }
+  }
+  const totalVal = parseFloat(total ? total.value : '');
+  const longVal  = parseFloat(long  ? long.value  : '');
+  const shortVal = parseFloat(short ? short.value : '');
+  const hasData  = !isNaN(totalVal) && totalVal > 0;
+  if (note) {
+    if (hasData && !isNaN(longVal) && !isNaN(shortVal) && totalVal > 0) {
+      const longPct = Math.round(longVal / totalVal * 100);
+      note.textContent = `${longPct}% long liquidations / ${100 - longPct}% short`;
+    } else { note.textContent = ''; }
+  }
+  if (badge) {
+    if (!hasData) { badge.textContent = '—'; badge.className = 'ms-pill grey'; return; }
+    if (!isNaN(longVal) && longVal / totalVal > 0.65) {
+      badge.textContent = 'Long-Heavy Liquidations'; badge.className = 'ms-pill red';
+    } else if (!isNaN(shortVal) && shortVal / totalVal > 0.65) {
+      badge.textContent = 'Short-Heavy Liquidations'; badge.className = 'ms-pill green';
+    } else {
+      badge.textContent = 'Balanced Liquidations'; badge.className = 'ms-pill grey';
+    }
+  }
+}
+
+// ── Exchange Net Flow ────────────────────────────────────────────────────────
+
+function efSave() {
+  const dir   = document.getElementById('ms-mech-ef-dir');
+  const size  = document.getElementById('ms-mech-ef-size');
+  const notes = document.getElementById('ms-mech-ef-notes');
+  try {
+    if (dir)   localStorage.setItem(`ef_dir_${msCoin}`,   dir.value);
+    if (size)  localStorage.setItem(`ef_size_${msCoin}`,  size.value);
+    if (notes) localStorage.setItem(`ef_notes_${msCoin}`, notes.value);
+    localStorage.setItem(`ef_ts_${msCoin}`, String(Date.now()));
+  } catch(e) {}
+  efRenderState();
+}
+
+function efRestore(coin) {
+  const c = coin || msCoin;
+  const dir   = document.getElementById('ms-mech-ef-dir');
+  const size  = document.getElementById('ms-mech-ef-size');
+  const notes = document.getElementById('ms-mech-ef-notes');
+  try {
+    if (dir)   dir.value   = localStorage.getItem(`ef_dir_${c}`)   || '';
+    if (size)  size.value  = localStorage.getItem(`ef_size_${c}`)  || '';
+    if (notes) notes.value = localStorage.getItem(`ef_notes_${c}`) || '';
+  } catch(e) {}
+  efRenderState();
+}
+
+function efRenderState() {
+  const saved = document.getElementById('ms-mech-ef-saved');
+  const badge = document.getElementById('ms-mech-ef-badge');
+  const dir   = document.getElementById('ms-mech-ef-dir');
+  const size  = document.getElementById('ms-mech-ef-size');
+  let ts = null;
+  try { ts = parseInt(localStorage.getItem(`ef_ts_${msCoin}`), 10); } catch(e) {}
+  if (saved) {
+    if (!ts || isNaN(ts)) { saved.textContent = ''; saved.className = 'ms-liq-saved-ind'; }
+    else {
+      const ageMs  = Date.now() - ts;
+      const ageHrs = ageMs / 3600000;
+      const ageStr = ageMs < 60000 ? 'just now' : ageHrs < 1 ? `${Math.round(ageMs/60000)}m ago` : `${Math.round(ageHrs)}h ago`;
+      if (ageHrs > 24) {
+        saved.textContent = `⚠️ Stale — check again`;
+        saved.className = 'ms-liq-saved-ind warn';
+      } else {
+        saved.textContent = `✓ Saved (${ageStr})`;
+        saved.className = 'ms-liq-saved-ind ok';
+      }
+    }
+  }
+  const dirVal  = dir  ? dir.value  : '';
+  const sizeVal = size ? size.value : '';
+  if (badge) {
+    if (!dirVal) { badge.textContent = '—'; badge.className = 'ms-pill grey'; return; }
+    if (dirVal === 'OUTFLOW') {
+      const label = sizeVal === 'Large' ? 'Large Outflow — Bullish Pressure' : 'Outflow — Self-Custody Accumulation';
+      badge.textContent = label; badge.className = 'ms-pill green';
+    } else if (dirVal === 'INFLOW') {
+      const label = sizeVal === 'Large' ? 'Large Inflow — Bearish Pressure' : 'Inflow — Watch for Sell Pressure';
+      badge.textContent = label; badge.className = 'ms-pill red';
+    } else {
+      badge.textContent = 'Neutral Net Flow'; badge.className = 'ms-pill grey';
+    }
+  }
+}
+
+// ── Whale Order Watchlist ────────────────────────────────────────────────────
+
+let _whaleOrders = {};
+
+function whaleRestoreWatchlist(coin) {
+  const c = coin || msCoin;
+  try {
+    const raw = localStorage.getItem(`whale_orders_${c}`);
+    _whaleOrders[c] = raw ? JSON.parse(raw) : [];
+  } catch(e) { _whaleOrders[c] = []; }
+  whaleRender(c);
+}
+
+function whaleSave(coin) {
+  const c = coin || msCoin;
+  try { localStorage.setItem(`whale_orders_${c}`, JSON.stringify(_whaleOrders[c] || [])); } catch(e) {}
+}
+
+function whaleAddOrder() {
+  const priceEl = document.getElementById('ms-whale-price');
+  const sizeEl  = document.getElementById('ms-whale-size');
+  const dirEl   = document.getElementById('ms-whale-dir');
+  const notesEl = document.getElementById('ms-whale-notes');
+  const price = parseFloat(priceEl ? priceEl.value : '');
+  if (isNaN(price) || price <= 0) return;
+  if (!_whaleOrders[msCoin]) _whaleOrders[msCoin] = [];
+  _whaleOrders[msCoin].push({
+    id:        Date.now(),
+    price:     price,
+    size:      sizeEl  ? sizeEl.value.trim()  : '',
+    direction: dirEl   ? dirEl.value           : 'BUY',
+    notes:     notesEl ? notesEl.value.trim()  : '',
+    status:    'pending',
+    added_ts:  Date.now(),
+  });
+  if (priceEl) priceEl.value = '';
+  if (sizeEl)  sizeEl.value  = '';
+  if (notesEl) notesEl.value = '';
+  whaleSave(msCoin);
+  whaleRender(msCoin);
+}
+
+function whaleRemoveOrder(id) {
+  if (!_whaleOrders[msCoin]) return;
+  _whaleOrders[msCoin] = _whaleOrders[msCoin].filter(o => o.id !== id);
+  whaleSave(msCoin);
+  whaleRender(msCoin);
+}
+
+function whaleSetStatus(id, status) {
+  if (!_whaleOrders[msCoin]) return;
+  const o = _whaleOrders[msCoin].find(o => o.id === id);
+  if (o) { o.status = status; whaleSave(msCoin); whaleRender(msCoin); }
+}
+
+function whaleRender(coin) {
+  const c = coin || msCoin;
+  const tbody = document.getElementById('ms-mech-whale-body');
+  if (!tbody) return;
+  const orders = _whaleOrders[c] || [];
+  if (!orders.length) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">No orders tracked yet — add below</td></tr>`;
+    return;
+  }
+  const livePrice = _l3LatestPrice;
+  tbody.innerHTML = orders.map(o => {
+    const nearPrice = livePrice && Math.abs(o.price - livePrice) / livePrice < 0.05;
+    const ageHrs = (Date.now() - o.added_ts) / 3600000;
+    const ageStr = ageHrs < 1 ? `${Math.round(ageHrs * 60)}m` : ageHrs < 24 ? `${Math.round(ageHrs)}h` : `${Math.round(ageHrs / 24)}d`;
+    const dirClass = o.direction === 'SELL' ? 'ms-mech-dir-sell' : 'ms-mech-dir-buy';
+    return `<tr class="${nearPrice ? 'near-price' : ''}">
+      <td>${esc(o.price.toLocaleString())}</td>
+      <td>${esc(o.size || '—')}</td>
+      <td class="${dirClass}">${esc(o.direction)}</td>
+      <td>${ageStr}</td>
+      <td><select class="ms-mech-status-sel" onchange="whaleSetStatus(${o.id}, this.value)">
+        <option value="pending"   ${o.status === 'pending'   ? 'selected' : ''}>Pending</option>
+        <option value="filled"    ${o.status === 'filled'    ? 'selected' : ''}>Filled</option>
+        <option value="cancelled" ${o.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+      </select></td>
+      <td>${nearPrice ? '<span class="ms-mech-near-badge">NEAR</span>' : '—'}</td>
+      <td>${esc(o.notes || '—')}</td>
+      <td><button class="ms-mech-action-btn" onclick="whaleRemoveOrder(${o.id})" title="Remove">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Market Mechanics history cell helpers ────────────────────────────────────
+
+function histTakerBuyCell(pct) {
+  if (pct == null) return '—';
+  const v = Number(pct).toFixed(1);
+  if (pct > 60) return `<span style="color:var(--green);font-weight:700">${v}%</span>`;
+  if (pct < 40) return `<span style="color:var(--red);font-weight:700">${v}%</span>`;
+  return `<span style="color:var(--muted)">${v}%</span>`;
+}
+
+function histVolumeRatioCell(ratio) {
+  if (ratio == null) return '—';
+  const v = Number(ratio).toFixed(2);
+  if (ratio < 3)  return `<span style="color:var(--green);font-weight:700">${v}x</span>`;
+  if (ratio > 10) return `<span style="color:var(--red);font-weight:700">${v}x</span>`;
+  return `<span style="color:var(--muted)">${v}x</span>`;
+}
+
+// ── Pre-Trade: mechanics sub-check ───────────────────────────────────────────
+
+function ptCheckMechanics() {
+  const ids = ['ms-mech-chk-taker', 'ms-mech-chk-liq', 'ms-mech-chk-vol', 'ms-mech-chk-whale', 'ms-mech-chk-ef'];
+  const allChecked = ids.every(id => { const el = document.getElementById(id); return el && el.checked; });
+  ptCheckSet('15', allChecked);
 }
 
 // ── AI Analysis ──────────────────────────────────────────────────────────────
@@ -6964,6 +7604,9 @@ loadLayer3();
 loadSignalHistory();
 renderMsChart(msCoin);
 liqRestoreValues();
+liq24hRestore(msCoin);
+efRestore(msCoin);
+whaleRestoreWatchlist(msCoin);
 ptRestoreDirection();
 ptRecalcAll();
 loadDcaModels();
