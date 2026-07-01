@@ -71,16 +71,22 @@ class SignalRecorder:
         data["layer1"] = self._trim(data["layer1"])
         self._save(data)
 
-    def record_layer2(self, symbol: str, layer2_data: dict, master_summary: Optional[str]) -> None:
+    def record_layer2(self, symbol: str, layer2_data: dict, master_summary: Optional[str],
+                      mechanics_data: Optional[dict] = None) -> None:
         """Called every 1 hour per symbol. Extracts fields from the live
         /api/layer2/<symbol> response dict and appends to
-        history["layer2"][symbol]."""
+        history["layer2"][symbol].  When mechanics_data (from
+        /api/market_mechanics/<symbol>) is supplied, taker-ratio and
+        spot/futures-volume fields are included in the snapshot too."""
         funding  = layer2_data.get("funding") or {}
         oi       = layer2_data.get("open_interest") or {}
         ls       = layer2_data.get("long_short") or {}
         glob     = ls.get("global") or {}
         top      = ls.get("top") or {}
         position = layer2_data.get("position_ratio") or {}
+        mech     = mechanics_data or {}
+        taker    = mech.get("taker") or {}
+        vol      = mech.get("volume_ratio") or {}
 
         snapshot = {
             "ts": _now_iso(),
@@ -101,6 +107,14 @@ class SignalRecorder:
             "position_account_gap": position.get("divergence_from_account"),
             "position_divergence_direction": position.get("divergence_direction"),
             "position_divergence_significance": position.get("significance"),
+            # Market Mechanics fields (present when mechanics_data supplied)
+            "taker_buy_pct": taker.get("buy_pct") if taker.get("status") == "ok" else None,
+            "taker_sell_pct": taker.get("sell_pct") if taker.get("status") == "ok" else None,
+            "taker_label": taker.get("label") if taker.get("status") == "ok" else None,
+            "spot_volume_24h": vol.get("spot_usd") if vol.get("status") == "ok" else None,
+            "futures_volume_24h": vol.get("futures_usd") if vol.get("status") == "ok" else None,
+            "spot_futures_ratio": vol.get("ratio") if vol.get("status") == "ok" else None,
+            "volume_label": vol.get("label") if vol.get("status") == "ok" else None,
             "verdict": (layer2_data.get("verdict") or {}).get("code"),
             "master_summary": master_summary,
         }
