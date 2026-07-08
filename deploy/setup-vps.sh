@@ -1,12 +1,12 @@
 #!/bin/bash
-# Run this ONCE on your VPS to set up the Infinity service.
+# Run this ONCE on your VPS to set up the Infinity dashboard service.
 # Usage: bash setup-vps.sh
 
 set -e
 
 REPO_URL="https://github.com/ZeroSanan/Infinity.git"
 DEPLOY_PATH="$HOME/infinity"
-SERVICE_NAME="infinity"
+SERVICE_NAME="infinity-web"
 
 echo "==> Cloning repository..."
 git clone "$REPO_URL" "$DEPLOY_PATH"
@@ -27,7 +27,7 @@ echo ""
 echo "==> Installing systemd service..."
 sudo tee /etc/systemd/system/$SERVICE_NAME.service > /dev/null <<EOF
 [Unit]
-Description=Infinity DCA Trading Bot
+Description=Infinity Market Signals Dashboard
 After=network.target
 
 [Service]
@@ -35,7 +35,7 @@ Type=simple
 User=$USER
 WorkingDirectory=$DEPLOY_PATH
 EnvironmentFile=$DEPLOY_PATH/.env
-ExecStart=$DEPLOY_PATH/venv/bin/python main.py
+ExecStart=$DEPLOY_PATH/venv/bin/python web/app.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
