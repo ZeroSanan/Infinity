@@ -1764,7 +1764,6 @@ def webhook_deploy():
              "cd /root/infinity && git pull origin master "
              "&& source venv/bin/activate "
              "&& pip install -r requirements.txt "
-             "&& systemctl restart infinity "
              "&& systemctl restart infinity-web"],
         )
 
