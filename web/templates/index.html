@@ -2174,7 +2174,6 @@
 
 <div id="toast"></div>
 
-<script src="https://s3.tradingview.com/tv.js"></script>
 <script>
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -3483,28 +3482,26 @@ function renderMsChart(coin){
 
   const container = document.getElementById('ms-chart-container');
   if (!container) return;
-  container.innerHTML = '';
 
-  if (typeof TradingView === 'undefined') {
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px">Chart unavailable (TradingView script failed to load)</div>';
-    return;
-  }
-
-  new TradingView.widget({
-    autosize: true,
-    symbol: tvSymbol,
-    interval: '240',
-    timezone: 'Etc/UTC',
-    theme: 'light',
-    style: '1',
-    locale: 'en',
-    toolbar_bg: '#f1f3f6',
-    enable_publishing: false,
-    allow_symbol_change: true,
-    withdateranges: true,
-    hide_side_toolbar: false,
-    container_id: 'ms-chart-container',
+  const params = new URLSearchParams({
+    symbol:             tvSymbol,
+    interval:           '240',
+    timezone:           'Etc/UTC',
+    theme:              'light',
+    style:              '1',
+    locale:             'en',
+    toolbar_bg:         'f1f3f6',
+    enable_publishing:  '0',
+    allow_symbol_change:'1',
+    withdateranges:     '1',
+    hide_side_toolbar:  '0',
+    hideideas:          '1',
+    saveimage:          '1',
   });
+  container.innerHTML =
+    `<iframe src="https://www.tradingview.com/widgetembed/?${params}"
+       style="width:100%;height:100%;border:none;"
+       allowtransparency="true" scrolling="no" allowfullscreen></iframe>`;
 }
 
 function toggleMsChartFullscreen() {
