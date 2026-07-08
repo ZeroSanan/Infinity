@@ -2179,6 +2179,7 @@
 // ── Utilities ─────────────────────────────────────────────────────────────────
 const fmt    = (n,d=2) => n==null ? '—' : Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtPct = (n,d=2) => n==null ? '—' : `${n>0?'+':''}${fmt(n,d)}%`;
+const fmtP   = (n) => n==null ? '—' : '$' + fmt(n, n >= 1000 ? 0 : 2);
 const esc    = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 async function api(path, method='GET', body=null){
