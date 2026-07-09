@@ -23,7 +23,6 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from core.regime_detector import RegimeDetector
 from core.signal_recorder import SignalRecorder
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
@@ -1705,48 +1704,6 @@ def api_settings_save():
 
     masked = new_key[:6] + "•" * (len(new_key) - 10) + new_key[-4:] if len(new_key) > 10 else "•" * len(new_key)
     return jsonify({"ok": True, "anthropic_key_masked": masked})
-
-
-# ── Routes — Regime Detector ─────────────────────────────────────────────────
-
-@app.route("/api/regime")
-def api_regime():
-    symbol = request.args.get("symbol", "BTCUSDT").upper()
-    try:
-        detector = RegimeDetector()
-        analysis = detector.analyze(symbol)
-        if "error" in analysis:
-            return jsonify({"error": analysis["error"]}), 503
-        analysis["narrative"] = detector.get_ai_narrative(analysis)
-        return jsonify(analysis)
-    except Exception as e:
-        import traceback
-        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
-
-
-@app.route("/api/regime/confirm", methods=["POST"])
-def api_regime_confirm():
-    data = request.json or {}
-    state = {
-        "confirmed": bool(data.get("confirmed", False)),
-        "strategy":  data.get("strategy", ""),
-        "regime":    data.get("regime", ""),
-        "score":     data.get("score", 0),
-        "timestamp": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-    }
-    os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
-    with open(os.path.join(ROOT, "data", "regime_state.json"), "w") as f:
-        json.dump(state, f, indent=2)
-    return jsonify({"ok": True, "state": state})
-
-
-@app.route("/api/regime/state")
-def api_regime_state():
-    path = os.path.join(ROOT, "data", "regime_state.json")
-    if not os.path.exists(path):
-        return jsonify({"confirmed": False, "strategy": None, "timestamp": None})
-    with open(path) as f:
-        return jsonify(json.load(f))
 
 
 # ── Route — Deploy webhook ────────────────────────────────────────────────────
