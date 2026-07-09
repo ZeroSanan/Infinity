@@ -1669,8 +1669,10 @@
           <div class="ms-grid-expand-lbl">Expand ▼</div>
         </div>
         <div class="ms-grid-card-detail" id="ms-grid-mech-detail" style="display:none">
+          <span class="ms-layer-badge grey" id="ms-mech-badge" style="display:none">⚪ Expand to load</span>
           <div class="ms-verdict grey" id="ms-mech-verdict-top" style="margin-bottom:12px">
-            <span class="ms-layer-badge grey" id="ms-mech-badge" style="font-size:15px;padding:8px 20px">⚪ Loading</span>
+            <div class="ms-verdict-emoji" id="ms-mech-verdict-emoji">—</div>
+            <div class="ms-verdict-label" id="ms-mech-verdict-label">Loading…</div>
           </div>
         <div class="ms-l1-timestamp" id="ms-mech-timestamp">Last updated: —</div>
 
@@ -3616,9 +3618,23 @@ function updateGridMechSummary(){
   document.getElementById('ms-grid-mech-liq').textContent = liqTotal ? '$' + liqTotal + 'M' : '—';
   const efDir = document.getElementById('ms-mech-ef-dir')?.value || '';
   document.getElementById('ms-grid-mech-ef').textContent = efDir || '—';
+  // Copy compact badge (grid face)
   const src = document.getElementById('ms-mech-badge');
   const dst = document.getElementById('ms-grid-mech-badge');
   if(src && dst){ dst.className = src.className; dst.textContent = src.textContent; }
+  // Update the full verdict display at top of the slide-over panel
+  const takerBadge   = document.getElementById('ms-mech-taker-badge');
+  const verdictEl    = document.getElementById('ms-mech-verdict-top');
+  const emojiEl      = document.getElementById('ms-mech-verdict-emoji');
+  const labelEl      = document.getElementById('ms-mech-verdict-label');
+  if(takerBadge && verdictEl && emojiEl && labelEl){
+    const label = takerBadge.textContent || '—';
+    const color = (takerBadge.className.match(/\b(green|red|orange|grey)\b/) || ['grey'])[0];
+    const emoji = color === 'green' ? '🟢' : color === 'red' ? '🔴' : color === 'orange' ? '🟡' : '⚪';
+    emojiEl.textContent  = emoji;
+    labelEl.textContent  = label.toUpperCase();
+    verdictEl.className  = `ms-verdict ${color}`;
+  }
 }
 
 function updateGridL3Summary(){
