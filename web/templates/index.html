@@ -1541,6 +1541,13 @@
         </div>
         <div class="ms-grid-card-detail" id="ms-grid-l2-detail" style="display:none">
           <span class="ms-layer-badge grey" id="ms-l2-badge" style="display:none">⚪ Loading</span>
+        <!-- Combined verdict — shown at top -->
+        <div class="ms-verdict grey" id="ms-verdict">
+          <div class="ms-verdict-emoji" id="ms-verdict-emoji">—</div>
+          <div class="ms-verdict-label" id="ms-verdict-label">Loading…</div>
+        </div>
+        <div class="ms-divergence" id="ms-verdict-divergence" style="display:none;margin-top:8px"></div>
+        <div class="ms-verdict-note" style="margin-bottom:16px">Combines Funding Rate, Open Interest, and Long/Short Ratio signals. Reflects crowd positioning only — not a trade recommendation. Check Layer 1 (macro) and Layer 3 (entry timing) before acting.</div>
         <div class="ms-layer2-grid" id="ms-layer2-grid">
 
           <!-- Funding Rate -->
@@ -1645,13 +1652,6 @@
           <div class="ms-stat-sub" style="color:var(--muted)">Read the bright clusters and enter the nearest levels above and below current price.</div>
         </div>
 
-        <!-- Combined verdict -->
-        <div class="ms-verdict grey" id="ms-verdict">
-          <div class="ms-verdict-emoji" id="ms-verdict-emoji">—</div>
-          <div class="ms-verdict-label" id="ms-verdict-label">Loading…</div>
-        </div>
-        <div class="ms-divergence" id="ms-verdict-divergence" style="display:none;margin-top:8px"></div>
-        <div class="ms-verdict-note">Combines Funding Rate, Open Interest, and Long/Short Ratio signals. Reflects crowd positioning only — not a trade recommendation. Check Layer 1 (macro) and Layer 3 (entry timing) before acting.</div>
         </div><!-- /ms-grid-l2-detail -->
       </div><!-- /ms-grid-l2 -->
 
