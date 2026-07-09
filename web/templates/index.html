@@ -1395,6 +1395,49 @@
   .ms-grid-card-detail { padding:16px; border-top:1px solid var(--border); }
   .ms-master-bar-wrap { background:var(--surface); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 18px; margin-bottom:4px; }
   .ms-collapse-hdr { margin-top:8px; }
+
+  /* ── Slide-over panel ── */
+  .ms-slideover-overlay {
+    position:fixed; inset:0; z-index:900;
+    background:rgba(0,0,0,0);
+    pointer-events:none;
+    transition:background .22s;
+  }
+  .ms-slideover-overlay.open {
+    background:rgba(0,0,0,.45);
+    pointer-events:auto;
+  }
+  .ms-slideover {
+    position:fixed; top:0; right:0; bottom:0;
+    width:min(48vw, 680px); max-width:100vw;
+    background:var(--surface);
+    border-left:1.5px solid var(--border);
+    z-index:901;
+    transform:translateX(100%);
+    transition:transform .25s cubic-bezier(.4,0,.2,1);
+    display:flex; flex-direction:column;
+    overflow:hidden;
+    box-shadow:-4px 0 24px rgba(0,0,0,.18);
+  }
+  .ms-slideover.open { transform:translateX(0); }
+  @media (max-width:640px) { .ms-slideover { width:100vw; } }
+  .ms-slideover-hdr {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 20px 14px;
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+    background:var(--surface2);
+  }
+  .ms-slideover-title { font-size:14px; font-weight:700; color:var(--text); }
+  .ms-slideover-close {
+    background:none; border:none; font-size:22px; color:var(--muted);
+    cursor:pointer; padding:0 4px; line-height:1; border-radius:4px;
+  }
+  .ms-slideover-close:hover { color:var(--text); background:var(--border2); }
+  .ms-slideover-body { flex:1; overflow-y:auto; padding:16px 20px 32px; }
+  /* Dim + disable interaction with the grid while panel is open */
+  .ms-overview-grid.dimmed,
+  .ms-master-bar-wrap.dimmed { opacity:.4; pointer-events:none; transition:opacity .22s; }
 </style>
 </head>
 <body>
@@ -1553,7 +1596,7 @@
 
       <!-- Layer 1 card -->
       <div class="ms-grid-card" id="ms-grid-l1">
-        <div class="ms-grid-card-face" onclick="toggleGridCard('l1')">
+        <div class="ms-grid-card-face" onclick="openSlideOver('l1')">
           <div class="ms-grid-card-title">🌍 LAYER 1 — MACRO</div>
           <span class="ms-layer-badge grey" id="ms-grid-l1-badge">⚪ Loading</span>
           <div class="ms-grid-summary" id="ms-grid-l1-summary">
@@ -1579,7 +1622,7 @@
 
       <!-- Layer 2 card -->
       <div class="ms-grid-card" id="ms-grid-l2">
-        <div class="ms-grid-card-face" onclick="toggleGridCard('l2')">
+        <div class="ms-grid-card-face" onclick="openSlideOver('l2')">
           <div class="ms-grid-card-title">📊 LAYER 2 — POSITIONING</div>
           <span class="ms-layer-badge grey" id="ms-grid-l2-badge">⚪ Loading</span>
           <div class="ms-grid-summary" id="ms-grid-l2-summary">
@@ -1708,7 +1751,7 @@
 
       <!-- Market Mechanics card -->
       <div class="ms-grid-card" id="ms-grid-mech">
-        <div class="ms-grid-card-face" onclick="toggleGridCard('mech')">
+        <div class="ms-grid-card-face" onclick="openSlideOver('mech')">
           <div class="ms-grid-card-title">⚙️ MARKET MECHANICS</div>
           <span class="ms-layer-badge grey" id="ms-grid-mech-badge">⚪ —</span>
           <div class="ms-grid-summary">
@@ -1871,7 +1914,7 @@
 
       <!-- Layer 3 card -->
       <div class="ms-grid-card" id="ms-grid-l3">
-        <div class="ms-grid-card-face" onclick="toggleGridCard('l3')">
+        <div class="ms-grid-card-face" onclick="openSlideOver('l3')">
           <div class="ms-grid-card-title">⏱️ LAYER 3 — ENTRY TIMING</div>
           <span class="ms-layer-badge grey" id="ms-grid-l3-badge">⚪ Loading</span>
           <div class="ms-grid-summary">
@@ -2052,6 +2095,16 @@
           <div class="ms-ai-overlay" id="ms-ai-overlay" style="display:none">⏳ Analyzing…</div>
         </div>
       </div>
+    </div>
+
+    <!-- Slide-over panel (fixed, right side) -->
+    <div class="ms-slideover-overlay" id="ms-slideover-overlay" onclick="closeSlideOver()"></div>
+    <div class="ms-slideover" id="ms-slideover" role="dialog" aria-modal="true" aria-labelledby="ms-slideover-title-text">
+      <div class="ms-slideover-hdr">
+        <div class="ms-slideover-title" id="ms-slideover-title-text">—</div>
+        <button class="ms-slideover-close" onclick="closeSlideOver()" aria-label="Close detail panel">✕</button>
+      </div>
+      <div class="ms-slideover-body" id="ms-slideover-body"></div>
     </div>
 
     <!-- Shared info modal -->
@@ -3532,20 +3585,68 @@ function showPage(id, btn){
   if(id === 'market-signals')  { loadLayer2(); loadLayer1(); loadLayer3(); renderMsChart(msCoin); liqRestoreValues(); liq24hRestore(msCoin); efRestore(msCoin); whaleRestoreWatchlist(msCoin); }
 }
 
-// ── Grid card expand/collapse ──────────────────────────────────────────────────
-const _gridExpanded = {};
-function toggleGridCard(key){
+// ── Slide-over panel ───────────────────────────────────────────────────────────
+const SLIDEOVER_TITLES = {
+  l1:   '🌍 Layer 1 — Macro Environment',
+  l2:   '📊 Layer 2 — Market Positioning',
+  mech: '⚙️ Market Mechanics',
+  l3:   '⏱️ Layer 3 — Entry Timing',
+};
+let _slideOverKey      = null;
+let _slideOverNode     = null; // the ms-grid-xxx-detail node currently in the panel
+let _slideOverOrigin   = null; // its original parent card div
+
+function openSlideOver(key){
+  // If clicking the already-open layer, close it
+  if(_slideOverKey === key){ closeSlideOver(); return; }
+  // Restore any previously detached content first
+  if(_slideOverKey) _restoreSlideOverContent();
+
+  _slideOverKey = key;
   const detail = document.getElementById('ms-grid-' + key + '-detail');
   if(!detail) return;
-  const face = detail.previousElementSibling;
-  const lbl  = face ? face.querySelector('.ms-grid-expand-lbl') : null;
-  _gridExpanded[key] = !_gridExpanded[key];
-  detail.style.display = _gridExpanded[key] ? '' : 'none';
-  if(lbl) lbl.textContent = _gridExpanded[key] ? 'Collapse ▲' : 'Expand ▼';
-  // Lazy-load data when expanded
-  if(_gridExpanded[key]){
-    if(key === 'mech') { loadMechPanel(); }
-  }
+
+  // Physically move the detail node into the panel body (keeps live element IDs intact)
+  const body = document.getElementById('ms-slideover-body');
+  _slideOverNode   = detail;
+  _slideOverOrigin = detail.parentElement;
+  detail.style.display = '';
+  body.appendChild(detail);
+
+  document.getElementById('ms-slideover-title-text').textContent = SLIDEOVER_TITLES[key] || key;
+  document.getElementById('ms-slideover-overlay').classList.add('open');
+  document.getElementById('ms-slideover').classList.add('open');
+  document.getElementById('ms-overview-grid').classList.add('dimmed');
+  document.getElementById('ms-master-bar-wrap').classList.add('dimmed');
+
+  // Lazy-load mechanics on first open
+  if(key === 'mech') loadMechPanel();
+
+  // Focus the close button for accessibility
+  setTimeout(() => document.querySelector('.ms-slideover-close')?.focus(), 50);
+}
+
+function _restoreSlideOverContent(){
+  if(!_slideOverNode || !_slideOverOrigin) return;
+  _slideOverNode.style.display = 'none';
+  _slideOverOrigin.appendChild(_slideOverNode);
+  _slideOverNode   = null;
+  _slideOverOrigin = null;
+}
+
+function closeSlideOver(){
+  if(!_slideOverKey) return;
+  _restoreSlideOverContent();
+  _slideOverKey = null;
+  document.getElementById('ms-slideover-overlay').classList.remove('open');
+  document.getElementById('ms-slideover').classList.remove('open');
+  document.getElementById('ms-overview-grid').classList.remove('dimmed');
+  document.getElementById('ms-master-bar-wrap').classList.remove('dimmed');
+  // Refresh collapsed-view summaries in case user edited manual fields inside the panel
+  updateGridL1Summary();
+  updateGridL2Summary();
+  updateGridMechSummary();
+  updateGridL3Summary();
 }
 
 function loadMechPanel(){
@@ -3674,8 +3775,18 @@ function toggleMsChartFullscreen() {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (_slideOverKey) { closeSlideOver(); return; }
     const container = document.getElementById('ms-chart-container');
     if (container && container.classList.contains('is-fullscreen')) toggleMsChartFullscreen();
+  }
+  // Focus trapping inside slide-over panel
+  if (e.key === 'Tab' && _slideOverKey) {
+    const panel     = document.getElementById('ms-slideover');
+    const focusable = panel.querySelectorAll('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])');
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
+    else            { if (document.activeElement === last)  { e.preventDefault(); first.focus(); } }
   }
 });
 
