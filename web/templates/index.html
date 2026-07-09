@@ -586,28 +586,6 @@
 
   .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-  .status-pill {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 12px;
-    border-radius: 99px;
-    font-size: 12px;
-    font-weight: 500;
-    background: var(--green-bg);
-    color: var(--green);
-    min-width: 80px;
-    justify-content: center;
-  }
-  .status-pill.warn {
-    background: var(--red-bg);
-    color: var(--red);
-  }
-  .status-pill .dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: blink 2s ease-in-out infinite;
-  }
-  @keyframes blink { 0%,100%{ opacity:1 } 50%{ opacity:.4 } }
 
   .balance-chip {
     background: var(--surface);
@@ -1387,14 +1365,36 @@
     .logo-block h1 { font-size: 18px; }
     .logo-block p  { font-size: 11px; }
     .header-right  { width: 100%; gap: 6px; }
-    .balance-chip, .status-pill { font-size: 11px; padding: 5px 10px; min-width: 0; }
+    .balance-chip { font-size: 11px; padding: 5px 10px; min-width: 0; }
     #deploy-info { display: none !important; }
 
     .page-tabs-row { margin-bottom: 14px; gap: 8px; }
     .seg-ctrl { width: 100%; flex-wrap: wrap; }
     .seg-btn  { flex: 1 1 calc(50% - 2px); padding: 6px 8px; font-size: 12px; }
     .backtest-link { width: 100%; justify-content: center; }
+    .ms-overview-grid { grid-template-columns: 1fr; }
   }
+
+  /* ── Top-level tab nav ── */
+  .page-tab-nav { display:flex; gap:4px; margin-bottom:20px; background:var(--surface2); border-radius:var(--radius-sm); padding:4px; }
+  .page-tab-nav .seg-btn { flex:1; padding:9px 16px; border:none; background:transparent; border-radius:var(--radius-sm); color:var(--text2); font-size:13px; font-weight:600; cursor:pointer; transition:background .15s, color .15s; }
+  .page-tab-nav .seg-btn.active { background:var(--surface); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.15); }
+
+  /* ── 2×2 overview grid ── */
+  .ms-overview-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:16px 0; }
+  @media (max-width:640px) { .ms-overview-grid { grid-template-columns:1fr; } }
+  .ms-grid-card { background:var(--surface); border:1.5px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .ms-grid-card-face { padding:16px; cursor:pointer; user-select:none; }
+  .ms-grid-card-face:hover { background:var(--surface2); }
+  .ms-grid-card-title { font-size:11px; font-weight:700; letter-spacing:0.6px; color:var(--muted); text-transform:uppercase; margin-bottom:8px; }
+  .ms-grid-summary { margin:10px 0 8px; display:flex; flex-direction:column; gap:5px; }
+  .ms-grid-row { display:flex; justify-content:space-between; align-items:center; font-size:12px; }
+  .ms-grid-lbl { color:var(--muted); }
+  .ms-grid-val { font-weight:600; color:var(--text); font-size:12px; }
+  .ms-grid-expand-lbl { font-size:11px; color:var(--blue); text-align:right; margin-top:4px; }
+  .ms-grid-card-detail { padding:16px; border-top:1px solid var(--border); }
+  .ms-master-bar-wrap { background:var(--surface); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 18px; margin-bottom:4px; }
+  .ms-collapse-hdr { margin-top:8px; }
 </style>
 </head>
 <body>
@@ -1408,9 +1408,6 @@
       
     </div>
     <div class="header-right">
-      <div id="conn-badge" class="status-pill warn">
-        <span class="dot"></span> Connecting…
-      </div>
       <div id="deploy-info" style="display:none;font-size:11px;color:var(--muted);text-align:right;line-height:1.5">
         Last deploy<br><strong id="deploy-info-val" style="color:var(--text2)"></strong>
       </div>
@@ -1419,9 +1416,15 @@
 
 
 
+  <!-- ══ TOP-LEVEL TAB NAV ════════════════════════════════════════════════════ -->
+  <nav class="page-tab-nav" id="page-tab-nav">
+    <button class="seg-btn active" onclick="showPage('market-signals',this)">📈 Market Signals</button>
+    <button class="seg-btn" onclick="showPage('checklist',this)">✅ Checklist</button>
+    <button class="seg-btn" onclick="showPage('regime',this)">📊 Weekly Regime</button>
+  </nav>
+
   <!-- ══════════════════════════════════════════════════════════
        PAGE 1 — DASHBOARD
-  ═══════════════════════════════════════════════════════════════ -->
   ═══════════════════════════════════════════════════════════════ -->
   <div id="page-regime" class="page">
 
@@ -1530,18 +1533,8 @@
       </div>
     </div>
 
-    <!-- TradingView Chart -->
-    <div class="card card-padded" style="margin-bottom:20px">
-      <div class="ms-chart-hdr">
-        <button class="btn btn-ghost btn-sm" id="ms-chart-fullscreen-btn" onclick="toggleMsChartFullscreen()">⛶ Fullscreen</button>
-      </div>
-      <div id="ms-chart-container" class="ms-chart-area"></div>
-    </div>
-
-    <!-- Three-layer card -->
-    <div class="card card-padded">
-
-      <!-- Master summary bar -->
+    <!-- Standalone master bar -->
+    <div class="ms-master-bar-wrap">
       <div class="ms-master-bar">
         <div class="ms-master-coin" id="ms-master-coin">BTC</div>
         <div class="ms-master-layers">
@@ -1553,14 +1546,26 @@
         </div>
         <div class="ms-master-verdict grey" id="ms-master-verdict">⚪ WAIT — Layers not aligned</div>
       </div>
+    </div><!-- /ms-master-bar-wrap -->
 
-      <!-- LAYER 1 — MACRO ENVIRONMENT -->
-      <div class="ms-layer-hdr" onclick="toggleLayer(1)">
-        <span class="ms-layer-arrow" id="ms-l1-arrow">▼</span>
-        <span class="ms-layer-title">LAYER 1 — MACRO ENVIRONMENT</span>
-        <span class="ms-layer-badge grey" id="ms-l1-badge">⚪ Loading</span>
-      </div>
-      <div class="ms-layer-body" id="ms-layer1-body">
+    <!-- 2×2 overview grid -->
+    <div class="ms-overview-grid" id="ms-overview-grid">
+
+      <!-- Layer 1 card -->
+      <div class="ms-grid-card" id="ms-grid-l1">
+        <div class="ms-grid-card-face" onclick="toggleGridCard('l1')">
+          <div class="ms-grid-card-title">🌍 LAYER 1 — MACRO</div>
+          <span class="ms-layer-badge grey" id="ms-grid-l1-badge">⚪ Loading</span>
+          <div class="ms-grid-summary" id="ms-grid-l1-summary">
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Fear/Greed</span><span class="ms-grid-val" id="ms-grid-l1-fg">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">DXY</span><span class="ms-grid-val" id="ms-grid-l1-dxy">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">VIX</span><span class="ms-grid-val" id="ms-grid-l1-vix">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Signals</span><span class="ms-grid-val" id="ms-grid-l1-count">—</span></div>
+          </div>
+          <div class="ms-grid-expand-lbl">Expand ▼</div>
+        </div>
+        <div class="ms-grid-card-detail" id="ms-grid-l1-detail" style="display:none">
+          <span class="ms-layer-badge grey" id="ms-l1-badge" style="display:none">⚪ Loading</span>
         <div class="ms-l1-timestamp" id="ms-l1-timestamp">Last updated: —</div>
         <div class="ms-verdict grey" id="ms-l1-verdict">
           <div class="ms-verdict-emoji" id="ms-l1-verdict-emoji">—</div>
@@ -1569,15 +1574,24 @@
         <div class="ms-verdict-note">Combines live indicators with any manual values you enter below. Always combine with Layer 2 positioning and Layer 3 entry timing.</div>
         <div class="ms-l1-score" id="ms-l1-score"></div>
         <div class="ms-layer1-grid" id="ms-layer1-grid"></div>
-      </div>
+        </div><!-- /ms-grid-l1-detail -->
+      </div><!-- /ms-grid-l1 -->
 
-      <!-- LAYER 2 — MARKET POSITIONING -->
-      <div class="ms-layer-hdr" onclick="toggleLayer(2)">
-        <span class="ms-layer-arrow" id="ms-l2-arrow">▼</span>
-        <span class="ms-layer-title">LAYER 2 — MARKET POSITIONING</span>
-        <span class="ms-layer-badge grey" id="ms-l2-badge">⚪ Loading</span>
-      </div>
-      <div class="ms-layer-body" id="ms-layer2-body">
+      <!-- Layer 2 card -->
+      <div class="ms-grid-card" id="ms-grid-l2">
+        <div class="ms-grid-card-face" onclick="toggleGridCard('l2')">
+          <div class="ms-grid-card-title">📊 LAYER 2 — POSITIONING</div>
+          <span class="ms-layer-badge grey" id="ms-grid-l2-badge">⚪ Loading</span>
+          <div class="ms-grid-summary" id="ms-grid-l2-summary">
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Funding</span><span class="ms-grid-val" id="ms-grid-l2-funding">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">OI</span><span class="ms-grid-val" id="ms-grid-l2-oi">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">L/S Ratio</span><span class="ms-grid-val" id="ms-grid-l2-ls">—</span></div>
+            <div class="ms-grid-row" id="ms-grid-l2-pos-row" style="display:none"><span class="ms-grid-lbl">Position</span><span class="ms-grid-val" id="ms-grid-l2-pos">—</span></div>
+          </div>
+          <div class="ms-grid-expand-lbl">Expand ▼</div>
+        </div>
+        <div class="ms-grid-card-detail" id="ms-grid-l2-detail" style="display:none">
+          <span class="ms-layer-badge grey" id="ms-l2-badge" style="display:none">⚪ Loading</span>
         <div class="ms-layer2-grid" id="ms-layer2-grid">
 
           <!-- Funding Rate -->
@@ -1689,15 +1703,24 @@
         </div>
         <div class="ms-divergence" id="ms-verdict-divergence" style="display:none;margin-top:8px"></div>
         <div class="ms-verdict-note">Combines Funding Rate, Open Interest, and Long/Short Ratio signals. Reflects crowd positioning only — not a trade recommendation. Check Layer 1 (macro) and Layer 3 (entry timing) before acting.</div>
-      </div>
+        </div><!-- /ms-grid-l2-detail -->
+      </div><!-- /ms-grid-l2 -->
 
-      <!-- ⚙️ MARKET MECHANICS — collapsed by default -->
-      <div class="ms-layer-hdr" onclick="toggleMechPanel()" style="cursor:pointer">
-        <span class="ms-layer-arrow" id="ms-mech-arrow">▶</span>
-        <span class="ms-layer-title">⚙️ MARKET MECHANICS</span>
-        <span class="ms-layer-badge grey" id="ms-mech-badge">⚪ Expand to load</span>
-      </div>
-      <div class="ms-layer-body" id="ms-mech-body" style="display:none">
+      <!-- Market Mechanics card -->
+      <div class="ms-grid-card" id="ms-grid-mech">
+        <div class="ms-grid-card-face" onclick="toggleGridCard('mech')">
+          <div class="ms-grid-card-title">⚙️ MARKET MECHANICS</div>
+          <span class="ms-layer-badge grey" id="ms-grid-mech-badge">⚪ —</span>
+          <div class="ms-grid-summary">
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Taker Buy</span><span class="ms-grid-val" id="ms-grid-mech-taker">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Spot/Fut</span><span class="ms-grid-val" id="ms-grid-mech-vol">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Liq 24h</span><span class="ms-grid-val" id="ms-grid-mech-liq">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Net Flow</span><span class="ms-grid-val" id="ms-grid-mech-ef">—</span></div>
+          </div>
+          <div class="ms-grid-expand-lbl">Expand ▼</div>
+        </div>
+        <div class="ms-grid-card-detail" id="ms-grid-mech-detail" style="display:none">
+          <span class="ms-layer-badge grey" id="ms-mech-badge" style="display:none">⚪ Expand to load</span>
         <div class="ms-l1-timestamp" id="ms-mech-timestamp">Last updated: —</div>
 
         <!-- 2-column grid: Taker | 24h Liquidations | Spot/Futures | Exchange Flow -->
@@ -1843,15 +1866,24 @@
           </div>
         </div><!-- end whale panel -->
 
-      </div><!-- end ms-mech-body -->
+        </div><!-- /ms-grid-mech-detail -->
+      </div><!-- /ms-grid-mech -->
 
-      <!-- LAYER 3 — ENTRY TIMING -->
-      <div class="ms-layer-hdr" onclick="toggleLayer(3)">
-        <span class="ms-layer-arrow" id="ms-l3-arrow">▼</span>
-        <span class="ms-layer-title">LAYER 3 — ENTRY TIMING</span>
-        <span class="ms-layer-badge grey" id="ms-l3-badge">⚪ Loading</span>
-      </div>
-      <div class="ms-layer-body" id="ms-layer3-body">
+      <!-- Layer 3 card -->
+      <div class="ms-grid-card" id="ms-grid-l3">
+        <div class="ms-grid-card-face" onclick="toggleGridCard('l3')">
+          <div class="ms-grid-card-title">⏱️ LAYER 3 — ENTRY TIMING</div>
+          <span class="ms-layer-badge grey" id="ms-grid-l3-badge">⚪ Loading</span>
+          <div class="ms-grid-summary">
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Volume</span><span class="ms-grid-val" id="ms-grid-l3-vol">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Structure</span><span class="ms-grid-val" id="ms-grid-l3-struct">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">Momentum</span><span class="ms-grid-val" id="ms-grid-l3-mom">—</span></div>
+            <div class="ms-grid-row"><span class="ms-grid-lbl">ATR%</span><span class="ms-grid-val" id="ms-grid-l3-atr">—</span></div>
+          </div>
+          <div class="ms-grid-expand-lbl">Expand ▼</div>
+        </div>
+        <div class="ms-grid-card-detail" id="ms-grid-l3-detail" style="display:none">
+          <span class="ms-layer-badge grey" id="ms-l3-badge" style="display:none">⚪ Loading</span>
         <div class="ms-l1-timestamp" id="ms-l3-timestamp">Last updated: —</div>
         <div class="ms-verdict grey" id="ms-l3-verdict">
           <div class="ms-verdict-emoji" id="ms-l3-verdict-emoji">—</div>
@@ -1911,12 +1943,135 @@
             <div class="ms-stat-sub ms-l3-dca-note" id="ms-l3-dca-note"></div>
           </div>
 
-        </div>
-      </div>
+        </div><!-- /ms-layer3-grid -->
+        </div><!-- /ms-grid-l3-detail -->
+      </div><!-- /ms-grid-l3 -->
 
+    </div><!-- /ms-overview-grid -->
+
+    <!-- Chart (collapsed by default) -->
+    <div class="ms-layer-hdr ms-collapse-hdr" onclick="toggleLayer('chart')" style="margin-top:16px">
+      <span class="ms-layer-arrow ms-collapsed" id="ms-lchart-arrow">▼</span>
+      <span class="ms-layer-title">📈 CHART</span>
+    </div>
+    <div class="ms-layer-body ms-collapsed" id="ms-layerchart-body">
+      <div class="ms-chart-hdr">
+        <button class="btn btn-ghost btn-sm" id="ms-chart-fullscreen-btn" onclick="toggleMsChartFullscreen()">⛶ Fullscreen</button>
+      </div>
+      <div id="ms-chart-container" class="ms-chart-area"></div>
     </div>
 
-    <!-- Pre-Trade Checklist -->
+    <!-- Signal History (collapsed by default) -->
+    <div class="ms-hist-panel" id="ms-hist-panel">
+      <div class="ms-layer-hdr" onclick="toggleLayer('hist')" style="margin-top:8px">
+        <span class="ms-layer-arrow ms-collapsed" id="ms-lhist-arrow">▼</span>
+        <span class="ms-layer-title">SIGNAL HISTORY</span>
+      </div>
+      <div class="ms-layer-body ms-collapsed" id="ms-layerhist-body">
+        <div class="ms-hist-subtitle">How Layer 1/2/3 indicators have been trending — not just the current snapshot.</div>
+
+        <div class="ms-hist-days-row">
+          <button class="ms-hist-days-btn active" id="ms-hist-days-7" onclick="setHistDays(7)">7D</button>
+          <button class="ms-hist-days-btn" id="ms-hist-days-14" onclick="setHistDays(14)">14D</button>
+          <button class="ms-hist-days-btn" id="ms-hist-days-21" onclick="setHistDays(21)">21D</button>
+        </div>
+
+        <div id="ms-hist-loading" class="ms-dca-updating">⟳ Loading history…</div>
+        <div id="ms-hist-empty" class="ms-dca-empty" style="display:none">No history yet — snapshots accumulate automatically as the dashboard runs (Layer 2 hourly, Layer 1 every 6h, Layer 3 once daily).</div>
+
+        <div id="ms-hist-content" style="display:none">
+          <!-- Layer 2 History (most prominent) -->
+          <div class="ms-hist-table-title">Layer 2 — Market Positioning</div>
+          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l2-tbl">
+            <thead><tr>
+              <th>Time</th><th>Funding</th><th>OI Change</th><th>OI Label</th>
+              <th>Global Long%</th><th>Top Trader Long%</th><th>Position Long%</th><th>Gap</th>
+              <th>Verdict</th><th>Master Summary</th>
+            </tr></thead>
+            <tbody id="ms-hist-l2-body"></tbody>
+          </table></div>
+
+          <!-- Layer 1 History -->
+          <div class="ms-hist-table-title">Layer 1 — Macro Environment</div>
+          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l1-tbl">
+            <thead><tr>
+              <th>Time</th><th>Fear/Greed</th><th>BTC Dom</th><th>DXY</th><th>VIX</th>
+              <th>Fed Rate</th><th>Bullish</th><th>Bearish</th><th>Verdict</th>
+            </tr></thead>
+            <tbody id="ms-hist-l1-body"></tbody>
+          </table></div>
+
+          <!-- Layer 3 History (daily) -->
+          <div class="ms-hist-table-title">Layer 3 — Entry Timing (Daily)</div>
+          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l3-tbl">
+            <thead><tr>
+              <th>Date</th><th>Volume</th><th>Structure</th><th>Momentum</th><th>Order Book</th>
+              <th>ATR%</th><th>Score</th><th>Verdict</th>
+            </tr></thead>
+            <tbody id="ms-hist-l3-body"></tbody>
+          </table></div>
+
+          <!-- Market Mechanics History (hourly, piggybacks on Layer 2 snapshots) -->
+          <div class="ms-hist-table-title">Market Mechanics (Hourly)</div>
+          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-mech-tbl">
+            <thead><tr>
+              <th>Time</th><th>Taker Buy%</th><th>Taker Label</th>
+              <th>Spot Vol</th><th>Futures Vol</th><th>S/F Ratio</th><th>Vol Label</th>
+            </tr></thead>
+            <tbody id="ms-hist-mech-body"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Analysis Panel (collapsed by default) -->
+    <div class="ms-layer-hdr ms-collapse-hdr" onclick="toggleLayer('ai')" style="margin-top:8px">
+      <span class="ms-layer-arrow ms-collapsed" id="ms-lai-arrow">▼</span>
+      <span class="ms-layer-title">🤖 AI MARKET ANALYSIS</span>
+    </div>
+    <div class="ms-layer-body ms-collapsed" id="ms-layerai-body">
+      <div class="ms-ai-panel" id="ms-ai-panel">
+        <div class="ms-ai-subtitle">Reads all three layers and generates a professional trader assessment. Press Generate when you want an analysis.</div>
+
+        <div class="ms-ai-low-warn" id="ms-ai-low-warn" style="display:none">
+          ⚠️ Limited data — fill in more Layer 1 manual cards for a more accurate analysis.
+        </div>
+
+        <div class="ms-ai-style-row">
+          <button class="ms-ai-style-btn active" id="ms-ai-style-professional" onclick="setAiStyle('professional')">Professional</button>
+          <button class="ms-ai-style-btn" id="ms-ai-style-plain" onclick="setAiStyle('plain')">Plain English</button>
+        </div>
+
+        <div class="ms-ai-gen-wrap">
+          <button class="ms-ai-gen-btn locked" id="ms-ai-gen-btn" onclick="ptGenerateClick()">⚡ Generate Professional Analysis</button>
+          <div class="ms-ai-gen-tip" id="ms-ai-gen-tip">Complete all 5 items first.</div>
+        </div>
+
+        <div class="ms-ai-output-wrap" id="ms-ai-output-wrap">
+          <div class="ms-ai-output" id="ms-ai-output"></div>
+          <div class="ms-ai-overlay" id="ms-ai-overlay" style="display:none">⏳ Analyzing…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shared info modal -->
+    <div class="ms-modal-overlay" id="ms-modal-overlay" onclick="if(event.target===this) closeMsModal()">
+      <div class="ms-modal-card">
+        <button class="ms-modal-close" onclick="closeMsModal()" aria-label="Close">&times;</button>
+        <div class="ms-modal-title" id="ms-modal-title"></div>
+        <div class="ms-modal-content" id="ms-modal-content"></div>
+      </div>
+    </div>
+
+  </div><!-- /page-market-signals -->
+
+  <!-- ══ PAGE: CHECKLIST ══════════════════════════════════════════════════════ -->
+  <div id="page-checklist" class="page">
+    <div class="card card-padded" style="margin-bottom:16px">
+      <div class="ms-pt-subtitle" style="margin:0">
+        Checklist for: <strong id="ms-pt-active-coin-label">BTC</strong> — reflects the coin selected on the Market Signals tab.
+      </div>
+    </div>
     <div class="ms-pt-panel" id="ms-pt-panel">
       <div class="ms-pt-hdr">
         <span class="ms-pt-title">✅ Pre-Trade Checklist</span>
@@ -2069,106 +2224,7 @@
         <div class="ms-pt-rr-cell"><span class="ms-pt-rr-lbl">R : R</span><span class="ms-pt-rr-val" id="ms-pt-rr-ratio">—</span></div>
       </div>
     </div>
-
-
-    <!-- Signal History -->
-    <div class="ms-hist-panel" id="ms-hist-panel">
-      <div class="ms-layer-hdr" onclick="toggleLayer('hist')" style="margin-top:0">
-        <span class="ms-layer-arrow" id="ms-lhist-arrow">▼</span>
-        <span class="ms-layer-title">SIGNAL HISTORY</span>
-      </div>
-      <div class="ms-layer-body" id="ms-layerhist-body">
-        <div class="ms-hist-subtitle">How Layer 1/2/3 indicators have been trending — not just the current snapshot.</div>
-
-        <div class="ms-hist-days-row">
-          <button class="ms-hist-days-btn active" id="ms-hist-days-7" onclick="setHistDays(7)">7D</button>
-          <button class="ms-hist-days-btn" id="ms-hist-days-14" onclick="setHistDays(14)">14D</button>
-          <button class="ms-hist-days-btn" id="ms-hist-days-21" onclick="setHistDays(21)">21D</button>
-        </div>
-
-        <div id="ms-hist-loading" class="ms-dca-updating">⟳ Loading history…</div>
-        <div id="ms-hist-empty" class="ms-dca-empty" style="display:none">No history yet — snapshots accumulate automatically as the dashboard runs (Layer 2 hourly, Layer 1 every 6h, Layer 3 once daily).</div>
-
-        <div id="ms-hist-content" style="display:none">
-          <!-- Layer 2 History (most prominent) -->
-          <div class="ms-hist-table-title">Layer 2 — Market Positioning</div>
-          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l2-tbl">
-            <thead><tr>
-              <th>Time</th><th>Funding</th><th>OI Change</th><th>OI Label</th>
-              <th>Global Long%</th><th>Top Trader Long%</th><th>Position Long%</th><th>Gap</th>
-              <th>Verdict</th><th>Master Summary</th>
-            </tr></thead>
-            <tbody id="ms-hist-l2-body"></tbody>
-          </table></div>
-
-          <!-- Layer 1 History -->
-          <div class="ms-hist-table-title">Layer 1 — Macro Environment</div>
-          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l1-tbl">
-            <thead><tr>
-              <th>Time</th><th>Fear/Greed</th><th>BTC Dom</th><th>DXY</th><th>VIX</th>
-              <th>Fed Rate</th><th>Bullish</th><th>Bearish</th><th>Verdict</th>
-            </tr></thead>
-            <tbody id="ms-hist-l1-body"></tbody>
-          </table></div>
-
-          <!-- Layer 3 History (daily) -->
-          <div class="ms-hist-table-title">Layer 3 — Entry Timing (Daily)</div>
-          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-l3-tbl">
-            <thead><tr>
-              <th>Date</th><th>Volume</th><th>Structure</th><th>Momentum</th><th>Order Book</th>
-              <th>ATR%</th><th>Score</th><th>Verdict</th>
-            </tr></thead>
-            <tbody id="ms-hist-l3-body"></tbody>
-          </table></div>
-
-          <!-- Market Mechanics History (hourly, piggybacks on Layer 2 snapshots) -->
-          <div class="ms-hist-table-title">Market Mechanics (Hourly)</div>
-          <div class="ms-hist-table-wrap"><table class="ms-dca-tbl" id="ms-hist-mech-tbl">
-            <thead><tr>
-              <th>Time</th><th>Taker Buy%</th><th>Taker Label</th>
-              <th>Spot Vol</th><th>Futures Vol</th><th>S/F Ratio</th><th>Vol Label</th>
-            </tr></thead>
-            <tbody id="ms-hist-mech-body"></tbody>
-          </table></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- AI Analysis Panel -->
-    <div class="ms-ai-panel" id="ms-ai-panel">
-      <div class="ms-ai-title">🤖 AI Market Analysis</div>
-      <div class="ms-ai-subtitle">Reads all three layers and generates a professional trader assessment. Press Generate when you want an analysis.</div>
-
-      <div class="ms-ai-low-warn" id="ms-ai-low-warn" style="display:none">
-        ⚠️ Limited data — fill in more Layer 1 manual cards for a more accurate analysis.
-      </div>
-
-      <div class="ms-ai-style-row">
-        <button class="ms-ai-style-btn active" id="ms-ai-style-professional" onclick="setAiStyle('professional')">Professional</button>
-        <button class="ms-ai-style-btn" id="ms-ai-style-plain" onclick="setAiStyle('plain')">Plain English</button>
-      </div>
-
-      <div class="ms-ai-gen-wrap">
-        <button class="ms-ai-gen-btn locked" id="ms-ai-gen-btn" onclick="ptGenerateClick()">⚡ Generate Professional Analysis</button>
-        <div class="ms-ai-gen-tip" id="ms-ai-gen-tip">Complete all 5 items first.</div>
-      </div>
-
-      <div class="ms-ai-output-wrap" id="ms-ai-output-wrap">
-        <div class="ms-ai-output" id="ms-ai-output"></div>
-        <div class="ms-ai-overlay" id="ms-ai-overlay" style="display:none">⏳ Analyzing…</div>
-      </div>
-    </div>
-
-    <!-- Shared info modal -->
-    <div class="ms-modal-overlay" id="ms-modal-overlay" onclick="if(event.target===this) closeMsModal()">
-      <div class="ms-modal-card">
-        <button class="ms-modal-close" onclick="closeMsModal()" aria-label="Close">&times;</button>
-        <div class="ms-modal-title" id="ms-modal-title"></div>
-        <div class="ms-modal-content" id="ms-modal-content"></div>
-      </div>
-    </div>
-
-  </div><!-- /page-market-signals -->
+  </div><!-- /page-checklist -->
 
 
 
@@ -2237,6 +2293,8 @@ function selectMsCoin(coin, btn) {
   if (_mechPanelLoaded) loadMarketMechanics();
   ptRestoreDirection();
   ptResetChecklist();
+  const coinLbl = document.getElementById('ms-pt-active-coin-label');
+  if(coinLbl) coinLbl.textContent = coin;
 }
 
 async function loadLayer2() {
@@ -2249,6 +2307,7 @@ async function loadLayer2() {
     renderVerdict(data.verdict);
     renderPositionDivergenceNote(data.position_ratio);
     updateLayer2TrendArrows(data);
+    updateGridL2Summary();
   } catch (e) {
     renderVerdict(null);
     renderPositionRatio(null, null);
@@ -2501,6 +2560,7 @@ function renderVerdict(v) {
   if (mstr)  mstr.textContent  = v.emoji + ' ' + v.label;
   _l2VerdictCode = v.code;
   updateMasterSummary();
+  updateGridL2Summary();
 }
 
 // ── Layer 1 — Macro Environment ───────────────────────────────────────────────
@@ -2982,6 +3042,7 @@ function recalcL1Verdict() {
   _l1VerdictCode = verdict.code;
   updateMasterSummary();
   updateAiDataWarning();
+  updateGridL1Summary();
 }
 
 function l1FearGreed(d) {
@@ -3471,6 +3532,100 @@ function showPage(id, btn){
   if(id === 'market-signals')  { loadLayer2(); loadLayer1(); loadLayer3(); renderMsChart(msCoin); liqRestoreValues(); liq24hRestore(msCoin); efRestore(msCoin); whaleRestoreWatchlist(msCoin); }
 }
 
+// ── Grid card expand/collapse ──────────────────────────────────────────────────
+const _gridExpanded = {};
+function toggleGridCard(key){
+  const detail = document.getElementById('ms-grid-' + key + '-detail');
+  if(!detail) return;
+  const face = detail.previousElementSibling;
+  const lbl  = face ? face.querySelector('.ms-grid-expand-lbl') : null;
+  _gridExpanded[key] = !_gridExpanded[key];
+  detail.style.display = _gridExpanded[key] ? '' : 'none';
+  if(lbl) lbl.textContent = _gridExpanded[key] ? 'Collapse ▲' : 'Expand ▼';
+  // Lazy-load data when expanded
+  if(_gridExpanded[key]){
+    if(key === 'mech') { loadMechPanel(); }
+  }
+}
+
+function loadMechPanel(){
+  if(!_mechPanelLoaded){
+    _mechPanelLoaded = true;
+    loadMarketMechanics().then(() => updateGridMechSummary());
+  } else {
+    updateGridMechSummary();
+  }
+}
+
+// ── Grid summary update functions ──────────────────────────────────────────────
+function updateGridL1Summary(){
+  if(!_layer1Data) return;
+  const data = _layer1Data;
+  const fg = data.fear_greed;
+  document.getElementById('ms-grid-l1-fg').textContent = (fg && fg.status === 'ok') ? (fg.value + ' — ' + (fg.label || '')) : '—';
+  const dxy = data.dxy;
+  document.getElementById('ms-grid-l1-dxy').textContent = (dxy && dxy.status === 'ok') ? (dxy.label || dxy.signal || '—') : '—';
+  const vix = data.vix;
+  document.getElementById('ms-grid-l1-vix').textContent = (vix && vix.status === 'ok') ? (vix.label || '—') : '—';
+  // Signal counts come from l1CombinedSignals
+  const sigs = l1CombinedSignals ? l1CombinedSignals() : [];
+  const bull = sigs.filter(s => s > 0).length;
+  const bear = sigs.filter(s => s < 0).length;
+  document.getElementById('ms-grid-l1-count').textContent = sigs.length ? (bull + ' bull / ' + bear + ' bear') : '—';
+  // Copy badge
+  const src = document.getElementById('ms-l1-badge');
+  const dst = document.getElementById('ms-grid-l1-badge');
+  if(src && dst){ dst.className = src.className; dst.textContent = src.textContent; }
+}
+
+function updateGridL2Summary(){
+  const funding = document.getElementById('ms-funding-value')?.textContent || '—';
+  document.getElementById('ms-grid-l2-funding').textContent = funding;
+  const oi = document.getElementById('ms-oi-change')?.textContent || '—';
+  document.getElementById('ms-grid-l2-oi').textContent = oi;
+  const gLong = document.getElementById('ms-global-long-pct')?.textContent || '—';
+  document.getElementById('ms-grid-l2-ls').textContent = gLong + ' long';
+  const gapNote = document.getElementById('ms-position-gap-note')?.textContent || '';
+  const posRow = document.getElementById('ms-grid-l2-pos-row');
+  if(gapNote && gapNote !== '—' && gapNote.trim()){
+    const posEl = document.getElementById('ms-grid-l2-pos');
+    if(posEl) posEl.textContent = gapNote;
+    if(posRow) posRow.style.display = '';
+  } else {
+    if(posRow) posRow.style.display = 'none';
+  }
+  const src = document.getElementById('ms-l2-badge');
+  const dst = document.getElementById('ms-grid-l2-badge');
+  if(src && dst){ dst.className = src.className; dst.textContent = src.textContent; }
+}
+
+function updateGridMechSummary(){
+  const takerPct = document.getElementById('ms-mech-taker-buy-pct')?.textContent || '—';
+  document.getElementById('ms-grid-mech-taker').textContent = takerPct !== '—' ? takerPct + ' buy' : '—';
+  const volRatio = document.getElementById('ms-mech-vol-ratio')?.textContent || '—';
+  document.getElementById('ms-grid-mech-vol').textContent = volRatio;
+  const liqTotal = document.getElementById('ms-mech-liq-total')?.value || '';
+  document.getElementById('ms-grid-mech-liq').textContent = liqTotal ? '$' + liqTotal + 'M' : '—';
+  const efDir = document.getElementById('ms-mech-ef-dir')?.value || '';
+  document.getElementById('ms-grid-mech-ef').textContent = efDir || '—';
+  const src = document.getElementById('ms-mech-badge');
+  const dst = document.getElementById('ms-grid-mech-badge');
+  if(src && dst){ dst.className = src.className; dst.textContent = src.textContent; }
+}
+
+function updateGridL3Summary(){
+  const vol = document.getElementById('ms-l3-vol-dir')?.textContent || '—';
+  document.getElementById('ms-grid-l3-vol').textContent = vol;
+  const struct = document.getElementById('ms-l3-structure-sub')?.textContent || '—';
+  document.getElementById('ms-grid-l3-struct').textContent = struct;
+  const mom = document.getElementById('ms-l3-roc6')?.textContent || '—';
+  document.getElementById('ms-grid-l3-mom').textContent = mom;
+  const atrPct = document.getElementById('ms-l3-atr-pct')?.textContent || '—';
+  document.getElementById('ms-grid-l3-atr').textContent = atrPct;
+  const src = document.getElementById('ms-l3-badge');
+  const dst = document.getElementById('ms-grid-l3-badge');
+  if(src && dst){ dst.className = src.className; dst.textContent = src.textContent; }
+}
 
 // ── TradingView Chart (Market Signals) ──────────────────────────────────────────
 let _msTvSymbol = null;
@@ -3887,6 +4042,7 @@ function renderL3Verdict(v, atr) {
   _l3VerdictCode = v.code;
   updateMasterSummary();
   ptRecalcAll();
+  updateGridL3Summary();
 }
 
 function renderL3FallbackError() {
@@ -3918,6 +4074,8 @@ function toggleLayer(n) {
   const collapsed = body.classList.toggle('ms-collapsed');
   if (arrow) arrow.classList.toggle('ms-collapsed', collapsed);
   try { localStorage.setItem('ms_layer' + n + '_collapsed', collapsed ? '1' : '0'); } catch(e) {}
+  // Lazy-render chart when expanded
+  if (n === 'chart' && !collapsed) renderMsChart(msCoin);
 }
 
 function initLayerCollapseState() {
@@ -4715,6 +4873,7 @@ async function loadMarketMechanics() {
       const d = new Date(data.timestamp);
       ts.textContent = 'Last updated: ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
+    updateGridMechSummary();
   } catch(e) {
     const badge = document.getElementById('ms-mech-badge');
     if (badge) { badge.textContent = '⚠ Load failed'; badge.className = 'ms-layer-badge red'; }
