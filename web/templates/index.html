@@ -387,10 +387,10 @@
   .ms-mech-whale-tbl tr.near-price td:first-child { border-left: 3px solid var(--accent); }
   .ms-mech-near-badge { font-size: 10px; font-weight: 700; color: var(--blue); margin-left: 4px; }
   .ms-mech-add-form { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); align-items: flex-end; }
-  .ms-mech-add-form label { font-size: 11px; color: var(--text2); display: flex; flex-direction: column; gap: 3px; }
-  .ms-mech-add-form input, .ms-mech-add-form select { border: 1px solid var(--border2); background: var(--surface2); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); font-family: inherit; }
-  .ms-mech-add-form input { width: 90px; }
-  .ms-mech-add-form input[name=notes] { width: 140px; }
+  .ms-mech-add-form label { font-size: 11px; color: var(--text2); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .ms-mech-add-form input, .ms-mech-add-form select { border: 1px solid var(--border2); background: var(--surface2); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); font-family: inherit; min-width: 0; }
+  .ms-mech-add-form input { width: 80px; }
+  .ms-mech-add-form input[name=notes] { width: 120px; }
   .ms-mech-whale-actions { display: flex; gap: 4px; }
   .ms-mech-action-btn { border: none; background: none; cursor: pointer; font-size: 12px; padding: 2px 5px; border-radius: 4px; color: var(--text2); }
   .ms-mech-action-btn:hover { background: var(--surface2); }
@@ -1699,14 +1699,14 @@
             <div class="ms-panel-head"><span>24h Liquidations</span><button class="ms-info-btn" onclick="openMsModal(MS_MODAL.liq24h.title, MS_MODAL.liq24h.body)" aria-label="About Liquidations" title="About Liquidations">ⓘ</button></div>
             <div class="ms-stat-sub" style="margin-bottom:6px">Enter from Coinglass header bar — updates automatically on their site.</div>
             <div class="ms-liq-input-row" style="flex-direction:row;gap:8px">
-              <label class="ms-liq-input-lbl" style="flex:1" for="ms-mech-liq-total">Total ($M)
-                <div class="ms-liq-input-wrap"><span>$</span><input type="number" min="0" step="1" id="ms-mech-liq-total" oninput="liq24hRenderState()" placeholder="e.g. 1493"><span>M</span></div>
-              </label>
               <label class="ms-liq-input-lbl" style="flex:1" for="ms-mech-liq-long">Longs ($M)
                 <div class="ms-liq-input-wrap"><span>$</span><input type="number" min="0" step="1" id="ms-mech-liq-long" oninput="liq24hRenderState()" placeholder="e.g. 1100"><span>M</span></div>
               </label>
               <label class="ms-liq-input-lbl" style="flex:1" for="ms-mech-liq-short">Shorts ($M)
                 <div class="ms-liq-input-wrap"><span>$</span><input type="number" min="0" step="1" id="ms-mech-liq-short" oninput="liq24hRenderState()" placeholder="e.g. 393"><span>M</span></div>
+              </label>
+              <label class="ms-liq-input-lbl" style="flex:1">Total ($M) <span style="font-size:10px;color:var(--muted)">(auto)</span>
+                <div class="ms-liq-input-wrap" style="opacity:0.65"><span>$</span><input type="number" readonly id="ms-mech-liq-total" placeholder="—" style="cursor:default;color:var(--muted);background:var(--surface2)"><span>M</span></div>
               </label>
             </div>
             <div class="ms-liq-save-row">
@@ -1785,12 +1785,14 @@
           </div>
           <div class="ms-stat-sub">Large resting orders ($15M+) from Coinglass. Track status — filled/cancelled orders reveal where large players accumulated or distributed.</div>
 
+          <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px">
           <table class="ms-mech-whale-tbl">
             <thead><tr>
               <th>Price</th><th>Est. Size</th><th>Dir</th><th>Age</th><th>Status</th><th>Near?</th><th>Notes</th><th></th>
             </tr></thead>
             <tbody id="ms-mech-whale-body"><tr><td colspan="8" style="color:var(--muted);text-align:center;padding:12px">No orders tracked yet — add below</td></tr></tbody>
           </table>
+          </div>
 
           <!-- Add order form -->
           <div class="ms-mech-add-form" id="ms-mech-whale-add-form">
@@ -2253,7 +2255,7 @@ function selectMsCoin(coin, btn) {
   liq24hRestore(coin);
   efRestore(coin);
   whaleRestoreWatchlist(coin);
-  if (_mechPanelLoaded) loadMarketMechanics();
+  if (_slideOverKey === 'mech') loadMarketMechanics();
   ptRestoreDirection();
   ptResetChecklist();
   const coinLbl = document.getElementById('ms-pt-active-coin-label');
@@ -3528,8 +3530,8 @@ function openSlideOver(key){
   document.getElementById('ms-overview-grid').classList.add('dimmed');
   document.getElementById('ms-master-bar-wrap').classList.add('dimmed');
 
-  // Lazy-load mechanics on first open
-  if(key === 'mech') loadMechPanel();
+  // Always fetch fresh mechanics data when panel opens
+  if(key === 'mech') loadMarketMechanics();
 
   // Focus the close button for accessibility
   setTimeout(() => document.querySelector('.ms-slideover-close')?.focus(), 50);
@@ -3556,15 +3558,6 @@ function closeSlideOver(){
   updateGridL2Summary();
   updateGridMechSummary();
   updateGridL3Summary();
-}
-
-function loadMechPanel(){
-  if(!_mechPanelLoaded){
-    _mechPanelLoaded = true;
-    loadMarketMechanics().then(() => updateGridMechSummary());
-  } else {
-    updateGridMechSummary();
-  }
 }
 
 // ── Grid summary update functions ──────────────────────────────────────────────
@@ -4703,35 +4696,35 @@ function ptResetChecklist() {
 
 // ── Market Mechanics ─────────────────────────────────────────────────────────
 
-let _mechPanelLoaded = false;
-
-function toggleMechPanel() {
-  const body  = document.getElementById('ms-mech-body');
-  const arrow = document.getElementById('ms-mech-arrow');
-  if (!body) return;
-  const open = body.style.display !== 'none';
-  body.style.display = open ? 'none' : '';
-  if (arrow) arrow.textContent = open ? '▶' : '▼';
-  if (!open && !_mechPanelLoaded) {
-    _mechPanelLoaded = true;
-    loadMarketMechanics();
-  }
-}
-
 async function loadMarketMechanics() {
+  const mechBadge = document.getElementById('ms-mech-badge');
+  const tsEl      = document.getElementById('ms-mech-timestamp');
+  if (mechBadge) { mechBadge.textContent = '⏳ Loading…'; mechBadge.className = 'ms-layer-badge grey'; }
+  if (tsEl)      { tsEl.textContent = 'Last updated: loading…'; }
   try {
     const data = await api(`/api/market_mechanics/${MS_SYMBOLS[msCoin]}`);
     renderTakerRatio(data.taker);
     renderSpotFuturesVol(data.volume_ratio);
-    const ts = document.getElementById('ms-mech-timestamp');
-    if (ts && data.timestamp) {
-      const d = new Date(data.timestamp);
-      ts.textContent = 'Last updated: ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (tsEl) {
+      if (data.timestamp) {
+        const ageMs  = Date.now() - data.timestamp;
+        const ageMin = Math.round(ageMs / 60000);
+        tsEl.textContent = ageMin < 1 ? 'Last updated: just now' : `Last updated: ${ageMin}m ago`;
+      } else {
+        tsEl.textContent = 'Last updated: —';
+      }
     }
     updateGridMechSummary();
   } catch(e) {
-    const badge = document.getElementById('ms-mech-badge');
-    if (badge) { badge.textContent = '⚠ Load failed'; badge.className = 'ms-layer-badge red'; }
+    if (mechBadge) { mechBadge.textContent = '⚠ Load failed'; mechBadge.className = 'ms-layer-badge red'; }
+    if (tsEl) tsEl.textContent = 'Last updated: failed';
+    // Update verdict so it doesn't stay on "Loading…"
+    const emojiEl   = document.getElementById('ms-mech-verdict-emoji');
+    const labelEl   = document.getElementById('ms-mech-verdict-label');
+    const verdictEl = document.getElementById('ms-mech-verdict-top');
+    if (emojiEl)   emojiEl.textContent  = '⚠️';
+    if (labelEl)   labelEl.textContent  = 'DATA UNAVAILABLE';
+    if (verdictEl) verdictEl.className  = 'ms-verdict red';
   }
 }
 
@@ -4744,6 +4737,7 @@ function renderTakerRatio(taker) {
     if (live)  live.style.display  = 'none';
     if (err)   err.style.display   = '';
     if (badge) { badge.textContent = '—'; badge.className = 'ms-pill grey'; }
+    if (mechBadge) { mechBadge.textContent = '⚠ No taker data'; mechBadge.className = 'ms-layer-badge red'; }
     return;
   }
   if (live) live.style.display = '';
@@ -4819,15 +4813,13 @@ function liq24hSave() {
 
 function liq24hRestore(coin) {
   const c = coin || msCoin;
-  const total = document.getElementById('ms-mech-liq-total');
   const long  = document.getElementById('ms-mech-liq-long');
   const short = document.getElementById('ms-mech-liq-short');
   try {
-    if (total) total.value = localStorage.getItem(`liq24h_total_${c}`) || '';
     if (long)  long.value  = localStorage.getItem(`liq24h_long_${c}`)  || '';
     if (short) short.value = localStorage.getItem(`liq24h_short_${c}`) || '';
   } catch(e) {}
-  liq24hRenderState();
+  liq24hRenderState(); // computes and sets Total automatically
 }
 
 function liq24hRenderState() {
@@ -4837,7 +4829,7 @@ function liq24hRenderState() {
   const total = document.getElementById('ms-mech-liq-total');
   const long  = document.getElementById('ms-mech-liq-long');
   const short = document.getElementById('ms-mech-liq-short');
-  let ts = null;
+  let ts = null, isStale = false;
   try { ts = parseInt(localStorage.getItem(`liq24h_ts_${msCoin}`), 10); } catch(e) {}
   if (saved) {
     if (!ts || isNaN(ts)) { saved.textContent = ''; saved.className = 'ms-liq-saved-ind'; }
@@ -4846,6 +4838,7 @@ function liq24hRenderState() {
       const ageHrs = ageMs / 3600000;
       const ageStr = ageMs < 60000 ? 'just now' : ageHrs < 1 ? `${Math.round(ageMs/60000)}m ago` : `${Math.round(ageHrs)}h ago`;
       if (ageHrs > 2) {
+        isStale = true;
         saved.textContent = `⚠️ Stale — saved ${Math.round(ageHrs)}h ago`;
         saved.className = 'ms-liq-saved-ind warn';
       } else {
@@ -4854,25 +4847,40 @@ function liq24hRenderState() {
       }
     }
   }
-  const totalVal = parseFloat(total ? total.value : '');
+  // Auto-compute Total from Longs + Shorts
   const longVal  = parseFloat(long  ? long.value  : '');
   const shortVal = parseFloat(short ? short.value : '');
-  const hasData  = !isNaN(totalVal) && totalVal > 0;
+  let totalVal = NaN;
+  if (!isNaN(longVal) || !isNaN(shortVal)) {
+    totalVal = (isNaN(longVal) ? 0 : longVal) + (isNaN(shortVal) ? 0 : shortVal);
+    if (total) total.value = String(totalVal);
+  } else {
+    if (total) total.value = '';
+  }
+  const hasData = !isNaN(totalVal) && totalVal > 0;
   if (note) {
     if (hasData && !isNaN(longVal) && !isNaN(shortVal) && totalVal > 0) {
       const longPct = Math.round(longVal / totalVal * 100);
       note.textContent = `${longPct}% long liquidations / ${100 - longPct}% short`;
-    } else { note.textContent = ''; }
+      note.style.opacity = isStale ? '0.55' : '';
+    } else { note.textContent = ''; note.style.opacity = ''; }
   }
   if (badge) {
-    if (!hasData) { badge.textContent = '—'; badge.className = 'ms-pill grey'; return; }
+    if (!hasData) { badge.textContent = '—'; badge.className = 'ms-pill grey'; badge.style.opacity = ''; return; }
+    let badgeText, badgeClass;
     if (!isNaN(longVal) && longVal / totalVal > 0.65) {
-      badge.textContent = 'Long-Heavy Liquidations'; badge.className = 'ms-pill red';
+      badgeText = isStale ? '⚠️ Long-Heavy (Stale)' : 'Long-Heavy Liquidations';
+      badgeClass = 'ms-pill red';
     } else if (!isNaN(shortVal) && shortVal / totalVal > 0.65) {
-      badge.textContent = 'Short-Heavy Liquidations'; badge.className = 'ms-pill green';
+      badgeText = isStale ? '⚠️ Short-Heavy (Stale)' : 'Short-Heavy Liquidations';
+      badgeClass = 'ms-pill green';
     } else {
-      badge.textContent = 'Balanced Liquidations'; badge.className = 'ms-pill grey';
+      badgeText = isStale ? '⚠️ Balanced (Stale)' : 'Balanced Liquidations';
+      badgeClass = 'ms-pill grey';
     }
+    badge.textContent = badgeText;
+    badge.className = badgeClass;
+    badge.style.opacity = isStale ? '0.55' : '';
   }
 }
 
