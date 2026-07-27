@@ -1396,6 +1396,49 @@
   .ms-master-bar-wrap { background:var(--surface); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 18px; margin-bottom:4px; }
   .ms-collapse-hdr { margin-top:8px; }
 
+  /* ── Signal Status card ── */
+  .ms-signal-card { background:var(--surface); border:1.5px solid var(--border); border-radius:var(--radius); margin:8px 0 4px; overflow:hidden; }
+  .ms-signal-card-hdr { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border); }
+  .ms-signal-card-title { font-size:11px; font-weight:700; letter-spacing:0.6px; color:var(--muted); text-transform:uppercase; }
+  .ms-signal-card-actions { display:flex; align-items:center; gap:8px; }
+  .ms-signal-refresh-btn { font-size:11px; color:var(--blue); background:none; border:none; cursor:pointer; padding:2px 6px; border-radius:4px; font-weight:600; }
+  .ms-signal-refresh-btn:hover { background:var(--blue-bg); }
+  .ms-signal-cfg-btn { font-size:11px; color:var(--muted); background:none; border:none; cursor:pointer; padding:2px 6px; border-radius:4px; }
+  .ms-signal-cfg-btn:hover { background:var(--surface2); }
+  .ms-signal-rows { padding:4px 0; }
+  .ms-signal-row { display:flex; align-items:center; gap:8px; padding:7px 14px; border-bottom:1px solid var(--border); cursor:pointer; transition:background .12s; }
+  .ms-signal-row:last-child { border-bottom:none; }
+  .ms-signal-row:hover { background:var(--surface2); }
+  .ms-signal-coin { font-size:12px; font-weight:700; min-width:36px; color:var(--text); }
+  .ms-signal-tier { font-size:11px; font-weight:700; padding:2px 7px; border-radius:4px; min-width:80px; text-align:center; }
+  .ms-signal-tier.strong { background:rgba(255,59,48,.12); color:#c41f1f; }
+  .ms-signal-tier.developing { background:rgba(255,204,0,.16); color:#9a7600; }
+  .ms-signal-tier.none { background:var(--surface2); color:var(--muted); }
+  .ms-signal-dir { font-size:11px; font-weight:600; min-width:40px; color:var(--text2); }
+  .ms-signal-dir.long { color:var(--green); }
+  .ms-signal-dir.short { color:var(--red); }
+  .ms-signal-count { font-size:11px; color:var(--muted); flex:1; }
+  .ms-signal-tp { font-size:10.5px; color:var(--muted); font-style:italic; }
+  .ms-signal-tp.achievable { color:#1d8a3b; }
+  .ms-signal-tp.possible { color:#9a7600; }
+  .ms-signal-tp.stretch, .ms-signal-tp.unlikely { color:#c41f1f; }
+  /* Signal detail modal (shown below row on click) */
+  .ms-signal-detail { display:none; padding:10px 14px; background:var(--surface2); border-top:1px solid var(--border); }
+  .ms-signal-detail.open { display:block; }
+  .ms-signal-criteria { display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .ms-signal-criterion { font-size:11.5px; display:flex; align-items:center; gap:6px; }
+  .ms-signal-criterion.on { color:var(--text); }
+  .ms-signal-criterion.off { color:var(--muted); }
+  /* Config panel */
+  .ms-signal-cfg-panel { display:none; padding:12px 14px; border-top:1px solid var(--border); background:var(--surface2); }
+  .ms-signal-cfg-panel.open { display:block; }
+  .ms-signal-cfg-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; font-size:12px; }
+  .ms-signal-cfg-row:last-child { margin-bottom:0; }
+  .ms-signal-cfg-lbl { color:var(--text2); flex:1; }
+  .ms-signal-cfg-input { width:60px; border:1px solid var(--border2); border-radius:5px; background:var(--surface); color:var(--text); font-size:12px; padding:4px 6px; text-align:right; }
+  .ms-signal-cfg-toggle { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .ms-signal-cfg-toggle input[type=checkbox] { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; }
+
   /* ── Slide-over panel ── */
   .ms-slideover-overlay {
     position:fixed; inset:0; z-index:900;
@@ -1903,6 +1946,39 @@
       </div><!-- /ms-grid-l3 -->
 
     </div><!-- /ms-overview-grid -->
+
+    <!-- Signal Status Card -->
+    <div class="ms-signal-card" id="ms-signal-card">
+      <div class="ms-signal-card-hdr">
+        <span class="ms-signal-card-title">⚡ SIGNAL STATUS</span>
+        <div class="ms-signal-card-actions">
+          <button class="ms-signal-refresh-btn" onclick="loadSignalState(true)" title="Trigger evaluation for all coins">↻ Evaluate</button>
+          <button class="ms-signal-cfg-btn" onclick="toggleSignalConfig()" title="Configure signal settings">⚙ Config</button>
+        </div>
+      </div>
+      <div class="ms-signal-rows" id="ms-signal-rows">
+        <div style="padding:12px 14px;font-size:12px;color:var(--muted)">Loading signal state…</div>
+      </div>
+      <!-- Config panel -->
+      <div class="ms-signal-cfg-panel" id="ms-signal-cfg-panel">
+        <div class="ms-signal-cfg-row">
+          <span class="ms-signal-cfg-lbl">Liquidation proximity threshold (%)</span>
+          <input class="ms-signal-cfg-input" type="number" min="0.5" max="20" step="0.5" id="ms-signal-cfg-liq" value="3" onchange="saveSignalConfig()">
+        </div>
+        <div class="ms-signal-cfg-row">
+          <span class="ms-signal-cfg-lbl">OI consecutive cycles required</span>
+          <input class="ms-signal-cfg-input" type="number" min="1" max="10" step="1" id="ms-signal-cfg-oi" value="2" onchange="saveSignalConfig()">
+        </div>
+        <div class="ms-signal-cfg-row">
+          <span class="ms-signal-cfg-lbl">Telegram notifications enabled</span>
+          <label class="ms-signal-cfg-toggle"><input type="checkbox" id="ms-signal-cfg-tg" checked onchange="saveSignalConfig()"> On</label>
+        </div>
+        <div class="ms-signal-cfg-row">
+          <span class="ms-signal-cfg-lbl">Include TP achievability in alerts</span>
+          <label class="ms-signal-cfg-toggle"><input type="checkbox" id="ms-signal-cfg-tp" checked onchange="saveSignalConfig()"> On</label>
+        </div>
+      </div>
+    </div>
 
     <!-- Chart (collapsed by default) -->
     <div class="ms-layer-hdr ms-collapse-hdr" onclick="toggleLayer('chart')" style="margin-top:16px">
@@ -4657,6 +4733,7 @@ function ptSyncPlanToServer() {
   clearTimeout(_ptSyncTimer);
   _ptSyncTimer = setTimeout(() => {
     api('/api/checklist/tp-plan', 'POST', { coin: msCoin, plan: collectPreTradePlan() }).catch(() => {});
+    syncChecklistTpToServer();
   }, 600);
 }
 
@@ -5353,6 +5430,177 @@ async function generateAiAnalysis() {
   }
 }
 
+// ── Signal Status Card ─────────────────────────────────────────────────────────
+
+const SIGNAL_COINS = ['BTC','ETH','SOL','ZEC','XAUT'];
+
+const SIGNAL_CRITERION_LABELS = {
+  master_summary:             'Master Summary',
+  l2_crowding:                'L2 Crowd (contrarian)',
+  position_ratio_divergence:  'Position Ratio Divergence',
+  oi_trend:                   'OI Trend (2+ cycles)',
+  market_mechanics:           'Market Mechanics',
+  liquidation_proximity:      'Liquidation Proximity',
+};
+
+let _signalState = {};
+let _signalCfg   = {};
+let _signalOpenRow = null;  // which coin row is expanded
+
+async function loadSignalState(triggerEval) {
+  try {
+    if (triggerEval) {
+      // Trigger server-side evaluation, then refresh state
+      await api('/api/signal_state/evaluate', 'POST', {});
+    }
+    _signalState = await api('/api/signal_state');
+    renderSignalCard();
+  } catch(e) {
+    const rows = document.getElementById('ms-signal-rows');
+    if (rows) rows.innerHTML = `<div style="padding:10px 14px;font-size:12px;color:var(--red)">Failed to load signal state</div>`;
+  }
+}
+
+async function loadSignalConfig() {
+  try {
+    _signalCfg = await api('/api/signal_config');
+    const liqEl = document.getElementById('ms-signal-cfg-liq');
+    const oiEl  = document.getElementById('ms-signal-cfg-oi');
+    const tgEl  = document.getElementById('ms-signal-cfg-tg');
+    const tpEl  = document.getElementById('ms-signal-cfg-tp');
+    if (liqEl) liqEl.value = _signalCfg.liq_proximity_pct ?? 3;
+    if (oiEl)  oiEl.value  = _signalCfg.oi_consecutive_cycles ?? 2;
+    if (tgEl)  tgEl.checked = !!_signalCfg.telegram_enabled;
+    if (tpEl)  tpEl.checked = !!_signalCfg.tp_achievability_in_msg;
+  } catch(e) {}
+}
+
+async function saveSignalConfig() {
+  const liqEl = document.getElementById('ms-signal-cfg-liq');
+  const oiEl  = document.getElementById('ms-signal-cfg-oi');
+  const tgEl  = document.getElementById('ms-signal-cfg-tg');
+  const tpEl  = document.getElementById('ms-signal-cfg-tp');
+  const cfg = {
+    liq_proximity_pct:       liqEl ? parseFloat(liqEl.value) : 3,
+    oi_consecutive_cycles:   oiEl  ? parseInt(oiEl.value, 10) : 2,
+    telegram_enabled:        tgEl  ? tgEl.checked : true,
+    tp_achievability_in_msg: tpEl  ? tpEl.checked : true,
+  };
+  try {
+    await api('/api/signal_config', 'POST', cfg);
+    _signalCfg = cfg;
+  } catch(e) {}
+}
+
+function toggleSignalConfig() {
+  const panel = document.getElementById('ms-signal-cfg-panel');
+  if (panel) panel.classList.toggle('open');
+}
+
+function renderSignalCard() {
+  const container = document.getElementById('ms-signal-rows');
+  if (!container) return;
+
+  if (!_signalState || !Object.keys(_signalState).length) {
+    container.innerHTML = `<div style="padding:10px 14px;font-size:12px;color:var(--muted)">No evaluations yet — runs automatically with Layer 2 refresh (hourly), or click Evaluate.</div>`;
+    return;
+  }
+
+  let html = '';
+  for (const coin of SIGNAL_COINS) {
+    const symbol = MS_SYMBOLS[coin];
+    const s = _signalState[symbol];
+    if (!s) {
+      html += `<div class="ms-signal-row" onclick="toggleSignalDetail('${symbol}')">
+        <span class="ms-signal-coin">${coin}</span>
+        <span class="ms-signal-tier none">NONE</span>
+        <span class="ms-signal-dir">—</span>
+        <span class="ms-signal-count">Not evaluated yet</span>
+      </div>
+      <div class="ms-signal-detail" id="ms-signal-detail-${symbol}"></div>`;
+      continue;
+    }
+
+    const tier = s.tier || 'NONE';
+    const dir  = s.direction || 'NONE';
+    const cnt  = s.criteria_confirmed || 0;
+
+    const tierClass = tier === 'STRONG' ? 'strong' : tier === 'DEVELOPING' ? 'developing' : 'none';
+    const dirClass  = dir === 'LONG' ? 'long' : dir === 'SHORT' ? 'short' : '';
+    const dirLabel  = dir === 'NONE' ? '—' : dir;
+
+    const evalAt = s.last_evaluated_at ? (() => {
+      const d = new Date(s.last_evaluated_at);
+      return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    })() : '';
+
+    html += `<div class="ms-signal-row" onclick="toggleSignalDetail('${symbol}')">
+      <span class="ms-signal-coin">${coin}</span>
+      <span class="ms-signal-tier ${tierClass}">${tier}</span>
+      <span class="ms-signal-dir ${dirClass}">${dirLabel}</span>
+      <span class="ms-signal-count">${cnt}/6 criteria${evalAt ? ' · ' + evalAt : ''}</span>
+    </div>
+    <div class="ms-signal-detail" id="ms-signal-detail-${symbol}">
+      ${buildSignalDetailHtml(symbol, s)}
+    </div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+function buildSignalDetailHtml(symbol, s) {
+  const detail = s.criteria_detail || {};
+  let html = '<div class="ms-signal-criteria">';
+  for (const [key, label] of Object.entries(SIGNAL_CRITERION_LABELS)) {
+    const on = !!detail[key];
+    html += `<div class="ms-signal-criterion ${on ? 'on' : 'off'}">
+      <span>${on ? '✅' : '❌'}</span><span>${label}</span>
+    </div>`;
+  }
+  html += '</div>';
+
+  const enteredAt = s.entered_tier_at ? (() => {
+    const d = new Date(s.entered_tier_at);
+    return d.toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  })() : null;
+
+  if (enteredAt && s.tier !== 'NONE') {
+    html += `<div style="font-size:10.5px;color:var(--muted)">In ${s.tier} since: ${enteredAt}</div>`;
+  }
+
+  html += `<div style="font-size:10.5px;color:var(--muted);margin-top:4px">
+    Master Summary: <strong>${s.master_summary || '—'}</strong> ·
+    Long: ${s.long_confirmed ?? '?'}/6 · Short: ${s.short_confirmed ?? '?'}/6
+  </div>`;
+
+  return html;
+}
+
+function toggleSignalDetail(symbol) {
+  const el = document.getElementById(`ms-signal-detail-${symbol}`);
+  if (!el) return;
+  const isOpen = el.classList.contains('open');
+  // Close all
+  document.querySelectorAll('.ms-signal-detail').forEach(d => d.classList.remove('open'));
+  // Toggle clicked
+  if (!isOpen) el.classList.add('open');
+}
+
+// Sync Checklist TP to server so background evaluator can read it
+function syncChecklistTpToServer() {
+  const plan = collectPreTradePlan();
+  if (!plan || !plan.confirmed || plan.confirmed.pct === null) return;
+  const symbol = MS_SYMBOLS[msCoin];
+  if (!symbol) return;
+  api('/api/checklist/tp', 'POST', {
+    symbol:        symbol,
+    tp_pct:        plan.confirmed.pct,
+    entry_price:   plan.entry_price,
+    stop_loss:     plan.stop_loss,
+    position_size: plan.position_size,
+  }).catch(() => {});
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 loadLayer2();
 loadLayer1();
@@ -5366,10 +5614,13 @@ whaleRestoreWatchlist(msCoin);
 ptRestoreDirection();
 ptRecalcAll();
 initLayerCollapseState();
+loadSignalState(false);
+loadSignalConfig();
 setInterval(() => loadLayer2(), 300000);
 setInterval(() => loadLayer1(), 900000);
 setInterval(() => loadLayer3(), 120000);
 setInterval(() => loadSignalHistory(), 300000);
+setInterval(() => loadSignalState(false), 300000);
 setInterval(updateL1Timestamp, 60000);
 </script>
 </body>

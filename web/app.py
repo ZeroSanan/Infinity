@@ -24,6 +24,11 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from core.signal_recorder import SignalRecorder
+from core.signal_evaluator import (
+    SignalEvaluator, load_config as load_signal_config,
+    save_config as save_signal_config, _load_state as load_signal_state,
+    DATA_DIR as SIGNAL_DATA_DIR,
+)
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
@@ -1600,7 +1605,285 @@ def api_layer1():
 # layer data and writes to its own file; never touches live trading state.
 
 _SIGNAL_HISTORY_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ZECUSDT", "XAUTUSDT"]
-recorder = SignalRecorder()
+recorder  = SignalRecorder()
+evaluator = SignalEvaluator(recorder)
+
+# ── TP state (server-side persistence for background evaluator) ──────────────
+_TP_FILE = os.path.join(SIGNAL_DATA_DIR, "checklist_tp.json")
+
+
+def _load_tp_state() -> dict:
+    if not os.path.exists(_TP_FILE):
+        return {}
+    try:
+        with open(_TP_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_tp_state(data: dict) -> None:
+    os.makedirs(SIGNAL_DATA_DIR, exist_ok=True)
+    tmp = _TP_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, _TP_FILE)
+
+
+@app.route("/api/checklist/tp", methods=["GET"])
+def api_checklist_tp_get():
+    """GET /api/checklist/tp — return all saved per-coin TP state."""
+    return jsonify(_load_tp_state())
+
+
+@app.route("/api/checklist/tp", methods=["POST"])
+def api_checklist_tp_save():
+    """POST /api/checklist/tp — save TP data for one coin.
+    Body: { "symbol": "BTCUSDT", "tp_pct": 5.2, "entry_price": 65000,
+            "stop_loss": 63000, "position_size": 1000 }
+    """
+    payload = request.json or {}
+    symbol = (payload.get("symbol") or "").upper()
+    if not symbol:
+        return jsonify({"error": "symbol required"}), 400
+    tp_data = _load_tp_state()
+    tp_data[symbol] = {
+        "tp_pct":        payload.get("tp_pct"),
+        "entry_price":   payload.get("entry_price"),
+        "stop_loss":     payload.get("stop_loss"),
+        "position_size": payload.get("position_size"),
+        "saved_at":      datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    _save_tp_state(tp_data)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/checklist/tp-plan", methods=["POST"])
+def api_checklist_tp_plan():
+    """POST /api/checklist/tp-plan — accepts the full pre-trade plan from the
+    Checklist tab and extracts the confirmed TP% for server-side persistence.
+    This is a fire-and-forget endpoint; errors are swallowed silently."""
+    payload = request.json or {}
+    coin    = (payload.get("coin") or "").upper()
+    plan    = payload.get("plan") or {}
+    if not coin or not plan:
+        return jsonify({"ok": True})  # silent accept
+
+    symbol = coin + "USDT" if not coin.endswith("USDT") else coin
+    confirmed = plan.get("confirmed") or {}
+    tp_pct    = confirmed.get("pct")
+    if tp_pct is None:
+        return jsonify({"ok": True})
+
+    tp_data = _load_tp_state()
+    tp_data[symbol] = {
+        "tp_pct":        tp_pct,
+        "entry_price":   plan.get("entry_price"),
+        "stop_loss":     plan.get("stop_loss"),
+        "position_size": plan.get("position_size"),
+        "saved_at":      datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    _save_tp_state(tp_data)
+    return jsonify({"ok": True})
+
+
+# ── Telegram notification sender ─────────────────────────────────────────────
+
+def _telegram_send(text: str) -> None:
+    """Send a Telegram message. Silently logs on failure."""
+    import requests as _req
+    token   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        print("⚠️  Telegram: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set — skipping notification")
+        return
+    try:
+        resp = _req.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+            timeout=10,
+        )
+        if not resp.ok:
+            print(f"⚠️  Telegram: send failed {resp.status_code} — {resp.text[:200]}")
+    except Exception as exc:
+        print(f"⚠️  Telegram: send error — {exc}")
+
+
+def _tp_achievability_check(symbol: str, tp_pct: float, l3_data: dict,
+                              liq_data: Optional[dict]) -> dict:
+    """Reuse Scenario 2 logic: check ATR multiple, cluster distance, L3 verdict.
+    Returns dict with check results and plain-language rating."""
+    atr_section = l3_data.get("atr") or {}
+    atr_pct     = atr_section.get("atr_pct")
+    l3_verdict  = (l3_data.get("verdict") or {}).get("code", "UNKNOWN")
+
+    checks = {}
+
+    # Check 1: L3 supports the direction implied by TP sign
+    tp_is_long = tp_pct > 0
+    l3_supports = (
+        (tp_is_long  and l3_verdict in ("LONG", "WEAK_LONG")) or
+        (not tp_is_long and l3_verdict in ("SHORT", "WEAK_SHORT"))
+    )
+    checks["l3_supports"] = l3_supports
+
+    # Check 2: ATR multiple (<=2x green / <=4x yellow / >4x red)
+    tp_abs = abs(tp_pct)
+    if atr_pct and atr_pct > 0:
+        atr_multiple = tp_abs / atr_pct
+        checks["atr_ok"] = atr_multiple <= 2.0
+        checks["atr_possible"] = atr_multiple <= 4.0
+        checks["atr_multiple"] = round(atr_multiple, 1)
+    else:
+        checks["atr_ok"] = None
+        checks["atr_possible"] = None
+        checks["atr_multiple"] = None
+
+    # Check 3: TP sits within nearest cluster distance
+    current_price = l3_data.get("price")
+    if liq_data and current_price and current_price > 0:
+        if tp_is_long:
+            cluster = liq_data.get("above_price")
+        else:
+            cluster = liq_data.get("below_price")
+        if cluster:
+            cluster_pct = abs(cluster - current_price) / current_price * 100
+            checks["within_cluster"] = tp_abs <= cluster_pct
+            checks["cluster_pct"]   = round(cluster_pct, 2)
+        else:
+            checks["within_cluster"] = None
+            checks["cluster_pct"]    = None
+    else:
+        checks["within_cluster"] = None
+        checks["cluster_pct"]    = None
+
+    # Rating (3 green = achievable, etc.)
+    greens = sum(1 for k in ("l3_supports", "atr_ok", "within_cluster")
+                 if checks.get(k) is True)
+    if greens == 3:
+        rating = "achievable"
+    elif greens == 2:
+        rating = "possible but not ideal"
+    elif greens == 1:
+        rating = "a stretch"
+    else:
+        rating = "unlikely"
+
+    return {"checks": checks, "greens": greens, "rating": rating}
+
+
+def _format_telegram_message(symbol: str, tier: str, direction: str,
+                               detail: dict, tp_state: Optional[dict],
+                               l3_data: Optional[dict],
+                               liq_data: Optional[dict],
+                               include_tp: bool) -> str:
+    coin = symbol.replace("USDT", "")
+    tier_emoji = "🔴" if tier == "STRONG" else "🟡"
+    dir_emoji  = "📈" if direction == "LONG" else "📉"
+
+    lines = [
+        f"{tier_emoji} *{coin} — {tier} {direction} SIGNAL*",
+        "",
+        "*Criteria confirmed:*",
+    ]
+
+    labels = {
+        "master_summary":          "Master Summary",
+        "l2_crowding":             "L2 Crowd Positioning",
+        "position_ratio_divergence": "Position Ratio Divergence",
+        "oi_trend":                "OI Trend",
+        "market_mechanics":        "Market Mechanics",
+        "liquidation_proximity":   "Liquidation Proximity",
+    }
+    for key, label in labels.items():
+        icon = "✅" if detail.get(key) else "❌"
+        lines.append(f"  {icon} {label}")
+
+    lines.append("")
+
+    # TP achievability (Part 5)
+    tp = (tp_state or {}).get(symbol)
+    if include_tp and tp and tp.get("tp_pct") is not None:
+        tp_pct = tp["tp_pct"]
+        if l3_data and not l3_data.get("error"):
+            ach = _tp_achievability_check(symbol, tp_pct, l3_data, liq_data)
+            lines += [
+                f"*TP Achievability* (saved target: {tp_pct:+.1f}%)",
+                f"  L3 supports direction: {'✅' if ach['checks']['l3_supports'] else '❌'}",
+            ]
+            atr_m = ach["checks"].get("atr_multiple")
+            atr_ok = ach["checks"].get("atr_ok")
+            atr_pos = ach["checks"].get("atr_possible")
+            if atr_m is not None:
+                atr_icon = "✅" if atr_ok else ("⚠️" if atr_pos else "❌")
+                lines.append(f"  ATR multiple: {atr_m}× {atr_icon}")
+            clust = ach["checks"].get("within_cluster")
+            if clust is not None:
+                lines.append(f"  Within cluster: {'✅' if clust else '❌'}")
+            lines.append(f"  *Rating: {ach['rating'].upper()}*")
+            if ach["rating"] in ("a stretch", "unlikely"):
+                cpct = ach["checks"].get("cluster_pct")
+                if cpct:
+                    lines.append(f"  Cluster-based realistic target: {cpct:.1f}%")
+        lines.append("")
+    elif include_tp and tier == "STRONG" and (not tp or tp.get("tp_pct") is None):
+        lines.append("💡 Open Checklist tab to set a TP target for achievability analysis.")
+        lines.append("")
+
+    lines.append(f"_{dir_emoji} Open dashboard to review full breakdown_")
+    return "\n".join(lines)
+
+
+# ── Signal evaluation + notification (piggybacked on layer2 recording job) ───
+
+
+def _evaluate_and_notify(symbol: str, snapshot: dict,
+                          l2_data: dict, mm_data: Optional[dict]) -> None:
+    """Evaluate tier for one symbol, persist state, and send Telegram if needed."""
+    config = load_signal_config()
+
+    # Read liquidation cluster data if available (stored in localStorage —
+    # no server side data, so liq_data is not available in background loop)
+    liq_data = None
+    current_price: Optional[float] = None
+    try:
+        l3 = _layer3_cache.get(symbol, {}).get("data") or {}
+        current_price = l3.get("price")
+    except Exception:
+        pass
+
+    transition = evaluator.evaluate_and_persist(
+        symbol, snapshot, l2_data, mm_data,
+        liq_data, current_price, config)
+
+    result    = transition["result"]
+    prev_tier = transition["prev_tier"]
+    prev_notified_tier = transition["prev_notified_tier"]
+    new_tier  = result["tier"]
+
+    # Notification logic
+    should_notify = (
+        new_tier == "STRONG" or
+        (new_tier == "DEVELOPING" and prev_notified_tier != "DEVELOPING")
+    )
+
+    if not should_notify:
+        return
+
+    if not config.get("telegram_enabled", True):
+        evaluator.mark_notified(symbol, new_tier)
+        return
+
+    include_tp = config.get("tp_achievability_in_msg", True)
+    tp_state   = _load_tp_state()
+    l3_data    = (_layer3_cache.get(symbol) or {}).get("data")
+
+    text = _format_telegram_message(
+        symbol, new_tier, result["direction"],
+        result["criteria_detail"], tp_state, l3_data, liq_data, include_tp)
+
+    _telegram_send(text)
+    evaluator.mark_notified(symbol, new_tier)
 
 
 def _record_layer1_job():
@@ -1617,12 +1900,17 @@ def _record_layer2_job():
         try:
             data = _get_layer2_data(symbol)
             if data and data.get("verdict"):
-                master = _signal_snapshot(symbol)["master"]
+                snapshot_data = _signal_snapshot(symbol)
+                master = snapshot_data["master"]
                 try:
                     mechanics = _get_market_mechanics_data(symbol)
                 except Exception:
                     mechanics = None
                 recorder.record_layer2(symbol, data, master, mechanics)
+                try:
+                    _evaluate_and_notify(symbol, snapshot_data, data, mechanics)
+                except Exception as exc:
+                    print(f"⚠️  Signal evaluator: failed for {symbol}: {exc}")
         except Exception as exc:
             print(f"⚠️  Signal history: layer2 recording failed for {symbol}: {exc}")
 
@@ -1647,6 +1935,56 @@ def api_signal_history(symbol):
     days = int(request.args.get("days", 7))
     days = max(1, min(days, 21))
     return jsonify(recorder.get_history(symbol, days))
+
+
+@app.route("/api/signal_state")
+def api_signal_state():
+    """GET /api/signal_state — current tier state for all tracked coins."""
+    return jsonify(evaluator.get_all_states())
+
+
+@app.route("/api/signal_state/evaluate", methods=["POST"])
+def api_signal_state_evaluate():
+    """POST /api/signal_state/evaluate — trigger an immediate evaluation for
+    all symbols (useful for testing; background job runs automatically)."""
+    results = {}
+    for symbol in _SIGNAL_HISTORY_SYMBOLS:
+        try:
+            data     = _get_layer2_data(symbol)
+            snapshot = _signal_snapshot(symbol)
+            try:
+                mechanics = _get_market_mechanics_data(symbol)
+            except Exception:
+                mechanics = None
+            l3_raw = (_layer3_cache.get(symbol) or {}).get("data")
+            current_price = (l3_raw or {}).get("price")
+            config   = load_signal_config()
+            out = evaluator.evaluate_and_persist(
+                symbol, snapshot, data, mechanics, None, current_price, config)
+            results[symbol] = out["result"]
+        except Exception as exc:
+            results[symbol] = {"error": str(exc)}
+    return jsonify(results)
+
+
+@app.route("/api/signal_config", methods=["GET"])
+def api_signal_config_get():
+    """GET /api/signal_config — current signal system configuration."""
+    return jsonify(load_signal_config())
+
+
+@app.route("/api/signal_config", methods=["POST"])
+def api_signal_config_save():
+    """POST /api/signal_config — update one or more config fields."""
+    payload = request.json or {}
+    cfg = load_signal_config()
+    allowed = {"liq_proximity_pct", "oi_consecutive_cycles",
+               "telegram_enabled", "tp_achievability_in_msg"}
+    for k, v in payload.items():
+        if k in allowed:
+            cfg[k] = v
+    save_signal_config(cfg)
+    return jsonify({"ok": True, "config": cfg})
 
 
 
