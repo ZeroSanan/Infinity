@@ -1690,23 +1690,26 @@ def api_checklist_tp_plan():
 # ── Telegram notification sender ─────────────────────────────────────────────
 
 def _telegram_send(text: str) -> None:
-    """Send a Telegram message. Silently logs on failure."""
+    """Send a Telegram message to all configured chat IDs.
+    TELEGRAM_CHAT_ID may be a single ID or comma-separated list."""
     import requests as _req
-    token   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
-    if not token or not chat_id:
+    token    = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_ids_raw:
         print("⚠️  Telegram: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set — skipping notification")
         return
-    try:
-        resp = _req.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
-            timeout=10,
-        )
-        if not resp.ok:
-            print(f"⚠️  Telegram: send failed {resp.status_code} — {resp.text[:200]}")
-    except Exception as exc:
-        print(f"⚠️  Telegram: send error — {exc}")
+    chat_ids = [c.strip() for c in chat_ids_raw.split(",") if c.strip()]
+    for chat_id in chat_ids:
+        try:
+            resp = _req.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+                timeout=10,
+            )
+            if not resp.ok:
+                print(f"⚠️  Telegram: send to {chat_id} failed {resp.status_code} — {resp.text[:200]}")
+        except Exception as exc:
+            print(f"⚠️  Telegram: send to {chat_id} error — {exc}")
 
 
 def _tp_achievability_check(symbol: str, tp_pct: float, l3_data: dict,
