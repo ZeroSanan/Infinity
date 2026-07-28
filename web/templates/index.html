@@ -5724,6 +5724,12 @@ loadSignalConfig();
 (async () => {
   await migrateLocalStorageToServer();
   await preloadServerData();
+  // Re-render Layer 1 grid now that _l1ManualCache is populated.
+  // loadLayer1() can return from the server-side cache instantly (before
+  // preloadServerData finishes), so renderLayer1Grid() may have already
+  // run with an empty cache — this call corrects that.
+  if (typeof renderLayer1Grid === 'function')  renderLayer1Grid();
+  if (typeof recalcL1Verdict  === 'function')  recalcL1Verdict();
   liqRestoreValues();
   liq24hRestore(msCoin);
   efRestore(msCoin);
