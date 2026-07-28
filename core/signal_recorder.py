@@ -2,8 +2,7 @@
 Signal History Recorder
 ========================
 Persists periodic snapshots of the Market Signals Layer 1/2/3 indicators to
-data/signal_history.json, so the dashboard can show how conditions have been
-trending over the last 1-3 weeks instead of only the current snapshot.
+the SQLite database (data/infinity.db), signal_history table.
 
 Save cadence (driven by the APScheduler jobs in web/app.py):
   - Layer 1: every 6 hours, one shared global entry (macro moves slowly)
@@ -12,30 +11,30 @@ Save cadence (driven by the APScheduler jobs in web/app.py):
   - Layer 3: once per day at UTC 00:00, per coin (a daily structural
     summary only — order book/volume snapshots a few hours old are noise)
 
-Standalone and side-effect-free beyond its own history file: each record_*
+Standalone and side-effect-free beyond its own history table: each record_*
 method is handed the already-fetched live response dict for that layer and
 just extracts/persists fields from it.
 """
 from __future__ import annotations
 
-import json
-import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
+
+from core import db as _db
 
 
 class SignalRecorder:
-    HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "signal_history.json")
     RETENTION_DAYS = 90
 
     def __init__(self, history_file: Optional[str] = None):
-        self.history_file = history_file or self.HISTORY_FILE
+        # history_file argument kept for backward compatibility — ignored
+        _db.init_db()
 
     # ── Recording ────────────────────────────────────────────────────────────
 
     def record_layer1(self, layer1_data: dict) -> None:
         """Called every 6 hours. Extracts fields from the live /api/layer1
-        response dict and appends one global snapshot to history["layer1"]."""
+        response dict and appends one global snapshot to signal_history."""
         def field(key, attr):
             return (layer1_data.get(key) or {}).get(attr)
 
@@ -65,19 +64,12 @@ class SignalRecorder:
             "bullish_count": sum(1 for s in signals if s and s > 0),
             "bearish_count": sum(1 for s in signals if s and s < 0),
         }
-
-        data = self._load()
-        data["layer1"].append(snapshot)
-        data["layer1"] = self._trim(data["layer1"])
-        self._save(data)
+        _db.signal_history_insert(None, 1, snapshot)
+        _db.signal_history_cleanup(self.RETENTION_DAYS)
 
     def record_layer2(self, symbol: str, layer2_data: dict, master_summary: Optional[str],
                       mechanics_data: Optional[dict] = None) -> None:
-        """Called every 1 hour per symbol. Extracts fields from the live
-        /api/layer2/<symbol> response dict and appends to
-        history["layer2"][symbol].  When mechanics_data (from
-        /api/market_mechanics/<symbol>) is supplied, taker-ratio and
-        spot/futures-volume fields are included in the snapshot too."""
+        """Called every 1 hour per symbol."""
         funding  = layer2_data.get("funding") or {}
         oi       = layer2_data.get("open_interest") or {}
         ls       = layer2_data.get("long_short") or {}
@@ -107,7 +99,6 @@ class SignalRecorder:
             "position_account_gap": position.get("divergence_from_account"),
             "position_divergence_direction": position.get("divergence_direction"),
             "position_divergence_significance": position.get("significance"),
-            # Market Mechanics fields (present when mechanics_data supplied)
             "taker_buy_pct": taker.get("buy_pct") if taker.get("status") == "ok" else None,
             "taker_sell_pct": taker.get("sell_pct") if taker.get("status") == "ok" else None,
             "taker_label": taker.get("label") if taker.get("status") == "ok" else None,
@@ -118,17 +109,10 @@ class SignalRecorder:
             "verdict": (layer2_data.get("verdict") or {}).get("code"),
             "master_summary": master_summary,
         }
-
-        data = self._load()
-        series = data["layer2"].setdefault(symbol, [])
-        series.append(snapshot)
-        data["layer2"][symbol] = self._trim(series)
-        self._save(data)
+        _db.signal_history_insert(symbol, 2, snapshot)
 
     def record_layer3(self, symbol: str, layer3_data: dict) -> None:
-        """Called once per day at UTC 00:00 per symbol. Extracts fields from
-        the live /api/layer3/<symbol> response dict and appends to
-        history["layer3"][symbol]."""
+        """Called once per day at UTC 00:00 per symbol."""
         vol       = layer3_data.get("volume_divergence") or {}
         structure = layer3_data.get("price_structure") or {}
         momentum  = layer3_data.get("momentum") or {}
@@ -158,60 +142,22 @@ class SignalRecorder:
             "total_score": total_score,
             "verdict": verdict.get("code"),
         }
-
-        data = self._load()
-        series = data["layer3"].setdefault(symbol, [])
-        series.append(snapshot)
-        data["layer3"][symbol] = self._trim(series)
-        self._save(data)
+        _db.signal_history_insert(symbol, 3, snapshot)
 
     # ── Reading ──────────────────────────────────────────────────────────────
 
     def get_history(self, symbol: str, days: int = 7) -> dict:
-        """Returns the last `days` worth of snapshots for all three layers
-        for the given symbol. Layer 1 is global (not symbol-specific) but
-        included in the response for completeness."""
-        data = self._load()
-        cutoff = _now_iso_minus(days)
+        """Returns the last `days` worth of snapshots for all three layers."""
         return {
-            "layer1": [s for s in data["layer1"] if s.get("ts", "") >= cutoff],
-            "layer2": [s for s in data["layer2"].get(symbol, []) if s.get("ts", "") >= cutoff],
-            "layer3": [s for s in data["layer3"].get(symbol, []) if s.get("ts", "") >= cutoff],
+            "layer1": _db.signal_history_get(None, 1, days),
+            "layer2": _db.signal_history_get(symbol, 2, days),
+            "layer3": _db.signal_history_get(symbol, 3, days),
         }
 
-    # ── Storage ──────────────────────────────────────────────────────────────
-
-    def _load(self) -> dict:
-        """Load history file, return empty structure if not found."""
-        if not os.path.exists(self.history_file):
-            return {"layer1": [], "layer2": {}, "layer3": {}}
-        try:
-            with open(self.history_file) as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {"layer1": [], "layer2": {}, "layer3": {}}
-        data.setdefault("layer1", [])
-        data.setdefault("layer2", {})
-        data.setdefault("layer3", {})
-        return data
-
-    def _save(self, data: dict) -> None:
-        """Atomic write: write to .tmp then rename."""
-        os.makedirs(os.path.dirname(self.history_file), exist_ok=True)
-        tmp_path = self.history_file + ".tmp"
-        with open(tmp_path, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp_path, self.history_file)
-
-    def _trim(self, entries: list) -> list:
-        """Remove entries older than RETENTION_DAYS."""
-        cutoff = _now_iso_minus(self.RETENTION_DAYS)
-        return [e for e in entries if e.get("ts", "") >= cutoff]
+    def get_recent_layer2(self, symbol: str, n: int) -> list:
+        """Return the last n Layer 2 snapshots for OI trend checks."""
+        return _db.signal_history_recent_layer2(symbol, n)
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _now_iso_minus(days: float) -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")

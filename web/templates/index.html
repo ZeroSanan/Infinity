@@ -2508,27 +2508,27 @@ function renderPositionRatio(pr, ls) {
   }
 }
 
-function positionManualKey(coin, side) { return `position_ratio_${side}_${coin}`; }
-function positionManualTsKey(coin) { return `position_ratio_ts_${coin}`; }
-
 function positionSaveManual() {
   const longInput  = document.getElementById('ms-position-manual-long');
   const shortInput = document.getElementById('ms-position-manual-short');
-  try {
-    if (longInput)  localStorage.setItem(positionManualKey(msCoin, 'long'), longInput.value);
-    if (shortInput) localStorage.setItem(positionManualKey(msCoin, 'short'), shortInput.value);
-    localStorage.setItem(positionManualTsKey(msCoin), String(Date.now()));
-  } catch (e) {}
+  const sym = MS_SYMBOLS[msCoin];
+  const longVal  = longInput  ? parseFloat(longInput.value)  || null : null;
+  const shortVal = shortInput ? parseFloat(shortInput.value) || null : null;
+  if (sym) {
+    const now = new Date().toISOString();
+    _posRatioCache[sym] = { long_pct: longVal, short_pct: shortVal, updated_at: now };
+    api(`/api/manual/position-ratio/${sym}`, 'POST', { long_pct: longVal, short_pct: shortVal }).catch(() => {});
+  }
   positionRenderManualState();
 }
 
 function positionRestoreManual() {
   const longInput  = document.getElementById('ms-position-manual-long');
   const shortInput = document.getElementById('ms-position-manual-short');
-  try {
-    if (longInput)  longInput.value  = localStorage.getItem(positionManualKey(msCoin, 'long'))  || '';
-    if (shortInput) shortInput.value = localStorage.getItem(positionManualKey(msCoin, 'short')) || '';
-  } catch (e) {}
+  const sym = MS_SYMBOLS[msCoin];
+  const cached = sym ? (_posRatioCache[sym] || {}) : {};
+  if (longInput)  longInput.value  = cached.long_pct  != null ? String(cached.long_pct)  : '';
+  if (shortInput) shortInput.value = cached.short_pct != null ? String(cached.short_pct) : '';
   positionRenderManualState();
 }
 
@@ -2538,9 +2538,9 @@ function positionRenderManualState() {
   const longVal = longInput ? parseFloat(longInput.value) : NaN;
 
   if (ind) {
-    let ts = null;
-    try { ts = parseInt(localStorage.getItem(positionManualTsKey(msCoin)), 10); } catch (e) {}
-    if (!ts || isNaN(ts)) {
+    const sym = MS_SYMBOLS[msCoin];
+    const ts = sym ? _isoToMs((_posRatioCache[sym] || {}).updated_at) : null;
+    if (!ts) {
       ind.textContent = ''; ind.className = 'ms-liq-saved-ind';
     } else {
       const ageMs  = Date.now() - ts;
@@ -2856,12 +2856,7 @@ const L1_MANUAL_SPECS = {
 };
 
 function l1LoadManual(key) {
-  try {
-    const raw = localStorage.getItem('layer1_' + key);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    return null;
-  }
+  return _l1ManualCache[key] || null;
 }
 
 function l1SaveManual(key) {
@@ -2885,7 +2880,8 @@ function l1SaveManual(key) {
     }
   }
 
-  localStorage.setItem('layer1_' + key, JSON.stringify(data));
+  _l1ManualCache[key] = data;
+  api('/api/manual/layer1', 'POST', { field_key: key, value: data }).catch(() => {});
   _l1EditingCards.delete(key);
   renderLayer1Grid();
   recalcL1Verdict();
@@ -4360,21 +4356,24 @@ const PT_TOOLTIPS = {
   stretch: 'This is the biggest fish in the market — possible on a strong trend day, but not guaranteed to be available.',
 };
 
-function ptDirectionKey(coin) { return `pt_direction_${coin}`; }
-
 function ptSetDirection(dir) {
   _ptDirection = (dir === 'short') ? 'short' : 'long';
   const longBtn  = document.getElementById('ms-pt-dir-long');
   const shortBtn = document.getElementById('ms-pt-dir-short');
   if (longBtn)  longBtn.classList.toggle('active', _ptDirection === 'long');
   if (shortBtn) shortBtn.classList.toggle('active', _ptDirection === 'short');
-  try { localStorage.setItem(ptDirectionKey(msCoin), _ptDirection); } catch(e) {}
+  const sym = MS_SYMBOLS[msCoin];
+  if (sym) {
+    if (!_checklistCache[sym]) _checklistCache[sym] = {};
+    _checklistCache[sym].direction = _ptDirection;
+    api(`/api/checklist/${sym}`, 'POST', { direction: _ptDirection }).catch(() => {});
+  }
   ptRecalcAll();
 }
 
 function ptRestoreDirection() {
-  let dir = 'long';
-  try { dir = localStorage.getItem(ptDirectionKey(msCoin)) || 'long'; } catch(e) {}
+  const sym = MS_SYMBOLS[msCoin];
+  const dir = sym ? ((_checklistCache[sym] || {}).direction || 'long') : 'long';
   _ptDirection = (dir === 'short') ? 'short' : 'long';
   const longBtn  = document.getElementById('ms-pt-dir-long');
   const shortBtn = document.getElementById('ms-pt-dir-short');
@@ -4876,26 +4875,27 @@ function renderSpotFuturesVol(vr) {
 // ── Liquidations 24h ────────────────────────────────────────────────────────
 
 function liq24hSave() {
-  const total = document.getElementById('ms-mech-liq-total');
   const long  = document.getElementById('ms-mech-liq-long');
   const short = document.getElementById('ms-mech-liq-short');
-  try {
-    if (total) localStorage.setItem(`liq24h_total_${msCoin}`, total.value);
-    if (long)  localStorage.setItem(`liq24h_long_${msCoin}`,  long.value);
-    if (short) localStorage.setItem(`liq24h_short_${msCoin}`, short.value);
-    localStorage.setItem(`liq24h_ts_${msCoin}`, String(Date.now()));
-  } catch(e) {}
+  const sym = MS_SYMBOLS[msCoin];
+  const longVal  = long  ? parseFloat(long.value)  || null : null;
+  const shortVal = short ? parseFloat(short.value) || null : null;
+  if (sym) {
+    const now = new Date().toISOString();
+    _liq24hCache[sym] = { longs: longVal, shorts: shortVal, updated_at: now };
+    api(`/api/manual/liq24h/${sym}`, 'POST', { longs: longVal, shorts: shortVal }).catch(() => {});
+  }
   liq24hRenderState();
 }
 
 function liq24hRestore(coin) {
   const c = coin || msCoin;
+  const sym = MS_SYMBOLS[c];
+  const cached = sym ? (_liq24hCache[sym] || {}) : {};
   const long  = document.getElementById('ms-mech-liq-long');
   const short = document.getElementById('ms-mech-liq-short');
-  try {
-    if (long)  long.value  = localStorage.getItem(`liq24h_long_${c}`)  || '';
-    if (short) short.value = localStorage.getItem(`liq24h_short_${c}`) || '';
-  } catch(e) {}
+  if (long)  long.value  = cached.longs  != null ? String(cached.longs)  : '';
+  if (short) short.value = cached.shorts != null ? String(cached.shorts) : '';
   liq24hRenderState(); // computes and sets Total automatically
 }
 
@@ -4906,8 +4906,9 @@ function liq24hRenderState() {
   const total = document.getElementById('ms-mech-liq-total');
   const long  = document.getElementById('ms-mech-liq-long');
   const short = document.getElementById('ms-mech-liq-short');
-  let ts = null, isStale = false;
-  try { ts = parseInt(localStorage.getItem(`liq24h_ts_${msCoin}`), 10); } catch(e) {}
+  const sym24 = MS_SYMBOLS[msCoin];
+  let ts = sym24 ? _isoToMs((_liq24hCache[sym24] || {}).updated_at) : null;
+  let isStale = false;
   if (saved) {
     if (!ts || isNaN(ts)) { saved.textContent = ''; saved.className = 'ms-liq-saved-ind'; }
     else {
@@ -4967,25 +4968,28 @@ function efSave() {
   const dir   = document.getElementById('ms-mech-ef-dir');
   const size  = document.getElementById('ms-mech-ef-size');
   const notes = document.getElementById('ms-mech-ef-notes');
-  try {
-    if (dir)   localStorage.setItem(`ef_dir_${msCoin}`,   dir.value);
-    if (size)  localStorage.setItem(`ef_size_${msCoin}`,  size.value);
-    if (notes) localStorage.setItem(`ef_notes_${msCoin}`, notes.value);
-    localStorage.setItem(`ef_ts_${msCoin}`, String(Date.now()));
-  } catch(e) {}
+  const sym = MS_SYMBOLS[msCoin];
+  if (sym) {
+    const now = new Date().toISOString();
+    const dirVal   = dir   ? dir.value   || null : null;
+    const sizeVal  = size  ? size.value  || null : null;
+    const notesVal = notes ? notes.value || null : null;
+    _efCache[sym] = { direction: dirVal, size: sizeVal, notes: notesVal, updated_at: now };
+    api(`/api/manual/exchange-flow/${sym}`, 'POST', { direction: dirVal, size: sizeVal, notes: notesVal }).catch(() => {});
+  }
   efRenderState();
 }
 
 function efRestore(coin) {
   const c = coin || msCoin;
+  const sym = MS_SYMBOLS[c];
+  const cached = sym ? (_efCache[sym] || {}) : {};
   const dir   = document.getElementById('ms-mech-ef-dir');
   const size  = document.getElementById('ms-mech-ef-size');
   const notes = document.getElementById('ms-mech-ef-notes');
-  try {
-    if (dir)   dir.value   = localStorage.getItem(`ef_dir_${c}`)   || '';
-    if (size)  size.value  = localStorage.getItem(`ef_size_${c}`)  || '';
-    if (notes) notes.value = localStorage.getItem(`ef_notes_${c}`) || '';
-  } catch(e) {}
+  if (dir)   dir.value   = cached.direction || '';
+  if (size)  size.value  = cached.size      || '';
+  if (notes) notes.value = cached.notes     || '';
   efRenderState();
 }
 
@@ -4994,8 +4998,8 @@ function efRenderState() {
   const badge = document.getElementById('ms-mech-ef-badge');
   const dir   = document.getElementById('ms-mech-ef-dir');
   const size  = document.getElementById('ms-mech-ef-size');
-  let ts = null;
-  try { ts = parseInt(localStorage.getItem(`ef_ts_${msCoin}`), 10); } catch(e) {}
+  const symEf = MS_SYMBOLS[msCoin];
+  let ts = symEf ? _isoToMs((_efCache[symEf] || {}).updated_at) : null;
   if (saved) {
     if (!ts || isNaN(ts)) { saved.textContent = ''; saved.className = 'ms-liq-saved-ind'; }
     else {
@@ -5031,18 +5035,36 @@ function efRenderState() {
 
 let _whaleOrders = {};
 
-function whaleRestoreWatchlist(coin) {
-  const c = coin || msCoin;
-  try {
-    const raw = localStorage.getItem(`whale_orders_${c}`);
-    _whaleOrders[c] = raw ? JSON.parse(raw) : [];
-  } catch(e) { _whaleOrders[c] = []; }
-  whaleRender(c);
+// Server data caches — preloaded at page start, updated on each save
+let _l1ManualCache    = {};  // {field_key: saved_data_object}
+let _posRatioCache    = {};  // {BTCUSDT: {long_pct, short_pct, updated_at}}
+let _checklistCache   = {};  // {BTCUSDT: {direction, tp_pct, updated_at}}
+let _liq24hCache      = {};  // {BTCUSDT: {longs, shorts, updated_at}}
+let _efCache          = {};  // {BTCUSDT: {direction, size, notes, updated_at}}
+let _liqClustersCache = {};  // {BTCUSDT: {cluster_below, cluster_above, updated_at}}
+
+function _isoToMs(isoStr) {
+  if (!isoStr) return null;
+  const ms = new Date(isoStr).getTime();
+  return isNaN(ms) ? null : ms;
 }
 
-function whaleSave(coin) {
+function _mapWhaleOrder(o) {
+  return {
+    id:        String(o.id),
+    price:     o.price,
+    size:      o.size_str || o.size || '',
+    direction: o.direction || 'BUY',
+    status:    o.status    || 'pending',
+    notes:     o.notes     || '',
+    added_ts:  _isoToMs(o.created_at) || Date.now(),
+  };
+}
+
+function whaleRestoreWatchlist(coin) {
   const c = coin || msCoin;
-  try { localStorage.setItem(`whale_orders_${c}`, JSON.stringify(_whaleOrders[c] || [])); } catch(e) {}
+  _whaleOrders[c] = _whaleOrders[c] || [];
+  whaleRender(c);
 }
 
 function whaleAddOrder() {
@@ -5052,34 +5074,40 @@ function whaleAddOrder() {
   const notesEl = document.getElementById('ms-whale-notes');
   const price = parseFloat(priceEl ? priceEl.value : '');
   if (isNaN(price) || price <= 0) return;
-  if (!_whaleOrders[msCoin]) _whaleOrders[msCoin] = [];
-  _whaleOrders[msCoin].push({
-    id:        Date.now(),
-    price:     price,
+  const sym = MS_SYMBOLS[msCoin];
+  if (!sym) return;
+  const payload = {
+    price,
     size:      sizeEl  ? sizeEl.value.trim()  : '',
     direction: dirEl   ? dirEl.value           : 'BUY',
     notes:     notesEl ? notesEl.value.trim()  : '',
-    status:    'pending',
-    added_ts:  Date.now(),
-  });
+  };
   if (priceEl) priceEl.value = '';
   if (sizeEl)  sizeEl.value  = '';
   if (notesEl) notesEl.value = '';
-  whaleSave(msCoin);
-  whaleRender(msCoin);
+  api(`/api/manual/whale-orders/${sym}`, 'POST', payload)
+    .then(() => api(`/api/manual/whale-orders/${sym}`))
+    .then(orders => { _whaleOrders[msCoin] = (orders || []).map(_mapWhaleOrder); whaleRender(msCoin); })
+    .catch(() => {});
 }
 
 function whaleRemoveOrder(id) {
-  if (!_whaleOrders[msCoin]) return;
-  _whaleOrders[msCoin] = _whaleOrders[msCoin].filter(o => o.id !== id);
-  whaleSave(msCoin);
-  whaleRender(msCoin);
+  const sym = MS_SYMBOLS[msCoin];
+  if (!sym) return;
+  api(`/api/manual/whale-orders/${sym}/${id}`, 'DELETE')
+    .then(() => api(`/api/manual/whale-orders/${sym}`))
+    .then(orders => { _whaleOrders[msCoin] = (orders || []).map(_mapWhaleOrder); whaleRender(msCoin); })
+    .catch(() => {});
 }
 
 function whaleSetStatus(id, status) {
-  if (!_whaleOrders[msCoin]) return;
-  const o = _whaleOrders[msCoin].find(o => o.id === id);
-  if (o) { o.status = status; whaleSave(msCoin); whaleRender(msCoin); }
+  const sym = MS_SYMBOLS[msCoin];
+  if (!sym) return;
+  const o = (_whaleOrders[msCoin] || []).find(o => o.id === String(id));
+  if (o) o.status = status;
+  api(`/api/manual/whale-orders/${sym}/${id}`, 'PUT', { status })
+    .catch(() => {});
+  whaleRender(msCoin);
 }
 
 function whaleRender(coin) {
@@ -5102,14 +5130,14 @@ function whaleRender(coin) {
       <td>${esc(o.size || '—')}</td>
       <td class="${dirClass}">${esc(o.direction)}</td>
       <td>${ageStr}</td>
-      <td><select class="ms-mech-status-sel" onchange="whaleSetStatus(${o.id}, this.value)">
+      <td><select class="ms-mech-status-sel" onchange="whaleSetStatus('${o.id}', this.value)">
         <option value="pending"   ${o.status === 'pending'   ? 'selected' : ''}>Pending</option>
         <option value="filled"    ${o.status === 'filled'    ? 'selected' : ''}>Filled</option>
         <option value="cancelled" ${o.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
       </select></td>
       <td>${nearPrice ? '<span class="ms-mech-near-badge">NEAR</span>' : '—'}</td>
       <td>${esc(o.notes || '—')}</td>
-      <td><button class="ms-mech-action-btn" onclick="whaleRemoveOrder(${o.id})" title="Remove">✕</button></td>
+      <td><button class="ms-mech-action-btn" onclick="whaleRemoveOrder('${o.id}')" title="Remove">✕</button></td>
     </tr>`;
   }).join('');
 }
@@ -5200,17 +5228,17 @@ function renderAiResponse(text) {
     (warnLine ? `<div class="ms-ai-warn">${aiEsc(warnLine)}</div>` : '');
 }
 
-function liqKey(coin, side) { return `liq_${side}_${coin}`; }
-function liqTsKey(coin) { return `liq_ts_${coin}`; }
-
 function liqSaveValues() {
   const lb = document.getElementById('ms-ai-liq-below');
   const la = document.getElementById('ms-ai-liq-above');
-  try {
-    if (lb) localStorage.setItem(liqKey(msCoin,'below'), lb.value);
-    if (la) localStorage.setItem(liqKey(msCoin,'above'), la.value);
-    localStorage.setItem(liqTsKey(msCoin), String(Date.now()));
-  } catch(e) {}
+  const sym = MS_SYMBOLS[msCoin];
+  if (sym) {
+    const belowVal = lb ? parseFloat(lb.value) || null : null;
+    const aboveVal = la ? parseFloat(la.value) || null : null;
+    const now = new Date().toISOString();
+    _liqClustersCache[sym] = { cluster_below: belowVal, cluster_above: aboveVal, updated_at: now };
+    api(`/api/manual/liquidation-clusters/${sym}`, 'POST', { cluster_below: belowVal, cluster_above: aboveVal }).catch(() => {});
+  }
   liqUpdateSavedIndicator();
   ptRecalcAll();
 }
@@ -5218,10 +5246,10 @@ function liqSaveValues() {
 function liqRestoreValues() {
   const lb = document.getElementById('ms-ai-liq-below');
   const la = document.getElementById('ms-ai-liq-above');
-  try {
-    if (lb) lb.value = localStorage.getItem(liqKey(msCoin,'below')) || '';
-    if (la) la.value = localStorage.getItem(liqKey(msCoin,'above')) || '';
-  } catch(e) {}
+  const sym = MS_SYMBOLS[msCoin];
+  const cached = sym ? (_liqClustersCache[sym] || {}) : {};
+  if (lb) lb.value = cached.cluster_below != null ? String(cached.cluster_below) : '';
+  if (la) la.value = cached.cluster_above != null ? String(cached.cluster_above) : '';
   liqUpdateSavedIndicator();
   ptRecalcAll();
 }
@@ -5229,9 +5257,9 @@ function liqRestoreValues() {
 function liqUpdateSavedIndicator() {
   const ind = document.getElementById('ms-liq-saved-ind');
   if (!ind) return;
-  let ts = null;
-  try { ts = parseInt(localStorage.getItem(liqTsKey(msCoin)), 10); } catch(e) {}
-  if (!ts || isNaN(ts)) { ind.textContent = ''; ind.className = 'ms-liq-saved-ind'; return; }
+  const sym = MS_SYMBOLS[msCoin];
+  const ts = sym ? _isoToMs((_liqClustersCache[sym] || {}).updated_at) : null;
+  if (!ts) { ind.textContent = ''; ind.className = 'ms-liq-saved-ind'; return; }
 
   const ageMs  = Date.now() - ts;
   const ageHrs = ageMs / 3600000;
@@ -5601,21 +5629,108 @@ function syncChecklistTpToServer() {
   }).catch(() => {});
 }
 
+// ── Server data preload & one-time localStorage migration ─────────────────────
+
+async function preloadServerData() {
+  try {
+    const [l1, pr, chk, liq24h, ef, liqCl, whaleAll] = await Promise.all([
+      fetch('/api/manual/layer1').then(r => r.json()),
+      fetch('/api/manual/position-ratio').then(r => r.json()),
+      fetch('/api/checklist').then(r => r.json()),
+      fetch('/api/manual/liq24h').then(r => r.json()),
+      fetch('/api/manual/exchange-flow').then(r => r.json()),
+      fetch('/api/manual/liquidation-clusters').then(r => r.json()),
+      fetch('/api/manual/whale-orders').then(r => r.json()),
+    ]);
+    if (l1)    _l1ManualCache    = l1;
+    if (pr)    _posRatioCache    = pr;
+    if (chk)   _checklistCache   = chk;
+    if (liq24h) _liq24hCache    = liq24h;
+    if (ef)    _efCache          = ef;
+    if (liqCl) _liqClustersCache = liqCl;
+    for (const [sym, orders] of Object.entries(whaleAll || {})) {
+      const coin = sym.endsWith('USDT') ? sym.slice(0, -4) : sym;
+      _whaleOrders[coin] = (orders || []).map(_mapWhaleOrder);
+    }
+  } catch(e) { console.warn('preloadServerData failed:', e); }
+}
+
+async function migrateLocalStorageToServer() {
+  if (localStorage.getItem('_db_migrated_v1') === '1') return;
+  const SYMS = Object.values(MS_SYMBOLS);
+  const h = {'Content-Type':'application/json'};
+  const p = (url, body) => fetch(url, {method:'POST', headers:h, body:JSON.stringify(body)}).catch(()=>{});
+
+  // Layer 1 manual fields
+  for (const key of Object.keys(L1_MANUAL_SPECS || {})) {
+    try {
+      const raw = localStorage.getItem('layer1_' + key);
+      if (raw) await p('/api/manual/layer1', {field_key: key, value: JSON.parse(raw)});
+    } catch(e) {}
+  }
+
+  for (const sym of SYMS) {
+    const coin = sym.slice(0, -4);
+
+    // Position ratio
+    const longV  = localStorage.getItem(`position_ratio_long_${sym}`);
+    const shortV = localStorage.getItem(`position_ratio_short_${sym}`);
+    if (longV || shortV) await p(`/api/manual/position-ratio/${sym}`, {long_pct: parseFloat(longV)||null, short_pct: parseFloat(shortV)||null});
+
+    // Liq 24h
+    const longs  = localStorage.getItem(`liq24h_long_${sym}`);
+    const shorts = localStorage.getItem(`liq24h_short_${sym}`);
+    if (longs || shorts) await p(`/api/manual/liq24h/${sym}`, {longs: parseFloat(longs)||null, shorts: parseFloat(shorts)||null});
+
+    // Exchange flow
+    const dir   = localStorage.getItem(`ef_dir_${sym}`);
+    const sz    = localStorage.getItem(`ef_size_${sym}`);
+    const notes = localStorage.getItem(`ef_notes_${sym}`);
+    if (dir || sz || notes) await p(`/api/manual/exchange-flow/${sym}`, {direction: dir||null, size: sz||null, notes: notes||null});
+
+    // Whale orders
+    try {
+      const raw = localStorage.getItem(`whale_orders_${sym}`) || localStorage.getItem(`whale_orders_${coin}`);
+      if (raw) {
+        const orders = JSON.parse(raw);
+        for (const o of orders) await p(`/api/manual/whale-orders/${sym}`, {id: String(o.id), price: o.price, size: o.size||o.size_str, direction: o.direction, notes: o.notes, status: o.status});
+      }
+    } catch(e) {}
+
+    // Liquidation clusters
+    const below = localStorage.getItem(`liq_below_${sym}`) || localStorage.getItem(`liq_below_${coin}`);
+    const above = localStorage.getItem(`liq_above_${sym}`) || localStorage.getItem(`liq_above_${coin}`);
+    if (below || above) await p(`/api/manual/liquidation-clusters/${sym}`, {cluster_below: parseFloat(below)||null, cluster_above: parseFloat(above)||null});
+
+    // Checklist direction
+    const ptDir = localStorage.getItem(`pt_direction_${sym}`) || localStorage.getItem(`pt_direction_${coin}`);
+    if (ptDir) await p(`/api/checklist/${sym}`, {direction: ptDir});
+  }
+
+  localStorage.setItem('_db_migrated_v1', '1');
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 loadLayer2();
 loadLayer1();
 loadLayer3();
 loadSignalHistory();
 renderMsChart(msCoin);
-liqRestoreValues();
-liq24hRestore(msCoin);
-efRestore(msCoin);
-whaleRestoreWatchlist(msCoin);
-ptRestoreDirection();
-ptRecalcAll();
 initLayerCollapseState();
 loadSignalState(false);
 loadSignalConfig();
+
+(async () => {
+  await migrateLocalStorageToServer();
+  await preloadServerData();
+  liqRestoreValues();
+  liq24hRestore(msCoin);
+  efRestore(msCoin);
+  whaleRestoreWatchlist(msCoin);
+  ptRestoreDirection();
+  ptRecalcAll();
+  positionRestoreManual();
+})();
 setInterval(() => loadLayer2(), 300000);
 setInterval(() => loadLayer1(), 900000);
 setInterval(() => loadLayer3(), 120000);

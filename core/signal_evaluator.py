@@ -18,73 +18,27 @@ Tier classification:
   DEVELOPING: 3 or 4 criteria confirm in same direction
   NONE      : 0-2 criteria, or split between directions
 
-State is persisted to data/signal_state.json for transition detection.
+State is persisted to the SQLite database (data/infinity.db).
 """
 from __future__ import annotations
 
-import json
-import os
 from datetime import datetime, timezone
 from typing import Optional
 
+from core import db as _db
 
-DATA_DIR   = os.path.join(os.path.dirname(__file__), "..", "data")
-STATE_FILE = os.path.join(DATA_DIR, "signal_state.json")
-CONFIG_FILE = os.path.join(DATA_DIR, "signal_config.json")
-
-_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ZECUSDT", "XAUTUSDT"]
-
-_DEFAULT_CONFIG = {
-    "liq_proximity_pct":       3.0,
-    "oi_consecutive_cycles":   2,
-    "telegram_enabled":        True,
-    "tp_achievability_in_msg": True,
-}
-
-
-# ── Config ───────────────────────────────────────────────────────────────────
-
-
+# kept for import compatibility — callers that import these from signal_evaluator still work
 def load_config() -> dict:
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE) as f:
-                cfg = json.load(f)
-            merged = dict(_DEFAULT_CONFIG)
-            merged.update(cfg)
-            return merged
-        except (json.JSONDecodeError, OSError):
-            pass
-    return dict(_DEFAULT_CONFIG)
-
+    return _db.signal_config_get_all()
 
 def save_config(cfg: dict) -> None:
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = CONFIG_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(cfg, f, indent=2)
-    os.replace(tmp, CONFIG_FILE)
+    _db.signal_config_set_all(cfg)
 
+# DATA_DIR exposed for app.py import compatibility
+import os
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
-# ── State persistence ─────────────────────────────────────────────────────────
-
-
-def _load_state() -> dict:
-    if not os.path.exists(STATE_FILE):
-        return {}
-    try:
-        with open(STATE_FILE) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
-def _save_state(state: dict) -> None:
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = STATE_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(state, f, indent=2)
-    os.replace(tmp, STATE_FILE)
+_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ZECUSDT", "XAUTUSDT"]
 
 
 def _now_iso() -> str:
@@ -98,8 +52,7 @@ def _oi_trend_confirms(symbol: str, direction: str,
                         recorder, consecutive_required: int) -> bool:
     """Check last N consecutive Layer 2 snapshots for matching OI label."""
     try:
-        history = recorder.get_history(symbol, days=1)
-        snaps = history.get("layer2", [])
+        snaps = recorder.get_recent_layer2(symbol, consecutive_required)
     except Exception:
         return False
 
@@ -108,10 +61,8 @@ def _oi_trend_confirms(symbol: str, direction: str,
 
     recent = snaps[-consecutive_required:]
     if direction == "SHORT":
-        # Exhaustion signal: longs closing / OI falling
         target_labels = {"Exhaustion — Longs Closing", "Exhaustion — Low Conviction"}
     else:
-        # Strong new money entering for LONG
         target_labels = {"Strong — New Money Entering"}
 
     return all(s.get("oi_label") in target_labels for s in recent)
@@ -123,14 +74,9 @@ def _oi_trend_confirms(symbol: str, direction: str,
 def _liq_proximity_confirms(direction: str, liq_data: Optional[dict],
                               current_price: Optional[float],
                               threshold_pct: float) -> bool:
-    """Check if nearest liquidation cluster in the expected direction is
-    within threshold_pct of current price."""
     if not liq_data or not current_price or current_price <= 0:
         return False
-    if direction == "SHORT":
-        cluster = liq_data.get("below_price")
-    else:
-        cluster = liq_data.get("above_price")
+    cluster = liq_data.get("below_price") if direction == "SHORT" else liq_data.get("above_price")
     if cluster is None:
         return False
     try:
@@ -144,8 +90,8 @@ def _liq_proximity_confirms(direction: str, liq_data: Optional[dict],
 
 
 def _evaluate_direction(
-    direction: str,  # "LONG" or "SHORT"
-    snapshot: dict,  # from _signal_snapshot()
+    direction: str,
+    snapshot: dict,
     l2_data: dict,
     mm_data: Optional[dict],
     recorder,
@@ -153,11 +99,10 @@ def _evaluate_direction(
     current_price: Optional[float],
     config: dict,
 ) -> tuple[int, dict]:
-    """Return (criteria_count, criteria_detail_dict) for the given direction."""
     detail: dict[str, bool] = {}
 
     # 1. Master Summary Bar
-    master = snapshot.get("master", "")
+    master    = snapshot.get("master", "")
     l3_verdict = snapshot.get("l3_verdict", "")
     if direction == "SHORT":
         ms_ok = (master == "ALIGNED SHORT" or
@@ -170,26 +115,20 @@ def _evaluate_direction(
     # 2. Layer 2 Global L/S crowding (contrarian)
     ls_global = (l2_data.get("long_short") or {}).get("global") or {}
     global_long_pct = ls_global.get("long_pct", 50.0) or 50.0
-    if direction == "SHORT":
-        # Crowd long-crowded (>65% long) → bearish contrarian
-        detail["l2_crowding"] = global_long_pct > 65.0
-    else:
-        # Crowd short-crowded (>65% short) → bullish contrarian
-        detail["l2_crowding"] = (100 - global_long_pct) > 65.0
+    detail["l2_crowding"] = (global_long_pct > 65.0 if direction == "SHORT"
+                              else (100 - global_long_pct) > 65.0)
 
     # 3. Position Ratio divergence
     pos = l2_data.get("position_ratio") or {}
-    pos_significance = pos.get("significance")
-    pos_direction    = pos.get("divergence_direction")
     if direction == "SHORT":
         detail["position_ratio_divergence"] = (
-            pos_significance == "significant" and
-            pos_direction == "shorts_larger_than_headcount"
+            pos.get("significance") == "significant" and
+            pos.get("divergence_direction") == "shorts_larger_than_headcount"
         )
     else:
         detail["position_ratio_divergence"] = (
-            pos_significance == "significant" and
-            pos_direction == "longs_larger_than_headcount"
+            pos.get("significance") == "significant" and
+            pos.get("divergence_direction") == "longs_larger_than_headcount"
         )
 
     # 4. OI trend (reads Signal History)
@@ -198,16 +137,14 @@ def _evaluate_direction(
         l2_data.get("symbol", ""), direction, recorder, consecutive)
 
     # 5. Market Mechanics
-    taker    = (mm_data or {}).get("taker") or {}
-    vol_rat  = (mm_data or {}).get("volume_ratio") or {}
+    taker   = (mm_data or {}).get("taker") or {}
+    vol_rat = (mm_data or {}).get("volume_ratio") or {}
     if direction == "SHORT":
-        taker_ok  = (taker.get("status") == "ok" and
-                     (taker.get("sell_pct") or 0) > 55)
+        taker_ok   = taker.get("status") == "ok" and (taker.get("sell_pct") or 0) > 55
         futures_ok = (vol_rat.get("status") == "ok" and
                       "Futures Dominant" in (vol_rat.get("label") or ""))
     else:
-        taker_ok  = (taker.get("status") == "ok" and
-                     (taker.get("buy_pct") or 0) > 55)
+        taker_ok   = taker.get("status") == "ok" and (taker.get("buy_pct") or 0) > 55
         futures_ok = (vol_rat.get("status") == "ok" and
                       "Spot Dominant" in (vol_rat.get("label") or ""))
     detail["market_mechanics"] = taker_ok or futures_ok
@@ -221,11 +158,7 @@ def _evaluate_direction(
     return confirmed, detail
 
 
-# ── Master gate check ─────────────────────────────────────────────────────────
-
-
 def _master_contradicts(direction: str, master: str) -> bool:
-    """Return True if Master Summary Bar directly contradicts the direction."""
     if direction == "SHORT" and master == "ALIGNED LONG":
         return True
     if direction == "LONG" and master == "ALIGNED SHORT":
@@ -250,11 +183,6 @@ class SignalEvaluator:
         current_price: Optional[float] = None,
         config: Optional[dict] = None,
     ) -> dict:
-        """Evaluate current market state for one symbol.
-
-        Returns a result dict with tier (NONE/DEVELOPING/STRONG),
-        direction (LONG/SHORT/NONE), criteria confirmed count, and
-        per-criterion detail for both directions."""
         if config is None:
             config = load_config()
 
@@ -267,7 +195,6 @@ class SignalEvaluator:
 
         master = snapshot.get("master", "")
 
-        # Determine dominant direction
         if long_count >= short_count and long_count >= 3:
             direction = "LONG"
             confirmed = long_count
@@ -277,12 +204,10 @@ class SignalEvaluator:
             confirmed = short_count
             detail    = short_detail
         else:
-            # Ambiguous — pick the better one for display but tier as NONE
             direction = "LONG" if long_count >= short_count else "SHORT"
             confirmed = max(long_count, short_count)
             detail    = long_detail if long_count >= short_count else short_detail
 
-        # Tier classification
         contradicted = _master_contradicts(direction, master)
         if confirmed >= 5 and not contradicted:
             tier = "STRONG"
@@ -291,19 +216,18 @@ class SignalEvaluator:
         else:
             tier = "NONE"
 
-        # Reset direction label when tier is NONE
         if tier == "NONE":
             direction = "NONE"
 
         return {
-            "symbol":            symbol,
-            "tier":              tier,
-            "direction":         direction,
+            "symbol":             symbol,
+            "tier":               tier,
+            "direction":          direction,
             "criteria_confirmed": confirmed,
-            "criteria_detail":   detail,
-            "long_confirmed":    long_count,
-            "short_confirmed":   short_count,
-            "master_summary":    master,
+            "criteria_detail":    detail,
+            "long_confirmed":     long_count,
+            "short_confirmed":    short_count,
+            "master_summary":     master,
         }
 
     def evaluate_and_persist(
@@ -316,16 +240,13 @@ class SignalEvaluator:
         current_price: Optional[float] = None,
         config: Optional[dict] = None,
     ) -> dict:
-        """Evaluate and write result to data/signal_state.json.
-        Returns dict with 'result' and 'prev_tier' for transition detection."""
         if config is None:
             config = load_config()
 
         result = self.evaluate(symbol, snapshot, l2_data, mm_data,
                                 liq_data, current_price, config)
 
-        state = _load_state()
-        prev  = state.get(symbol, {})
+        prev = _db.signal_state_get(symbol)
         prev_tier          = prev.get("tier", "NONE")
         prev_notified_tier = prev.get("last_notified_tier", "NONE")
 
@@ -334,7 +255,7 @@ class SignalEvaluator:
         if result["tier"] != prev_tier:
             entry_at = now
 
-        state[symbol] = {
+        _db.signal_state_upsert(symbol, {
             "tier":               result["tier"],
             "direction":          result["direction"],
             "criteria_confirmed": result["criteria_confirmed"],
@@ -345,22 +266,16 @@ class SignalEvaluator:
             "entered_tier_at":    entry_at,
             "last_evaluated_at":  now,
             "last_notified_tier": prev_notified_tier,
-        }
-        _save_state(state)
+        })
 
         return {
-            "result":    result,
-            "prev_tier": prev_tier,
+            "result":             result,
+            "prev_tier":          prev_tier,
             "prev_notified_tier": prev_notified_tier,
         }
 
     def get_all_states(self) -> dict:
-        """Return the full signal_state.json contents."""
-        return _load_state()
+        return _db.signal_state_get_all()
 
     def mark_notified(self, symbol: str, tier: str) -> None:
-        """Update last_notified_tier after a notification is sent."""
-        state = _load_state()
-        if symbol in state:
-            state[symbol]["last_notified_tier"] = tier
-            _save_state(state)
+        _db.signal_state_set_notified(symbol, tier)

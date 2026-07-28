@@ -26,9 +26,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from core.signal_recorder import SignalRecorder
 from core.signal_evaluator import (
     SignalEvaluator, load_config as load_signal_config,
-    save_config as save_signal_config, _load_state as load_signal_state,
-    DATA_DIR as SIGNAL_DATA_DIR,
+    save_config as save_signal_config, DATA_DIR as SIGNAL_DATA_DIR,
 )
+from core import db as _db
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
@@ -1602,32 +1602,116 @@ def api_layer1():
 # Persists periodic Layer 1/2/3 snapshots (see core/signal_recorder.py) so the
 # dashboard can show how indicators have been trending, on top of the
 # snapshot-only live cards above. Purely additive — reads already-cached/live
-# layer data and writes to its own file; never touches live trading state.
+# layer data and writes to its own SQLite table; never touches live trading state.
 
 _SIGNAL_HISTORY_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ZECUSDT", "XAUTUSDT"]
+
+_FLAT_FILES = {
+    "signal_history": os.path.join(SIGNAL_DATA_DIR, "signal_history.json"),
+    "signal_state":   os.path.join(SIGNAL_DATA_DIR, "signal_state.json"),
+    "signal_config":  os.path.join(SIGNAL_DATA_DIR, "signal_config.json"),
+    "checklist_tp":   os.path.join(SIGNAL_DATA_DIR, "checklist_tp.json"),
+}
+
+
+def _migrate_flat_files_to_db() -> None:
+    """One-time migration: copy flat JSON files into SQLite tables, then rename them.
+
+    Each file is only migrated if it exists and has not already been renamed to
+    '.migrated'.  Safe to call repeatedly — it is a no-op when files are absent.
+    """
+    # signal_history.json  →  signal_history table
+    src = _FLAT_FILES["signal_history"]
+    if os.path.exists(src):
+        try:
+            with open(src) as f:
+                hist = json.load(f)
+            # format: {symbol: [{layer, ts, ...}, ...]} or [{}] for layer 1 (symbol=None)
+            if isinstance(hist, dict):
+                for sym, entries in hist.items():
+                    if not isinstance(entries, list):
+                        continue
+                    symbol = None if sym in ("layer1", "global", "") else sym
+                    for entry in entries:
+                        if isinstance(entry, dict):
+                            layer = int(entry.get("layer", 2))
+                            _db.signal_history_insert(symbol, layer, entry)
+            elif isinstance(hist, list):
+                for entry in hist:
+                    if isinstance(entry, dict):
+                        layer = int(entry.get("layer", 1))
+                        sym = entry.get("symbol")
+                        _db.signal_history_insert(sym, layer, entry)
+            os.rename(src, src + ".migrated")
+        except Exception as exc:
+            print(f"[migration] signal_history.json skipped: {exc}")
+
+    # signal_state.json  →  signal_state table
+    src = _FLAT_FILES["signal_state"]
+    if os.path.exists(src):
+        try:
+            with open(src) as f:
+                states = json.load(f)
+            if isinstance(states, dict):
+                for sym, state in states.items():
+                    if isinstance(state, dict):
+                        _db.signal_state_upsert(sym, state)
+            os.rename(src, src + ".migrated")
+        except Exception as exc:
+            print(f"[migration] signal_state.json skipped: {exc}")
+
+    # signal_config.json  →  signal_config table
+    src = _FLAT_FILES["signal_config"]
+    if os.path.exists(src):
+        try:
+            with open(src) as f:
+                cfg = json.load(f)
+            if isinstance(cfg, dict):
+                _db.signal_config_set_all(cfg)
+            os.rename(src, src + ".migrated")
+        except Exception as exc:
+            print(f"[migration] signal_config.json skipped: {exc}")
+
+    # checklist_tp.json  →  checklist_state table
+    src = _FLAT_FILES["checklist_tp"]
+    if os.path.exists(src):
+        try:
+            with open(src) as f:
+                tp_data = json.load(f)
+            if isinstance(tp_data, dict):
+                for sym, entry in tp_data.items():
+                    if isinstance(entry, dict) and entry.get("tp_pct") is not None:
+                        _db.checklist_upsert(sym, tp_pct=entry["tp_pct"])
+            os.rename(src, src + ".migrated")
+        except Exception as exc:
+            print(f"[migration] checklist_tp.json skipped: {exc}")
+
+
+# Initialise DB and run one-time flat-file migration before creating recorder/evaluator
+_db.init_db()
+_migrate_flat_files_to_db()
+
 recorder  = SignalRecorder()
 evaluator = SignalEvaluator(recorder)
 
-# ── TP state (server-side persistence for background evaluator) ──────────────
-_TP_FILE = os.path.join(SIGNAL_DATA_DIR, "checklist_tp.json")
+
+# ── TP state helpers (now reads/writes DB via checklist_state table) ─────────
 
 
 def _load_tp_state() -> dict:
-    if not os.path.exists(_TP_FILE):
-        return {}
-    try:
-        with open(_TP_FILE) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
-def _save_tp_state(data: dict) -> None:
-    os.makedirs(SIGNAL_DATA_DIR, exist_ok=True)
-    tmp = _TP_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp, _TP_FILE)
+    """Return {symbol: {tp_pct, entry_price, stop_loss, position_size, updated_at}}."""
+    rows = _db.checklist_get_all()
+    result = {}
+    for sym, row in rows.items():
+        if row.get("tp_pct") is not None:
+            result[sym] = {
+                "tp_pct":        row["tp_pct"],
+                "entry_price":   row.get("entry_price"),
+                "stop_loss":     row.get("stop_loss"),
+                "position_size": row.get("position_size"),
+                "saved_at":      row.get("updated_at"),
+            }
+    return result
 
 
 @app.route("/api/checklist/tp", methods=["GET"])
@@ -1638,53 +1722,209 @@ def api_checklist_tp_get():
 
 @app.route("/api/checklist/tp", methods=["POST"])
 def api_checklist_tp_save():
-    """POST /api/checklist/tp — save TP data for one coin.
-    Body: { "symbol": "BTCUSDT", "tp_pct": 5.2, "entry_price": 65000,
-            "stop_loss": 63000, "position_size": 1000 }
-    """
+    """POST /api/checklist/tp — save TP data for one coin."""
     payload = request.json or {}
     symbol = (payload.get("symbol") or "").upper()
     if not symbol:
         return jsonify({"error": "symbol required"}), 400
-    tp_data = _load_tp_state()
-    tp_data[symbol] = {
-        "tp_pct":        payload.get("tp_pct"),
-        "entry_price":   payload.get("entry_price"),
-        "stop_loss":     payload.get("stop_loss"),
-        "position_size": payload.get("position_size"),
-        "saved_at":      datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-    _save_tp_state(tp_data)
+    _db.checklist_upsert(symbol,
+        tp_pct=payload.get("tp_pct"),
+        entry_price=payload.get("entry_price"),
+        stop_loss=payload.get("stop_loss"),
+        position_size=payload.get("position_size"),
+    )
     return jsonify({"ok": True})
 
 
 @app.route("/api/checklist/tp-plan", methods=["POST"])
 def api_checklist_tp_plan():
     """POST /api/checklist/tp-plan — accepts the full pre-trade plan from the
-    Checklist tab and extracts the confirmed TP% for server-side persistence.
-    This is a fire-and-forget endpoint; errors are swallowed silently."""
+    Checklist tab and extracts the confirmed TP% for server-side persistence."""
     payload = request.json or {}
     coin    = (payload.get("coin") or "").upper()
     plan    = payload.get("plan") or {}
     if not coin or not plan:
-        return jsonify({"ok": True})  # silent accept
-
-    symbol = coin + "USDT" if not coin.endswith("USDT") else coin
+        return jsonify({"ok": True})
+    symbol    = coin + "USDT" if not coin.endswith("USDT") else coin
     confirmed = plan.get("confirmed") or {}
     tp_pct    = confirmed.get("pct")
     if tp_pct is None:
         return jsonify({"ok": True})
-
-    tp_data = _load_tp_state()
-    tp_data[symbol] = {
-        "tp_pct":        tp_pct,
-        "entry_price":   plan.get("entry_price"),
-        "stop_loss":     plan.get("stop_loss"),
-        "position_size": plan.get("position_size"),
-        "saved_at":      datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-    _save_tp_state(tp_data)
+    _db.checklist_upsert(symbol,
+        tp_pct=tp_pct,
+        entry_price=plan.get("entry_price"),
+        stop_loss=plan.get("stop_loss"),
+        position_size=plan.get("position_size"),
+    )
     return jsonify({"ok": True})
+
+
+# ── Manual data routes ────────────────────────────────────────────────────────
+
+
+@app.route("/api/manual/layer1", methods=["GET"])
+def api_manual_l1_get():
+    """GET /api/manual/layer1 — all Layer 1 manual fields."""
+    return jsonify(_db.l1_get_all())
+
+
+@app.route("/api/manual/layer1", methods=["POST"])
+def api_manual_l1_save():
+    """POST /api/manual/layer1 — upsert one field.
+    Body: { field_key: str, value: object }"""
+    payload = request.json or {}
+    key = payload.get("field_key", "")
+    val = payload.get("value")
+    if not key or val is None:
+        return jsonify({"error": "field_key and value required"}), 400
+    _db.l1_upsert(key, val)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/liquidation-clusters/<symbol>", methods=["GET"])
+def api_liq_clusters_get(symbol):
+    return jsonify(_db.liq_clusters_get(symbol.upper()))
+
+
+@app.route("/api/manual/liquidation-clusters/<symbol>", methods=["POST"])
+def api_liq_clusters_save(symbol):
+    payload = request.json or {}
+    _db.liq_clusters_upsert(
+        symbol.upper(),
+        payload.get("cluster_below"),
+        payload.get("cluster_above"),
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/liquidation-clusters", methods=["GET"])
+def api_liq_clusters_all():
+    return jsonify(_db.liq_clusters_get_all())
+
+
+@app.route("/api/manual/liq24h/<symbol>", methods=["GET"])
+def api_liq24h_get(symbol):
+    return jsonify(_db.liq24h_get(symbol.upper()))
+
+
+@app.route("/api/manual/liq24h/<symbol>", methods=["POST"])
+def api_liq24h_save(symbol):
+    payload = request.json or {}
+    _db.liq24h_upsert(
+        symbol.upper(),
+        payload.get("longs"),
+        payload.get("shorts"),
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/liq24h", methods=["GET"])
+def api_liq24h_all():
+    return jsonify(_db.liq24h_get_all())
+
+
+@app.route("/api/manual/exchange-flow/<symbol>", methods=["GET"])
+def api_ef_get(symbol):
+    return jsonify(_db.ef_get(symbol.upper()))
+
+
+@app.route("/api/manual/exchange-flow/<symbol>", methods=["POST"])
+def api_ef_save(symbol):
+    payload = request.json or {}
+    _db.ef_upsert(
+        symbol.upper(),
+        payload.get("direction"),
+        payload.get("size"),
+        payload.get("notes"),
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/exchange-flow", methods=["GET"])
+def api_ef_all():
+    return jsonify(_db.ef_get_all())
+
+
+@app.route("/api/manual/whale-orders/<symbol>", methods=["GET"])
+def api_whale_get(symbol):
+    return jsonify(_db.whale_get(symbol.upper()))
+
+
+@app.route("/api/manual/whale-orders/<symbol>", methods=["POST"])
+def api_whale_add(symbol):
+    payload = request.json or {}
+    order_id = str(payload.get("id") or int(datetime.utcnow().timestamp() * 1000))
+    price    = payload.get("price")
+    if not price:
+        return jsonify({"error": "price required"}), 400
+    _db.whale_insert(
+        symbol.upper(), order_id, float(price),
+        payload.get("size") or payload.get("size_str"),
+        payload.get("direction"),
+        payload.get("notes"),
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/whale-orders/<symbol>/<order_id>", methods=["PUT"])
+def api_whale_update(symbol, order_id):
+    payload = request.json or {}
+    status  = payload.get("status")
+    if not status:
+        return jsonify({"error": "status required"}), 400
+    _db.whale_update_status(order_id, status)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/whale-orders/<symbol>/<order_id>", methods=["DELETE"])
+def api_whale_delete(symbol, order_id):
+    _db.whale_delete(order_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/whale-orders", methods=["GET"])
+def api_whale_all():
+    return jsonify(_db.whale_get_all())
+
+
+@app.route("/api/checklist/<symbol>", methods=["GET"])
+def api_checklist_get(symbol):
+    return jsonify(_db.checklist_get(symbol.upper()))
+
+
+@app.route("/api/checklist/<symbol>", methods=["POST"])
+def api_checklist_save(symbol):
+    payload = request.json or {}
+    allowed = ("direction", "tp_pct", "entry_price", "stop_loss", "position_size")
+    kwargs  = {k: v for k, v in payload.items() if k in allowed}
+    _db.checklist_upsert(symbol.upper(), **kwargs)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/checklist", methods=["GET"])
+def api_checklist_all():
+    return jsonify(_db.checklist_get_all())
+
+
+@app.route("/api/manual/position-ratio/<symbol>", methods=["GET"])
+def api_position_ratio_manual_get(symbol):
+    return jsonify(_db.position_ratio_get(symbol.upper()))
+
+
+@app.route("/api/manual/position-ratio/<symbol>", methods=["POST"])
+def api_position_ratio_manual_save(symbol):
+    payload = request.json or {}
+    _db.position_ratio_upsert(
+        symbol.upper(),
+        payload.get("long_pct"),
+        payload.get("short_pct"),
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/manual/position-ratio", methods=["GET"])
+def api_position_ratio_manual_all():
+    return jsonify(_db.position_ratio_get_all())
 
 
 # ── Telegram notification sender ─────────────────────────────────────────────
