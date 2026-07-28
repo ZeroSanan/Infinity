@@ -76,7 +76,7 @@ def _liq_proximity_confirms(direction: str, liq_data: Optional[dict],
                               threshold_pct: float) -> bool:
     if not liq_data or not current_price or current_price <= 0:
         return False
-    cluster = liq_data.get("below_price") if direction == "SHORT" else liq_data.get("above_price")
+    cluster = liq_data.get("cluster_below") if direction == "SHORT" else liq_data.get("cluster_above")
     if cluster is None:
         return False
     try:

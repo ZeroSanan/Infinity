@@ -1986,9 +1986,9 @@ def _tp_achievability_check(symbol: str, tp_pct: float, l3_data: dict,
     current_price = l3_data.get("price")
     if liq_data and current_price and current_price > 0:
         if tp_is_long:
-            cluster = liq_data.get("above_price")
+            cluster = liq_data.get("cluster_above")
         else:
-            cluster = liq_data.get("below_price")
+            cluster = liq_data.get("cluster_below")
         if cluster:
             cluster_pct = abs(cluster - current_price) / current_price * 100
             checks["within_cluster"] = tp_abs <= cluster_pct
@@ -2085,9 +2085,7 @@ def _evaluate_and_notify(symbol: str, snapshot: dict,
     """Evaluate tier for one symbol, persist state, and send Telegram if needed."""
     config = load_signal_config()
 
-    # Read liquidation cluster data if available (stored in localStorage —
-    # no server side data, so liq_data is not available in background loop)
-    liq_data = None
+    liq_data = _db.liq_clusters_get(symbol)
     current_price: Optional[float] = None
     try:
         l3 = _layer3_cache.get(symbol, {}).get("data") or {}
@@ -2203,7 +2201,7 @@ def api_signal_state_evaluate():
             current_price = (l3_raw or {}).get("price")
             config   = load_signal_config()
             out = evaluator.evaluate_and_persist(
-                symbol, snapshot, data, mechanics, None, current_price, config)
+                symbol, snapshot, data, mechanics, _db.liq_clusters_get(symbol), current_price, config)
             results[symbol] = out["result"]
         except Exception as exc:
             results[symbol] = {"error": str(exc)}
