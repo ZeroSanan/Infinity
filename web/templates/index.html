@@ -2283,6 +2283,7 @@ async function api(path, method='GET', body=null){
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if(body) opts.body = JSON.stringify(body);
   const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(`${method} ${path} → HTTP ${r.status}`);
   return r.json();
 }
 
@@ -2517,7 +2518,7 @@ function positionSaveManual() {
   if (sym) {
     const now = new Date().toISOString();
     _posRatioCache[sym] = { long_pct: longVal, short_pct: shortVal, updated_at: now };
-    api(`/api/manual/position-ratio/${sym}`, 'POST', { long_pct: longVal, short_pct: shortVal }).catch(() => {});
+    api(`/api/manual/position-ratio/${sym}`, 'POST', { long_pct: longVal, short_pct: shortVal }).catch(e => { console.error(e); toast('Save failed — check server', 'err'); });
   }
   positionRenderManualState();
 }
@@ -2881,7 +2882,7 @@ function l1SaveManual(key) {
   }
 
   _l1ManualCache[key] = data;
-  api('/api/manual/layer1', 'POST', { field_key: key, value: data }).catch(() => {});
+  api('/api/manual/layer1', 'POST', { field_key: key, value: data }).catch(e => { console.error(e); toast('Save failed — check server', 'err'); });
   _l1EditingCards.delete(key);
   renderLayer1Grid();
   recalcL1Verdict();
@@ -4366,7 +4367,7 @@ function ptSetDirection(dir) {
   if (sym) {
     if (!_checklistCache[sym]) _checklistCache[sym] = {};
     _checklistCache[sym].direction = _ptDirection;
-    api(`/api/checklist/${sym}`, 'POST', { direction: _ptDirection }).catch(() => {});
+    api(`/api/checklist/${sym}`, 'POST', { direction: _ptDirection }).catch(e => { console.error(e); toast('Save failed — check server', 'err'); });
   }
   ptRecalcAll();
 }
@@ -4883,7 +4884,7 @@ function liq24hSave() {
   if (sym) {
     const now = new Date().toISOString();
     _liq24hCache[sym] = { longs: longVal, shorts: shortVal, updated_at: now };
-    api(`/api/manual/liq24h/${sym}`, 'POST', { longs: longVal, shorts: shortVal }).catch(() => {});
+    api(`/api/manual/liq24h/${sym}`, 'POST', { longs: longVal, shorts: shortVal }).catch(e => { console.error(e); toast('Save failed — check server', 'err'); });
   }
   liq24hRenderState();
 }
@@ -4975,7 +4976,7 @@ function efSave() {
     const sizeVal  = size  ? size.value  || null : null;
     const notesVal = notes ? notes.value || null : null;
     _efCache[sym] = { direction: dirVal, size: sizeVal, notes: notesVal, updated_at: now };
-    api(`/api/manual/exchange-flow/${sym}`, 'POST', { direction: dirVal, size: sizeVal, notes: notesVal }).catch(() => {});
+    api(`/api/manual/exchange-flow/${sym}`, 'POST', { direction: dirVal, size: sizeVal, notes: notesVal }).catch(e => { console.error(e); toast('Save failed — check server', 'err'); });
   }
   efRenderState();
 }
@@ -5088,7 +5089,7 @@ function whaleAddOrder() {
   api(`/api/manual/whale-orders/${sym}`, 'POST', payload)
     .then(() => api(`/api/manual/whale-orders/${sym}`))
     .then(orders => { _whaleOrders[msCoin] = (orders || []).map(_mapWhaleOrder); whaleRender(msCoin); })
-    .catch(() => {});
+    .catch(e => { console.error(e); toast('Save failed — check server', 'err'); });
 }
 
 function whaleRemoveOrder(id) {
@@ -5097,7 +5098,7 @@ function whaleRemoveOrder(id) {
   api(`/api/manual/whale-orders/${sym}/${id}`, 'DELETE')
     .then(() => api(`/api/manual/whale-orders/${sym}`))
     .then(orders => { _whaleOrders[msCoin] = (orders || []).map(_mapWhaleOrder); whaleRender(msCoin); })
-    .catch(() => {});
+    .catch(e => { console.error(e); toast('Remove failed — check server', 'err'); });
 }
 
 function whaleSetStatus(id, status) {
@@ -5106,7 +5107,7 @@ function whaleSetStatus(id, status) {
   const o = (_whaleOrders[msCoin] || []).find(o => o.id === String(id));
   if (o) o.status = status;
   api(`/api/manual/whale-orders/${sym}/${id}`, 'PUT', { status })
-    .catch(() => {});
+    .catch(e => { console.error(e); toast('Status update failed', 'err'); });
   whaleRender(msCoin);
 }
 
@@ -5237,7 +5238,7 @@ function liqSaveValues() {
     const aboveVal = la ? parseFloat(la.value) || null : null;
     const now = new Date().toISOString();
     _liqClustersCache[sym] = { cluster_below: belowVal, cluster_above: aboveVal, updated_at: now };
-    api(`/api/manual/liquidation-clusters/${sym}`, 'POST', { cluster_below: belowVal, cluster_above: aboveVal }).catch(() => {});
+    api(`/api/manual/liquidation-clusters/${sym}`, 'POST', { cluster_below: belowVal, cluster_above: aboveVal }).catch(e => { console.error(e); toast('Save failed — check server', 'err'); });
   }
   liqUpdateSavedIndicator();
   ptRecalcAll();
