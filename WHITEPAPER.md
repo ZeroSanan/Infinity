@@ -23,13 +23,14 @@
 9. [Scheduling, Caching & Refresh Cadence](#9-scheduling-caching--refresh-cadence)
 10. [HTTP API Surface](#10-http-api-surface)
 11. [Telegram Alerting](#11-telegram-alerting)
-12. [Deployment & Operations](#12-deployment--operations)
-13. [Security Considerations](#13-security-considerations)
-14. [Limitations, Known Gaps & Honest Context](#14-limitations-known-gaps--honest-context)
-15. [Roadmap](#15-roadmap)
-16. [Appendix A — Formula Reference](#appendix-a--formula-reference)
-17. [Appendix B — Threshold Reference](#appendix-b--threshold-reference)
-18. [Appendix C — Glossary](#appendix-c--glossary)
+12. [Resistance / Support Level Alerts](#12-resistance--support-level-alerts)
+13. [Deployment & Operations](#13-deployment--operations)
+14. [Security Considerations](#14-security-considerations)
+15. [Limitations, Known Gaps & Honest Context](#15-limitations-known-gaps--honest-context)
+16. [Roadmap](#16-roadmap)
+17. [Appendix A — Formula Reference](#appendix-a--formula-reference)
+18. [Appendix B — Threshold Reference](#appendix-b--threshold-reference)
+19. [Appendix C — Glossary](#appendix-c--glossary)
 
 ---
 
@@ -81,16 +82,18 @@ Infinity/
 │   ├── __init__.py
 │   ├── db.py                   # SQLite persistence layer — 10 tables, all DB access
 │   ├── signal_recorder.py      # Periodic Layer 1/2/3 snapshot writer + reader
-│   └── signal_evaluator.py     # Six-criteria tier evaluation + state machine
+│   ├── signal_evaluator.py     # Six-criteria tier evaluation + state machine
+│   ├── level_watcher.py        # Resistance/support level watch + alert state machine
+│   └── telegram_notifier.py    # Telegram Bot API sender (shared by both alert producers)
 ├── web/
 │   ├── app.py                  # Flask app: all routes, all fetchers, all scoring, scheduler
 │   ├── templates/
 │   │   ├── index.html          # The entire dashboard SPA (markup + CSS + JS, self-contained)
-│   │   └── backtest.html       # Orphaned — no route serves it (see §14.6)
+│   │   └── backtest.html       # Orphaned — no route serves it (see §15.6)
 │   └── static/
-│       ├── app.js              # Legacy, unreferenced (see §14.6)
-│       └── style.css           # Legacy, unreferenced (see §14.6)
-├── data/                       # Auto-created; holds infinity.db (git-ignored)
+│       ├── app.js              # Legacy, unreferenced (see §15.6)
+│       └── style.css           # Legacy, unreferenced (see §15.6)
+├── data/                       # Auto-created; infinity.db + resistance_levels.json (git-ignored)
 ├── deploy/
 │   └── setup-vps.sh            # One-time VPS provisioning (clone, venv, systemd unit)
 ├── .github/workflows/deploy.yml
@@ -147,7 +150,7 @@ Anthropic API ◄─────┘    /api/ai/analysis
 | Package | Version | Role |
 |---------|---------|------|
 | `flask` | 3.0.3 | HTTP server and templating |
-| `flask-cors` | 4.0.1 | CORS (currently wide open — see §13) |
+| `flask-cors` | 4.0.1 | CORS (currently wide open — see §14) |
 | `requests` | 2.31.0 | All outbound HTTP, 8 s timeout on market data, 10 s on Telegram |
 | `python-dotenv` | 1.0.0 | `.env` loading |
 | `anthropic` | ≥0.25.0 | Claude API client for the AI Analysis panel |
@@ -205,7 +208,7 @@ Four macro inputs have no free live feed and are **always manual**; five live in
 
 Each manual card renders an **age badge** (`l1StalenessHTML`) so a value entered three weeks ago is visibly stale rather than silently authoritative, and links directly to its source (TradingView, FRED, CME, Blockchain Center, etc.).
 
-> **Important asymmetry.** The browser recomputes the Layer 1 verdict across the *combined* live + manual set (up to 11 indicators) using a **≥6 bullish / ≥6 bearish** threshold, while the server computes it from live indicators only (max 7) using **≥4 / ≥4**. The badge you see in the browser and the verdict the background evaluator uses for Telegram alerts can therefore differ. See §14.1.
+> **Important asymmetry.** The browser recomputes the Layer 1 verdict across the *combined* live + manual set (up to 11 indicators) using a **≥6 bullish / ≥6 bearish** threshold, while the server computes it from live indicators only (max 7) using **≥4 / ≥4**. The badge you see in the browser and the verdict the background evaluator uses for Telegram alerts can therefore differ. See §15.1.
 
 ### 4.2 Layer 2 — Market Positioning
 
@@ -411,7 +414,7 @@ Spot depth, top 20 levels each side, weighted by **notional** (`price × quantit
 | 40–60 % | 0 | Balanced Order Book |
 | < 40 % | **−1** | Sell Pressure Dominant |
 
-This is the **weakest and most manipulable** signal in the system — spoofed walls appear and vanish — which is precisely why it is one vote of four rather than a standalone trigger. See §14.4.
+This is the **weakest and most manipulable** signal in the system — spoofed walls appear and vanish — which is precisely why it is one vote of four rather than a standalone trigger. See §15.4.
 
 #### 4.4.5 ATR(14) — Volatility Context
 
@@ -530,7 +533,7 @@ should_notify = (
 ```
 
 - **`DEVELOPING` fires once** on entry and stays quiet while it persists.
-- **`STRONG` fires on every hourly evaluation** for as long as it holds. This is intentional for a 5-of-6 confluence but means a sustained STRONG state produces an hourly message — see §14.3.
+- **`STRONG` fires on every hourly evaluation** for as long as it holds. This is intentional for a 5-of-6 confluence but means a sustained STRONG state produces an hourly message — see §15.3.
 - If `telegram_enabled` is false, the state is still marked notified so the queue does not back up and then flood when alerts are re-enabled.
 
 ### 5.4 Configuration
@@ -721,6 +724,7 @@ Caches are per-symbol dicts of `{"data": …, "ts": …}` checked against `time.
 | `record_l1` | Every 6 h | Snapshot Layer 1 → `signal_history`; prune records older than 90 days |
 | `record_l2` | Every 1 h | Per symbol: snapshot Layer 2 + Mechanics + Master Summary → then **evaluate tier and notify** |
 | `record_l3` | Cron, 00:00 UTC | Per symbol: snapshot Layer 3 — one daily structural datapoint |
+| `check_levels` | Every 5 min | Per watched coin: compare live price against its levels, alert on approach (§12) |
 
 The recording cadence is matched to the **information rate of the underlying data**, not to what the API would tolerate. Layer 3 records once daily because an order-book snapshot from six hours ago is noise in a history table — it is useful live and worthless historically.
 
@@ -782,6 +786,13 @@ Client intervals mirror server TTLs so a poll generally lands on fresh data rath
 | `/api/manual/whale-orders[/<symbol>[/<id>]]` | GET / POST / PUT / DELETE | Whale order watchlist |
 | `/api/manual/position-ratio[/<symbol>]` | GET / POST | Position ratio manual fallback |
 
+### Level alerts
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/levels` | GET | All watched coins with their levels and alert band |
+| `/api/levels/<coin>` | GET / POST / DELETE | Read / replace / stop watching one coin's levels |
+| `/api/levels/test-telegram` | POST | Send a test Telegram message |
+
 ### AI, settings and operations
 | Route | Method | Description |
 |-------|--------|-------------|
@@ -834,9 +845,134 @@ When the rating is "a stretch" or "unlikely" and cluster data exists, the messag
 
 ---
 
-## 12. Deployment & Operations
+## 12. Resistance / Support Level Alerts
 
-### 12.1 Provisioning
+**Purpose: tell the trader when price is approaching a level they care about, without them having to watch a chart.**
+
+This feature is deliberately independent of the Layer 1/2/3 framework. It does not read a verdict, does not contribute to the Master Summary, and does not participate in tier evaluation. Its only shared dependency is the price reader described in §12.3. A trader marks the levels that matter — prior highs, breakdown points, range boundaries, whatever their own analysis produced — and the system watches them continuously.
+
+**Modules:** `core/level_watcher.py` (state, evaluation, alert composition), `core/telegram_notifier.py` (delivery).
+**Storage:** `data/resistance_levels.json`.
+
+### 12.1 Why its coin list is separate
+
+The dashboard's Layer 1/2/3 framework tracks five coins (`MS_SYMBOLS`), because each one costs several API calls and a full indicator computation per refresh. Level watching costs one price lookup per coin, so it scales to a much wider list cheaply.
+
+The watched set is therefore **whatever is present in `resistance_levels.json`** — there is no hardcoded symbol list anywhere in the feature. Adding a coin through the UI adds it to the scheduler's loop on the next tick; deleting it removes it. The intended working size is roughly 20 coins, and nothing in the design caps it there.
+
+### 12.2 Storage shape
+
+```json
+{
+  "BTC": {
+    "levels": [123238.74, 119805.78, 76321.68],
+    "alert_pct": 3.0,
+    "notified": {
+      "76321.68": {"side": "below", "last_notified": "2026-09-17T08:00:00Z"}
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `levels` | Price levels to watch. Stored de-duplicated and sorted descending. |
+| `alert_pct` | Per-coin alert band. Absent → `LEVEL_ALERT_DEFAULT_PCT` (default 3.0). |
+| `notified` | Per-level notification state, keyed by a normalised level string. Drives cooldown and re-entry. |
+
+Writes are **atomic** (temp file in the same directory, then `os.replace`) so a crash mid-write cannot truncate the watch list, and the whole read-modify-write cycle is guarded by a module-level lock because the scheduler thread and Flask request threads both mutate the file. A missing or corrupt file is treated as an empty watch list rather than an exception — the scheduler job must not die because a file was hand-edited badly.
+
+This is the one part of the system that is **not** in SQLite. See §15.9.
+
+### 12.3 Price lookup
+
+`web/app.py::_current_price(symbol)` is injected into `check_levels()` rather than imported by it — `app.py` imports `core.*`, so a reverse import would be circular. It resolves a price in two steps:
+
+1. **Layer 3 cache** — if a fresh entry exists for the symbol (within the 120 s Layer 3 TTL), its price is reused. For the five dashboard coins this is the common case and costs no request.
+2. **Spot ticker fallback** — `GET /api/v3/ticker/price`, a single lightweight call. Watch-list coins outside the dashboard five have no Layer 3 entry, and running the full Layer 3 computation (klines + order book + five indicators) for ~20 coins every five minutes would be wasteful by orders of magnitude.
+
+### 12.4 Evaluation
+
+For each level on each watched coin:
+
+```
+gap_pct = |price − level| / level × 100
+side    = "above" if price >= level else "below"
+```
+
+If `gap_pct > alert_pct` the price is outside the band: any stored notification for that level is **dropped**, and nothing is sent. If `gap_pct <= alert_pct`, an alert is sent unless suppressed by the rules in §12.5.
+
+`side` is part of the alert identity, not decoration. A level approached from below (resistance) and later from above (the same level acting as support) are two different events, and each alerts once.
+
+### 12.5 Re-notification rules
+
+Two independent rules gate every alert:
+
+| Rule | Behaviour |
+|------|-----------|
+| **Cooldown** | The same `(coin, level, side)` is not re-alerted within `NOTIFY_COOLDOWN_HOURS` (4 h, a module constant). Prevents a price hovering inside the band from alerting every five minutes. |
+| **Band re-entry** | When price leaves the band, the stored notification is cleared. A genuine re-approach therefore alerts **immediately**, without waiting out the cooldown. |
+
+Together these distinguish *still near the level* (quiet) from *came back to the level* (alert), which a cooldown alone cannot do.
+
+Two further behaviours protect the state:
+
+- **Failed delivery is not recorded.** If Telegram is unconfigured or the send fails, `notified` is left untouched, so the next cycle retries rather than silently swallowing the alert.
+- **Editing levels preserves state.** Re-saving a coin keeps the `notified` entries for levels that survive the edit, so adding one level to a list does not re-fire alerts for the others. Removed levels have their state dropped.
+
+### 12.6 Alert format
+
+```
+🔔 BTC approaching resistance/support
+Level: 100,000
+Current: 98,000 (2.00% away, from below)
+```
+
+Sent as plain text — unlike the tiered-signal alerts, which use Markdown — so a level or coin containing Markdown-significant characters cannot break rendering.
+
+### 12.7 Telegram delivery
+
+`core/telegram_notifier.py` is now the single implementation of Telegram delivery for the whole system; `web/app.py::_telegram_send()` delegates to it, so tiered-signal alerts (§11) and level alerts cannot drift apart. Behaviour is unchanged from §11: multi-chat fan-out over a comma-separated `TELEGRAM_CHAT_ID`, per-chat failure isolation, 10 s timeout.
+
+Missing configuration is **not** an error. Exactly as an unset `TWELVE_DATA_API_KEY` degrades Layer 1 to manual cards, an unset `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` logs a warning and no-ops — every other part of the dashboard runs normally.
+
+### 12.8 Schedule
+
+A dedicated APScheduler job, `check_levels`, runs every **5 minutes** — matching the Layer 2 / Market Mechanics cadence, and comfortably inside the 4-hour cooldown. It is a separate job function, not piggybacked on the signal-recording jobs, so a slow level check cannot delay a Layer 2 snapshot or vice versa.
+
+Each coin's check is individually wrapped: one coin's failed price fetch logs and continues, leaving the rest of the list to be checked. This is the same error-isolation posture as the Layer 2/3 recording jobs.
+
+### 12.9 API surface
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/levels` | GET | All watched coins with `levels`, `alert_pct`, `level_count` |
+| `/api/levels/<coin>` | GET | One coin's settings; empty defaults when not yet watched |
+| `/api/levels/<coin>` | POST | Replace levels and `alert_pct` — `{"levels": [...], "alert_pct": 3.0}` |
+| `/api/levels/<coin>` | DELETE | Stop watching a coin (404 if it was not watched) |
+| `/api/levels/test-telegram` | POST | Send a test message to verify bot token and chat id |
+
+**Validation on POST:** `levels` must be a list of positive, finite numbers; `alert_pct` must fall between 0.1 and 20. Failures return HTTP 400 with a specific message (`"alert_pct must be between 0.1 and 20.0"`), which the UI surfaces verbatim. Coin identifiers are upper-cased, so `/api/levels/btc` and `/api/levels/BTC` address the same entry.
+
+### 12.10 UI
+
+A collapsible **🔔 LEVEL ALERTS** panel on the Market Signals tab, below the Signal Status card, using the existing `toggleLayer()` collapse pattern and persisting its open/closed state to `localStorage` like the other panels. It provides a coin input backed by a `<datalist>` of already-watched coins, an alert-% input, a textarea for levels (one per line), a save button, a list of watched coins with edit and remove actions, and a "Send test Telegram message" button.
+
+Typing a coin that is already watched loads its saved settings into the form, so saving edits that entry rather than replacing it with a blank one. No framework and no build step — plain functions in the existing inline script, consistent with the rest of the dashboard.
+
+### 12.11 Environment variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `TELEGRAM_BOT_TOKEN` | For alerts | Bot token from @BotFather. Unset → alerts no-op with a warning. |
+| `TELEGRAM_CHAT_ID` | For alerts | One chat id or a comma-separated list. |
+| `LEVEL_ALERT_DEFAULT_PCT` | No | Fallback alert band for coins with no `alert_pct`. Default 3.0. |
+
+---
+
+## 13. Deployment & Operations
+
+### 13.1 Provisioning
 
 `deploy/setup-vps.sh` is a one-time script: clone to `~/infinity`, create a venv, install requirements, copy `.env.example` → `.env` (and stop to tell the operator to fill in keys), then install and enable a systemd unit:
 
@@ -854,7 +990,7 @@ StandardError=journal
 
 `Restart=always` with a 10-second back-off means a crash — including an unhandled exception in a scheduler job — self-heals without intervention, and all output goes to the journal (`journalctl -u infinity-web -f`).
 
-### 12.2 Deployment
+### 13.2 Deployment
 
 Two paths, both landing on `git pull && pip install -r requirements.txt && systemctl restart infinity-web`:
 
@@ -863,14 +999,15 @@ Two paths, both landing on `git pull && pip install -r requirements.txt && syste
 
 The dashboard displays the deploy time, read from `git log -1 --format=%ci` at process start, so the running version is visible in the UI.
 
-### 12.3 Environment variables
+### 13.3 Environment variables
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `ANTHROPIC_API_KEY` | For AI panel | Claude API. Settable from the UI; written to `.env` and applied to the live process without a restart. |
 | `FRED_API_KEY` | Recommended | Fed Funds, 10Y yield, CPI. Free. Without it those three cards fall back to manual entry. |
 | `TWELVE_DATA_API_KEY` | Recommended | DXY and VIX. Free tier. Without it, or when the plan does not include the symbol, both fall back to manual entry. |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | For alerts | Alert delivery. Chat ID accepts a comma-separated list. |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | For alerts | Alert delivery for both the Tiered Signal System (§5) and level alerts (§12). Chat ID accepts a comma-separated list. |
+| `LEVEL_ALERT_DEFAULT_PCT` | No | Fallback alert band for level alerts with no per-coin `alert_pct`. Default 3.0. |
 | `DASHBOARD_PORT` | No | Default 5050 |
 | `DEPLOY_TOKEN` | For webhook | Shared secret for `POST /deploy` |
 | `BINANCE_API_KEY` / `BINANCE_SECRET_KEY` / `USE_TESTNET` | **No** | Present in `.env.example` from the predecessor DCA bot. **Unused by the current system** — every Binance call is public and unauthenticated. |
@@ -879,7 +1016,7 @@ Missing-key handling is graceful throughout: a fetcher with no key returns `{"st
 
 ---
 
-## 13. Security Considerations
+## 14. Security Considerations
 
 | Area | Current state |
 |------|---------------|
@@ -896,11 +1033,11 @@ Missing-key handling is graceful throughout: a fetcher with no key returns `{"st
 
 ---
 
-## 14. Limitations, Known Gaps & Honest Context
+## 15. Limitations, Known Gaps & Honest Context
 
 This section is deliberately specific. Every item below is verifiable in the current source.
 
-### 14.1 The Layer 1 verdict is computed two different ways
+### 15.1 The Layer 1 verdict is computed two different ways
 
 The browser (`recalcL1Verdict`) scores the combined live + manual indicator set (up to 11) with a **≥6 bullish / ≥6 bearish** threshold. The server (`_layer1_verdict`) scores live indicators only (max 7) with **≥4 / ≥4**, and never sees manual entries at all. Consequences:
 
@@ -909,15 +1046,15 @@ The browser (`recalcL1Verdict`) scores the combined live + manual indicator set 
 
 This is a real divergence, not a rounding difference. Unifying the two is the highest-value correctness fix available.
 
-### 14.2 The AI Analysis panel is currently broken
+### 15.2 The AI Analysis panel is currently broken
 
 `collectAiPayload()` in `index.html` references `_dcaLevelsData`, `_dcaSelectedId`, `_dcaModels`, `_dcaSide` and `_dcaMultiplier` — leftovers from a removed DCA Visualizer panel. **None of these variables is declared anywhere in the file.** Reading an undeclared identifier throws a `ReferenceError`, which is caught by `generateAiAnalysis`'s `try/catch` and rendered as "⚠️ ANALYSIS FAILED". The server route and both prompt sets are intact and correct; the panel fails before the request is ever sent. A one-line guard (or five `let` declarations) restores it.
 
-### 14.3 `STRONG` alerts repeat hourly
+### 15.3 `STRONG` alerts repeat hourly
 
 `should_notify` returns true for **every** evaluation while the tier is `STRONG`, not only on entry. A confluence that persists for eight hours produces eight identical messages. `DEVELOPING` is correctly edge-triggered. Whether this is a feature or a nuisance depends on the operator; there is currently no cooldown to tune it.
 
-### 14.4 Signal-quality caveats by indicator
+### 15.4 Signal-quality caveats by indicator
 
 - **Order-book imbalance** (Layer 3) reads only the top 20 levels of the **spot** book and is the most easily spoofed input in the system. It is one vote of four precisely for this reason.
 - **BTC Dominance 24 h change** is computed from an **in-memory rolling window**, not a historical API. It is empty at boot, so the change reads 0 and the signal reads Neutral until the process has been running for roughly 24 hours. A restart resets it.
@@ -925,11 +1062,11 @@ This is a real divergence, not a rounding difference. Unifying the two is the hi
 - **Layer 3 uses spot klines and the spot order book** while Layer 2 uses futures data. For XAUT in particular, futures liquidity differs materially from spot.
 - **CPI and Fed Funds are monthly series.** A "live" macro card can legitimately be weeks old — this is a property of the data, not a bug, but it means Layer 1 cannot be timely by construction.
 
-### 14.5 Manual inputs have no validation beyond type
+### 15.5 Manual inputs have no validation beyond type
 
 Liquidation clusters, FedWatch probabilities, M2 growth and the rest are accepted as entered. A cluster typed with a misplaced decimal point silently corrupts criterion 6, the Scenario 1 Target, and the Scenario 2 cluster check simultaneously. Staleness is surfaced; plausibility is not checked.
 
-### 14.6 Orphaned and stale artefacts
+### 15.6 Orphaned and stale artefacts
 
 | Artefact | Status |
 |----------|--------|
@@ -938,33 +1075,39 @@ Liquidation clusters, FedWatch probabilities, M2 growth and the rest are accepte
 | `CLAUDE.md` | Instructs keeping `signal_lab/signal_fn.py` in sync with `core/regime_live.py` and `core/mixed_engine.py`. **None of those files or the `signal_lab/` package exists** in this repository. |
 | `README.md` | Documents the predecessor **DCA trading bot** (`main.py`, `config/coins.json`, `core/dca_engine.py`) — an entirely different system from what is deployed. |
 | `dynamic_spot_dca_system_spec.md` | Historical spec for that same predecessor. Useful as provenance; not a description of this system. |
-| `.env.example` Binance keys | Unused (§12.3). |
+| `.env.example` Binance keys | Unused (§13.3). |
 
-### 14.7 Infrastructure
+### 15.7 Infrastructure
 
 - **Flask's development server** (`app.run`) is the production server. It is single-process and not hardened for public exposure. A WSGI server (gunicorn/uWSGI) behind nginx is the correct production setup — though note that the in-memory caches, the BTC-dominance rolling window, and the APScheduler jobs all assume **one process**, so moving to multi-worker gunicorn requires moving the scheduler out of the app process first.
 - **No automated tests.** There is no test suite, and CI does not run one. The scoring functions (`_layer2_verdict`, `_layer3_verdict_calc`, `_layer1_verdict`, `_evaluate_direction`, `compute_position_account_divergence`) are pure and would be straightforward to cover.
 - **Single point of failure.** One VPS, one process, one SQLite file. `data/` is git-ignored, so **the database is not backed up by the deploy mechanism.**
 
-### 14.8 What this system is not
+### 15.9 Level alerts store state outside the database
+
+`data/resistance_levels.json` is the only persistent state in the system that does not live in `data/infinity.db`. Everything else — signal history, tier state, checklist state, every manual input — was migrated out of flat JSON files into SQLite (§8.3).
+
+The level watcher works correctly as built: writes are atomic, the read-modify-write cycle is lock-guarded, and a corrupt file degrades to an empty watch list instead of crashing the scheduler. But it re-introduces the pattern the rest of the codebase moved away from, which means two storage mechanisms to back up, reason about and migrate. Consolidating it into a `resistance_levels` table would remove that split; the module's read/write functions are already isolated behind `_read_file()` / `_write_file()`, so the change is contained.
+
+### 15.8 What this system is not
 
 It does not execute trades, size positions automatically, manage open risk, track realised P&L, or backtest. It has no model of your portfolio. Every number it produces is an input to a human decision made somewhere else, and its own AI output is required to say so on every response.
 
 ---
 
-## 15. Roadmap
+## 16. Roadmap
 
 Ordered by value-to-effort as the code stands:
 
 | Priority | Item | Notes |
 |----------|------|-------|
-| **P0** | Fix the AI panel `ReferenceError` (§14.2) | Single-line guard; restores a headline feature |
-| **P0** | Unify the two Layer 1 verdict calculations (§14.1) | Makes alerts and display agree; lets manual macro reach the evaluator |
+| **P0** | Fix the AI panel `ReferenceError` (§15.2) | Single-line guard; restores a headline feature |
+| **P0** | Unify the two Layer 1 verdict calculations (§15.1) | Makes alerts and display agree; lets manual macro reach the evaluator |
 | **P0** | Database backup | `data/infinity.db` is currently unprotected |
-| **P1** | Authentication + bind to localhost behind a proxy (§13) | The single largest exposure |
+| **P1** | Authentication + bind to localhost behind a proxy (§14) | The single largest exposure |
 | **P1** | Unit tests for the pure scoring functions | They are already side-effect-free |
-| **P1** | Alert cooldown / re-notify interval for `STRONG` (§14.3) | Make repetition configurable |
-| **P2** | Remove or wire up orphaned artefacts; rewrite `README.md` and `CLAUDE.md` (§14.6) | Documentation currently describes a system that no longer exists |
+| **P1** | Alert cooldown / re-notify interval for `STRONG` (§15.3) | Make repetition configurable |
+| **P2** | Remove or wire up orphaned artefacts; rewrite `README.md` and `CLAUDE.md` (§15.6) | Documentation currently describes a system that no longer exists |
 | **P2** | Signal outcome tracking | Record what price did after each `STRONG` signal — the prerequisite for ever knowing whether the six criteria work |
 | **P2** | Backtesting over `signal_history` | 90 days of snapshots already accumulate; `backtest.html` suggests this was started |
 | **P3** | Liquidation cluster API integration | Removes the largest manual dependency (criterion 6, Scenario 1 Target, Scenario 2 cluster check) |
