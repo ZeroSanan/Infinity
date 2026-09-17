@@ -1439,6 +1439,26 @@
   .ms-signal-cfg-toggle { display:flex; align-items:center; gap:6px; cursor:pointer; }
   .ms-signal-cfg-toggle input[type=checkbox] { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; }
 
+  /* Resistance / Support Level Alerts */
+  .ms-lvl-form { display:flex; flex-wrap:wrap; gap:10px; padding:12px 14px; }
+  .ms-lvl-field { display:flex; flex-direction:column; gap:4px; }
+  .ms-lvl-field.grow { flex:1 1 100%; }
+  .ms-lvl-lbl { font-size:10.5px; font-weight:600; letter-spacing:.4px; color:var(--muted); text-transform:uppercase; }
+  .ms-lvl-input, .ms-lvl-area { border:1px solid var(--border2); border-radius:5px; background:var(--surface); color:var(--text); font-size:12px; padding:6px 8px; font-family:inherit; }
+  .ms-lvl-input { width:110px; }
+  .ms-lvl-input.narrow { width:80px; text-align:right; }
+  .ms-lvl-area { width:100%; min-height:88px; resize:vertical; font-variant-numeric:tabular-nums; }
+  .ms-lvl-hint { font-size:10.5px; color:var(--muted); }
+  .ms-lvl-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:0 14px 12px; }
+  .ms-lvl-list { border-top:1px solid var(--border); }
+  .ms-lvl-row { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--border); font-size:12px; }
+  .ms-lvl-row:last-child { border-bottom:none; }
+  .ms-lvl-coin { font-weight:700; min-width:60px; }
+  .ms-lvl-meta { color:var(--text2); flex:1; }
+  .ms-lvl-del { background:none; border:none; color:var(--red); cursor:pointer; font-size:12px; padding:2px 6px; border-radius:4px; }
+  .ms-lvl-del:hover { background:var(--surface2); }
+  .ms-lvl-empty { padding:10px 14px; font-size:12px; color:var(--muted); }
+
   /* ── Slide-over panel ── */
   .ms-slideover-overlay {
     position:fixed; inset:0; z-index:900;
@@ -1976,6 +1996,51 @@
         <div class="ms-signal-cfg-row">
           <span class="ms-signal-cfg-lbl">Include TP achievability in alerts</span>
           <label class="ms-signal-cfg-toggle"><input type="checkbox" id="ms-signal-cfg-tp" checked onchange="saveSignalConfig()"> On</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resistance / Support Level Alerts (collapsed by default) -->
+    <div class="ms-layer-hdr" onclick="toggleLayer('levels')" style="margin-top:8px">
+      <span class="ms-layer-arrow ms-collapsed" id="ms-llevels-arrow">▼</span>
+      <span class="ms-layer-title">🔔 LEVEL ALERTS</span>
+    </div>
+    <div class="ms-layer-body ms-collapsed" id="ms-layerlevels-body">
+      <div class="ms-signal-card">
+        <div class="ms-signal-card-hdr">
+          <span class="ms-signal-card-title">🔔 RESISTANCE / SUPPORT WATCH</span>
+          <div class="ms-signal-card-actions">
+            <button class="ms-signal-cfg-btn" onclick="levelsTestTelegram()" title="Send a test message to your Telegram chat">✈ Send test Telegram message</button>
+          </div>
+        </div>
+
+        <div class="ms-lvl-form">
+          <div class="ms-lvl-field">
+            <label class="ms-lvl-lbl" for="ms-lvl-coin">Coin</label>
+            <input class="ms-lvl-input" type="text" id="ms-lvl-coin" list="ms-lvl-coin-options"
+                   placeholder="BTC" autocomplete="off" oninput="levelsOnCoinInput()">
+            <datalist id="ms-lvl-coin-options"></datalist>
+          </div>
+          <div class="ms-lvl-field">
+            <label class="ms-lvl-lbl" for="ms-lvl-pct">Alert %</label>
+            <input class="ms-lvl-input narrow" type="number" id="ms-lvl-pct"
+                   min="0.1" max="20" step="0.1" value="3.0">
+          </div>
+          <div class="ms-lvl-field grow">
+            <label class="ms-lvl-lbl" for="ms-lvl-levels">Levels — one per line</label>
+            <textarea class="ms-lvl-area" id="ms-lvl-levels" spellcheck="false"
+                      placeholder="123238.74&#10;119805.78&#10;76321.68"></textarea>
+            <span class="ms-lvl-hint">Alerts fire when price comes within the alert % of a level. Re-alerts are suppressed for 4 hours per level and side.</span>
+          </div>
+        </div>
+
+        <div class="ms-lvl-actions">
+          <button class="btn btn-sm" onclick="levelsSave()">Save levels</button>
+          <span id="ms-lvl-feedback" class="feedback" style="display:none"></span>
+        </div>
+
+        <div class="ms-lvl-list" id="ms-lvl-list">
+          <div class="ms-lvl-empty">Loading watched coins…</div>
         </div>
       </div>
     </div>
@@ -4000,7 +4065,7 @@ function toggleLayer(n) {
 }
 
 function initLayerCollapseState() {
-  [1, 2, 3, 'hist'].forEach(n => {
+  [1, 2, 3, 'hist', 'levels'].forEach(n => {
     const body  = document.getElementById('ms-layer' + n + '-body');
     const arrow = document.getElementById('ms-l' + n + '-arrow');
     if (!body) return;
@@ -5615,6 +5680,132 @@ function toggleSignalDetail(symbol) {
   if (!isOpen) el.classList.add('open');
 }
 
+// ── Resistance / Support Level Alerts ─────────────────────────────────────────
+// Independent of the layer framework — talks only to /api/levels/*.
+let _levelsData = {};
+
+// The shared api() helper throws on non-2xx, which would hide the server's
+// validation message ("alert_pct must be between 0.1 and 20"). These routes
+// return a JSON body on 400/404/502 too, so read it either way.
+async function lvlRequest(path, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  let data = {};
+  try { data = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(data.error || `${method} ${path} → HTTP ${r.status}`);
+  return data;
+}
+
+function lvlFeedback(msg, type = 'ok') {
+  const el = document.getElementById('ms-lvl-feedback');
+  if (!el) return;
+  el.className = `feedback ${type}`;
+  el.style.display = 'block';
+  el.textContent = msg;
+  clearTimeout(lvlFeedback._t);
+  lvlFeedback._t = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+async function loadLevels() {
+  try {
+    _levelsData = await lvlRequest('/api/levels');
+  } catch (err) {
+    _levelsData = {};
+  }
+  renderLevelsList();
+}
+
+function renderLevelsList() {
+  const list = document.getElementById('ms-lvl-list');
+  const opts = document.getElementById('ms-lvl-coin-options');
+  if (!list) return;
+
+  const coins = Object.keys(_levelsData).sort();
+
+  if (opts) opts.innerHTML = coins.map(c => `<option value="${esc(c)}">`).join('');
+
+  if (!coins.length) {
+    list.innerHTML = `<div class="ms-lvl-empty">No coins watched yet — add one above.</div>`;
+    return;
+  }
+
+  list.innerHTML = coins.map(coin => {
+    const cfg = _levelsData[coin] || {};
+    const n   = cfg.level_count ?? (cfg.levels || []).length;
+    return `<div class="ms-lvl-row">
+      <span class="ms-lvl-coin">${esc(coin)}</span>
+      <span class="ms-lvl-meta">${n} level${n === 1 ? '' : 's'} · alert at ${Number(cfg.alert_pct ?? 3).toFixed(1)}%</span>
+      <button class="ms-signal-cfg-btn" onclick="levelsEdit('${esc(coin)}')" title="Load into the form above">✎ Edit</button>
+      <button class="ms-lvl-del" onclick="levelsDelete('${esc(coin)}')" title="Stop watching ${esc(coin)}">✕ Remove</button>
+    </div>`;
+  }).join('');
+}
+
+function levelsEdit(coin) {
+  const cfg = _levelsData[coin];
+  if (!cfg) return;
+  document.getElementById('ms-lvl-coin').value   = coin;
+  document.getElementById('ms-lvl-pct').value    = cfg.alert_pct ?? 3.0;
+  document.getElementById('ms-lvl-levels').value = (cfg.levels || []).join('\n');
+}
+
+// Typing a coin that is already watched loads its saved settings, so saving
+// edits an existing entry instead of silently replacing it with a blank one.
+function levelsOnCoinInput() {
+  const coin = (document.getElementById('ms-lvl-coin').value || '').trim().toUpperCase();
+  if (_levelsData[coin]) levelsEdit(coin);
+}
+
+async function levelsSave() {
+  const coin = (document.getElementById('ms-lvl-coin').value || '').trim().toUpperCase();
+  if (!coin) { lvlFeedback('Enter a coin symbol first (e.g. BTC).', 'err'); return; }
+
+  const raw = document.getElementById('ms-lvl-levels').value || '';
+  const levels = raw.split('\n')
+    .map(l => l.trim().replace(/,/g, ''))
+    .filter(l => l !== '')
+    .map(Number);
+
+  if (levels.some(n => !isFinite(n) || n <= 0)) {
+    lvlFeedback('Every line must be a positive number.', 'err');
+    return;
+  }
+
+  const alertPct = parseFloat(document.getElementById('ms-lvl-pct').value);
+
+  try {
+    await lvlRequest(`/api/levels/${encodeURIComponent(coin)}`, 'POST',
+                     { levels, alert_pct: alertPct });
+    lvlFeedback(`Saved ${levels.length} level${levels.length === 1 ? '' : 's'} for ${coin}.`);
+    toast(`${coin} levels saved`);
+    await loadLevels();
+  } catch (err) {
+    lvlFeedback(String(err.message || err), 'err');
+  }
+}
+
+async function levelsDelete(coin) {
+  if (!confirm(`Stop watching ${coin}? Its levels will be deleted.`)) return;
+  try {
+    await lvlRequest(`/api/levels/${encodeURIComponent(coin)}`, 'DELETE');
+    toast(`${coin} removed from the watch list`);
+    await loadLevels();
+  } catch (err) {
+    lvlFeedback(String(err.message || err), 'err');
+  }
+}
+
+async function levelsTestTelegram() {
+  lvlFeedback('Sending test message…');
+  try {
+    const data = await lvlRequest('/api/levels/test-telegram', 'POST');
+    lvlFeedback(data.message || 'Test message sent — check your Telegram.');
+  } catch (err) {
+    lvlFeedback(String(err.message || err), 'err');
+  }
+}
+
 // Sync Checklist TP to server so background evaluator can read it
 function syncChecklistTpToServer() {
   const plan = collectPreTradePlan();
@@ -5737,6 +5928,7 @@ loadSignalConfig();
   ptRestoreDirection();
   ptRecalcAll();
   positionRestoreManual();
+  loadLevels();
 })();
 setInterval(() => loadLayer2(), 300000);
 setInterval(() => loadLayer1(), 900000);

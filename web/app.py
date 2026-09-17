@@ -29,6 +29,8 @@ from core.signal_evaluator import (
     save_config as save_signal_config, DATA_DIR as SIGNAL_DATA_DIR,
 )
 from core import db as _db
+from core import level_watcher
+from core.telegram_notifier import send_telegram_message, is_configured as telegram_configured
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
@@ -1931,25 +1933,12 @@ def api_position_ratio_manual_all():
 
 def _telegram_send(text: str) -> None:
     """Send a Telegram message to all configured chat IDs.
-    TELEGRAM_CHAT_ID may be a single ID or comma-separated list."""
-    import requests as _req
-    token    = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID", "")
-    if not token or not chat_ids_raw:
-        print("⚠️  Telegram: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set — skipping notification")
-        return
-    chat_ids = [c.strip() for c in chat_ids_raw.split(",") if c.strip()]
-    for chat_id in chat_ids:
-        try:
-            resp = _req.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
-                timeout=10,
-            )
-            if not resp.ok:
-                print(f"⚠️  Telegram: send to {chat_id} failed {resp.status_code} — {resp.text[:200]}")
-        except Exception as exc:
-            print(f"⚠️  Telegram: send to {chat_id} error — {exc}")
+
+    Delegates to core.telegram_notifier so the tiered signal alerts and the
+    level-watcher alerts share one implementation. Behaviour is unchanged:
+    multi-chat fan-out, Markdown parse mode, warn-and-skip when unconfigured.
+    """
+    send_telegram_message(text)
 
 
 def _tp_achievability_check(symbol: str, tp_pct: float, l3_data: dict,
@@ -2229,6 +2218,115 @@ def api_signal_config_save():
 
 
 
+# ── Resistance / Support Level Alerts ─────────────────────────────────────────
+# Independent of the Layer 1/2/3 framework: it only borrows the price reader
+# below. Watched coins come from data/resistance_levels.json, NOT from the
+# five-coin _SIGNAL_HISTORY_SYMBOLS set, so this list can grow on its own.
+
+_LEVEL_CHECK_MINUTES = 5  # matches the Layer 2 / Market Mechanics cadence
+
+
+def _current_price(symbol: str) -> Optional[float]:
+    """Price reader handed to level_watcher.check_levels().
+
+    Prefers the Layer 3 cache — for the five dashboard coins the price is
+    already there and no extra request is made. Coins outside that set have
+    no Layer 3 entry (Layer 3 computes klines + order book + five indicators,
+    which is far too heavy to run for ~20 watch-list coins every 5 minutes),
+    so they fall back to Binance's lightweight spot ticker.
+    """
+    symbol = symbol.upper()
+
+    cached = _layer3_cache.get(symbol)
+    if cached and time.time() - cached["ts"] < _LAYER3_TTL:
+        price = (cached.get("data") or {}).get("price")
+        if price:
+            return float(price)
+
+    import requests
+    resp = requests.get(
+        f"{_BINANCE_SPOT}/api/v3/ticker/price",
+        params={"symbol": symbol}, timeout=8,
+    )
+    resp.raise_for_status()
+    price = resp.json().get("price")
+    return float(price) if price is not None else None
+
+
+@app.route("/api/levels", methods=["GET"])
+def api_levels_all():
+    """GET /api/levels — every watched coin with its settings and level count."""
+    return jsonify(level_watcher.get_all())
+
+
+@app.route("/api/levels/test-telegram", methods=["POST"])
+def api_levels_test_telegram():
+    """POST /api/levels/test-telegram — verify bot token / chat id setup."""
+    if not telegram_configured():
+        return jsonify({
+            "ok": False,
+            "error": "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set in .env",
+        }), 400
+
+    sent = send_telegram_message(
+        "✅ Infinity test message — level alerts are wired up correctly."
+    )
+    if not sent:
+        return jsonify({
+            "ok": False,
+            "error": "Telegram rejected the message — check the token and chat id",
+        }), 502
+    return jsonify({"ok": True, "message": "Test message sent"})
+
+
+@app.route("/api/levels/<coin>", methods=["GET"])
+def api_levels_get(coin):
+    """GET /api/levels/<coin> — saved levels + alert_pct, defaults if unset."""
+    return jsonify(level_watcher.get_coin(coin))
+
+
+@app.route("/api/levels/<coin>", methods=["POST"])
+def api_levels_save(coin):
+    """POST /api/levels/<coin> — body: {"levels": [...], "alert_pct": 3.0}"""
+    payload = request.get_json(silent=True) or {}
+    try:
+        saved = level_watcher.set_coin(
+            coin, payload.get("levels"), payload.get("alert_pct"))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except OSError as exc:
+        return jsonify({"ok": False, "error": f"could not save levels: {exc}"}), 500
+    return jsonify({"ok": True, **saved})
+
+
+@app.route("/api/levels/<coin>", methods=["DELETE"])
+def api_levels_delete(coin):
+    """DELETE /api/levels/<coin> — stop watching a coin entirely."""
+    try:
+        removed = level_watcher.delete_coin(coin)
+    except OSError as exc:
+        return jsonify({"ok": False, "error": f"could not save levels: {exc}"}), 500
+    if not removed:
+        return jsonify({"ok": False, "error": f"{coin.upper()} is not being watched"}), 404
+    return jsonify({"ok": True, "coin": coin.upper()})
+
+
+def _check_levels_job():
+    """Every 5 minutes: check each watched coin's levels against live price.
+
+    One coin's failed price fetch must not stop the rest, so each check is
+    isolated — same posture as the Layer 2/3 recording jobs.
+    """
+    for coin in level_watcher.watched_coins():
+        try:
+            result = level_watcher.check_levels(coin, _current_price)
+            for alert in result.get("alerts", []):
+                print(f"🔔 Level alert: {coin} {alert['gap_pct']}% from "
+                      f"{alert['level']} (from {alert['side']})")
+        except Exception as exc:
+            print(f"⚠️  Level watcher: check failed for {coin}: {exc}")
+
+
 # ── Routes — Settings (API keys stored in .env) ───────────────────────────────
 
 ENV_PATH = os.path.join(ROOT, ".env")
@@ -2314,6 +2412,8 @@ _signal_scheduler = BackgroundScheduler(timezone="UTC")
 _signal_scheduler.add_job(_record_layer1_job, "interval", hours=6, id="record_l1")
 _signal_scheduler.add_job(_record_layer2_job, "interval", hours=1, id="record_l2")
 _signal_scheduler.add_job(_record_layer3_job, "cron", hour=0, minute=0, id="record_l3")
+_signal_scheduler.add_job(_check_levels_job, "interval",
+                           minutes=_LEVEL_CHECK_MINUTES, id="check_levels")
 _signal_scheduler.start()
 
 

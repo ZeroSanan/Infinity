@@ -44,3 +44,11 @@ logs/
 
 # Claude Code session state
 .claude/
+
+# Runtime SQLite database (Layer 1/2/3 history, signal + checklist state)
+data/infinity.db
+data/infinity.db-wal
+data/infinity.db-shm
+
+# Resistance/Support level watch list + notify state (generated at runtime)
+data/resistance_levels.json
