@@ -2223,7 +2223,9 @@ def api_signal_config_save():
 # below. Watched coins come from data/resistance_levels.json, NOT from the
 # five-coin _SIGNAL_HISTORY_SYMBOLS set, so this list can grow on its own.
 
-_LEVEL_CHECK_MINUTES = 5  # matches the Layer 2 / Market Mechanics cadence
+_LEVEL_CHECK_MINUTES = 15  # deliberately slower than Layer 2: the watcher's
+                           # 2-check confirmation means a shorter interval only
+                           # buys noise, not earlier warning
 
 
 def _current_price(symbol: str) -> Optional[float]:
@@ -2232,7 +2234,7 @@ def _current_price(symbol: str) -> Optional[float]:
     Prefers the Layer 3 cache — for the five dashboard coins the price is
     already there and no extra request is made. Coins outside that set have
     no Layer 3 entry (Layer 3 computes klines + order book + five indicators,
-    which is far too heavy to run for ~20 watch-list coins every 5 minutes),
+    which is far too heavy to run for ~20 watch-list coins every 15 minutes),
     so they fall back to Binance's lightweight spot ticker.
     """
     symbol = symbol.upper()
@@ -2312,7 +2314,7 @@ def api_levels_delete(coin):
 
 
 def _check_levels_job():
-    """Every 5 minutes: check each watched coin's levels against live price.
+    """Every 15 minutes: check each watched coin's levels against live price.
 
     One coin's failed price fetch must not stop the rest, so each check is
     isolated — same posture as the Layer 2/3 recording jobs.
@@ -2322,7 +2324,7 @@ def _check_levels_job():
             result = level_watcher.check_levels(coin, _current_price)
             for alert in result.get("alerts", []):
                 print(f"🔔 Level alert: {coin} {alert['gap_pct']}% from "
-                      f"{alert['level']} (from {alert['side']})")
+                      f"{alert['level']} ({alert['direction']})")
         except Exception as exc:
             print(f"⚠️  Level watcher: check failed for {coin}: {exc}")
 

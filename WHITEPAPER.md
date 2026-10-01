@@ -724,7 +724,7 @@ Caches are per-symbol dicts of `{"data": …, "ts": …}` checked against `time.
 | `record_l1` | Every 6 h | Snapshot Layer 1 → `signal_history`; prune records older than 90 days |
 | `record_l2` | Every 1 h | Per symbol: snapshot Layer 2 + Mechanics + Master Summary → then **evaluate tier and notify** |
 | `record_l3` | Cron, 00:00 UTC | Per symbol: snapshot Layer 3 — one daily structural datapoint |
-| `check_levels` | Every 5 min | Per watched coin: compare live price against its levels, alert on approach (§12) |
+| `check_levels` | Every 15 min | Per watched coin: compare live price against its levels, alert on a confirmed approach (§12) |
 
 The recording cadence is matched to the **information rate of the underlying data**, not to what the API would tolerate. Layer 3 records once daily because an order-book snapshot from six hours ago is noise in a history table — it is useful live and worthless historically.
 
@@ -867,8 +867,15 @@ The watched set is therefore **whatever is present in `resistance_levels.json`**
   "BTC": {
     "levels": [123238.74, 119805.78, 76321.68],
     "alert_pct": 3.0,
-    "notified": {
-      "76321.68": {"side": "below", "last_notified": "2026-09-17T08:00:00Z"}
+    "last_price": 76424.01,
+    "last_checked": "2026-10-01T08:00:00Z",
+    "level_state": {
+      "76321.68": {
+        "state": "cooling",
+        "pending_since": null,
+        "notified_at": "2026-09-15T08:20:00Z",
+        "direction": "resistance"
+      }
     }
   }
 }
@@ -878,7 +885,11 @@ The watched set is therefore **whatever is present in `resistance_levels.json`**
 |-------|---------|
 | `levels` | Price levels to watch. Stored de-duplicated and sorted descending. |
 | `alert_pct` | Per-coin alert band. Absent → `LEVEL_ALERT_DEFAULT_PCT` (default 3.0). |
-| `notified` | Per-level notification state, keyed by a normalised level string. Drives cooldown and re-entry. |
+| `last_price` | Price at the previous check. The sole input to the direction read (§12.4). |
+| `last_checked` | Timestamp of the previous check. Diagnostic. |
+| `level_state` | Per-level state machine, keyed by a normalised level string. A level with no entry is `armed`. |
+
+An earlier schema stored a flat `notified` map. `_migrate_entry()` upgrades it in place on first read: a level v1 had already alerted on becomes `cooling`, not `armed`, so the upgrade cannot produce a burst of repeat alerts for levels price happens to be near at deploy time.
 
 Writes are **atomic** (temp file in the same directory, then `os.replace`) so a crash mid-write cannot truncate the watch list, and the whole read-modify-write cycle is guarded by a module-level lock because the scheduler thread and Flask request threads both mutate the file. A missing or corrupt file is treated as an empty watch list rather than an exception — the scheduler job must not die because a file was hand-edited badly.
 
@@ -896,36 +907,65 @@ This is the one part of the system that is **not** in SQLite. See §15.9.
 For each level on each watched coin:
 
 ```
-gap_pct = |price − level| / level × 100
-side    = "above" if price >= level else "below"
+gap_pct   = |price − level| / level × 100
+direction = resistance   if level > price and price > last_price   (rising toward it)
+            support      if level < price and price < last_price   (falling toward it)
+            none         otherwise — no alert
 ```
 
-If `gap_pct > alert_pct` the price is outside the band: any stored notification for that level is **dropped**, and nothing is sent. If `gap_pct <= alert_pct`, an alert is sent unless suppressed by the rules in §12.5.
+Direction is derived purely by comparing the current price against `last_price`, the price recorded at the previous check. It carries two jobs at once: it labels the level (resistance above a rising price, support below a falling one), and it acts as a filter. A level sitting inside the band while price moves **away** from it produces no alert at all — proximity alone is not an approach.
 
-`side` is part of the alert identity, not decoration. A level approached from below (resistance) and later from above (the same level acting as support) are two different events, and each alerts once.
+Two consequences follow from using the previous check as the baseline:
 
-### 12.5 Re-notification rules
+- The **first check for a coin** has no `last_price`, so it establishes the baseline and alerts nothing. This costs one cycle once per coin, not per restart, because `last_price` is persisted.
+- A **flat** price between checks yields no direction and therefore no alert.
 
-Two independent rules gate every alert:
+Evaluation runs in two passes. The first visits every level and does housekeeping only — clearing hysteresis on levels far enough away, and dropping `pending` on levels whose gap has widened out of band. This pass must cover every level, because a cooling level is by definition far from price and would otherwise never get the chance to re-arm. The second pass acts on at most one level, per §12.5.
+
+### 12.5 Noise control
+
+Four independent rules gate every alert; a level must pass all of them.
 
 | Rule | Behaviour |
 |------|-----------|
-| **Cooldown** | The same `(coin, level, side)` is not re-alerted within `NOTIFY_COOLDOWN_HOURS` (4 h, a module constant). Prevents a price hovering inside the band from alerting every five minutes. |
-| **Band re-entry** | When price leaves the band, the stored notification is cleared. A genuine re-approach therefore alerts **immediately**, without waiting out the cooldown. |
+| **Direction** | Price must be moving toward the level (§12.4). Proximity while moving away is not an approach. |
+| **Confirmation** | A level must qualify on **two consecutive checks** before it fires. The first moves it `armed → pending`; the second sends. A single tick that happens to land inside the band is not enough. If a pending level's gap widens beyond `alert_pct`, pending is dropped and confirmation starts over. |
+| **Nearest only** | At most **one alert per coin per check**. When several levels qualify simultaneously, only the closest fires; the others keep their state and can still fire on a later check once the nearest has cleared. |
+| **Hysteresis re-arm** | After firing, a level cannot fire again until price has moved at least `REARM_DISTANCE_MULTIPLIER × alert_pct` away (6% for a 3% band) **and then** re-entered the band. |
 
-Together these distinguish *still near the level* (quiet) from *came back to the level* (alert), which a cooldown alone cannot do.
+The per-level state machine:
+
+```
+    armed ──(in band, approaching)──> pending ──(confirmed again)──> notified
+      ^                                  │                              │
+      │                                  │ (gap > alert_pct)            │ (next check)
+      │                                  v                              v
+      └────────(gap >= 2 × alert_pct)── armed <───────────────────── cooling
+```
+
+`armed` is the implicit default: a level with no stored entry is armed.
+
+**Hysteresis replaces the fixed-time cooldown** the first version used. A 4-hour timer silences a genuine second approach that arrives inside the window and permits a meaningless one that arrives outside it; distance measures the thing actually worth reacting to. The timer, and its `NOTIFY_COOLDOWN_HOURS` constant, are gone.
+
+The trade-off is deliberate and worth stating plainly: **a level whose price oscillates with an amplitude between 1× and 2× `alert_pct` fires once and then stays quiet** until a larger excursion clears the re-arm distance. In a market that ranges tightly around a level, that is the intended outcome — but it does mean silence is not evidence that price is far away. Lowering `alert_pct` or `REARM_DISTANCE_MULTIPLIER` widens the set of moves that re-arm.
 
 Two further behaviours protect the state:
 
-- **Failed delivery is not recorded.** If Telegram is unconfigured or the send fails, `notified` is left untouched, so the next cycle retries rather than silently swallowing the alert.
-- **Editing levels preserves state.** Re-saving a coin keeps the `notified` entries for levels that survive the edit, so adding one level to a list does not re-fire alerts for the others. Removed levels have their state dropped.
+- **Failed delivery is not recorded.** If Telegram is unconfigured or the send fails, the level stays `pending`, so the next check retries rather than silently swallowing the alert.
+- **Editing levels preserves state.** Re-saving a coin keeps the `level_state` entries for surviving levels, so adding one level does not re-arm the others. `last_price` is kept too, so an edit does not cost the next check its direction read. Removed levels have their state dropped.
 
 ### 12.6 Alert format
 
 ```
-🔔 BTC approaching resistance/support
+🔴 BTC approaching RESISTANCE
 Level: 100,000
-Current: 98,000 (2.00% away, from below)
+Current: 98,500 (1.50% away, rising)
+```
+
+```
+🟢 BTC approaching SUPPORT
+Level: 100,000
+Current: 102,000 (2.00% away, falling)
 ```
 
 Sent as plain text — unlike the tiered-signal alerts, which use Markdown — so a level or coin containing Markdown-significant characters cannot break rendering.
@@ -938,7 +978,9 @@ Missing configuration is **not** an error. Exactly as an unset `TWELVE_DATA_API_
 
 ### 12.8 Schedule
 
-A dedicated APScheduler job, `check_levels`, runs every **5 minutes** — matching the Layer 2 / Market Mechanics cadence, and comfortably inside the 4-hour cooldown. It is a separate job function, not piggybacked on the signal-recording jobs, so a slow level check cannot delay a Layer 2 snapshot or vice versa.
+A dedicated APScheduler job, `check_levels`, runs every **15 minutes**. It is deliberately slower than the Layer 2 / Market Mechanics cadence: with a two-check confirmation requirement, a shorter interval buys noise rather than earlier warning, since the second confirming sample would simply arrive sooner on a price that has barely moved. It is a separate job function, not piggybacked on the signal-recording jobs, so a slow level check cannot delay a Layer 2 snapshot or vice versa.
+
+The interval also sets the latency floor: a genuine approach is reported one full interval after it is first seen, so up to 30 minutes from first entering the band.
 
 Each coin's check is individually wrapped: one coin's failed price fetch logs and continues, leaving the rest of the list to be checked. This is the same error-isolation posture as the Layer 2/3 recording jobs.
 
