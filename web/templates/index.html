@@ -1142,6 +1142,7 @@
   }
   .feedback.ok  { background: var(--green-bg);  color: var(--green);  border: 1px solid rgba(52,199,89,.2); }
   .feedback.err { background: var(--red-bg);    color: var(--red);    border: 1px solid rgba(255,59,48,.2); }
+  .feedback.warn { background: rgba(255,149,0,.12); color: var(--orange, #ff9500); border: 1px solid rgba(255,149,0,.25); }
 
   /* ── KEY FIELD ───────────────────────────────────────────────── */
   .key-wrap { position: relative; }
@@ -1458,6 +1459,25 @@
   .ms-lvl-del { background:none; border:none; color:var(--red); cursor:pointer; font-size:12px; padding:2px 6px; border-radius:4px; }
   .ms-lvl-del:hover { background:var(--surface2); }
   .ms-lvl-empty { padding:10px 14px; font-size:12px; color:var(--muted); }
+
+  /* Price Alerts */
+  .ms-pa-chk { display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text2); cursor:pointer; }
+  .ms-pa-chk input[type=checkbox] { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; }
+  .ms-pa-row { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--border); font-size:12px; flex-wrap:wrap; }
+  .ms-pa-row:last-child { border-bottom:none; }
+  .ms-pa-coin { font-weight:700; min-width:52px; }
+  .ms-pa-target { font-variant-numeric:tabular-nums; min-width:92px; }
+  .ms-pa-meta { color:var(--text2); flex:1; min-width:140px; }
+  .ms-pa-gap { font-variant-numeric:tabular-nums; font-weight:600; }
+  .ms-pa-gap.near { color:var(--green); }
+  .ms-pa-note { display:block; color:var(--muted); font-size:10.5px; margin-top:2px; }
+  .ms-pa-badge { font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; text-transform:uppercase; letter-spacing:.4px; }
+  .ms-pa-badge.active { background:rgba(60,160,90,.18); color:var(--green); }
+  .ms-pa-badge.triggered { background:rgba(120,120,120,.18); color:var(--muted); }
+  .ms-pa-badge.cancelled { background:rgba(170,80,80,.15); color:var(--red); }
+  .ms-pa-hist-hdr { padding:8px 14px; font-size:11px; font-weight:700; letter-spacing:.5px; color:var(--muted); text-transform:uppercase; cursor:pointer; border-top:1px solid var(--border); user-select:none; }
+  .ms-pa-hist { display:none; }
+  .ms-pa-hist.open { display:block; }
 
   /* ── Slide-over panel ── */
   .ms-slideover-overlay {
@@ -2042,6 +2062,63 @@
         <div class="ms-lvl-list" id="ms-lvl-list">
           <div class="ms-lvl-empty">Loading watched coins…</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Price Alerts (collapsed by default) -->
+    <div class="ms-layer-hdr" onclick="toggleLayer('pa')" style="margin-top:8px">
+      <span class="ms-layer-arrow ms-collapsed" id="ms-lpa-arrow">▼</span>
+      <span class="ms-layer-title">🎯 PRICE ALERTS</span>
+    </div>
+    <div class="ms-layer-body ms-collapsed" id="ms-layerpa-body">
+      <div class="ms-signal-card">
+        <div class="ms-signal-card-hdr">
+          <span class="ms-signal-card-title">🎯 TARGET PRICE WATCH</span>
+          <div class="ms-signal-card-actions">
+            <button class="ms-signal-cfg-btn" onclick="levelsTestTelegram()" title="Send a test message to your Telegram chat">✈ Send test Telegram message</button>
+          </div>
+        </div>
+
+        <div class="ms-lvl-form">
+          <div class="ms-lvl-field">
+            <label class="ms-lvl-lbl" for="ms-pa-coin">Coin</label>
+            <input class="ms-lvl-input" type="text" id="ms-pa-coin" list="ms-pa-coin-options"
+                   placeholder="BTC" autocomplete="off">
+            <datalist id="ms-pa-coin-options"></datalist>
+          </div>
+          <div class="ms-lvl-field">
+            <label class="ms-lvl-lbl" for="ms-pa-target">Target price</label>
+            <input class="ms-lvl-input" type="number" id="ms-pa-target" step="any" min="0" placeholder="76000">
+          </div>
+          <div class="ms-lvl-field">
+            <label class="ms-lvl-lbl" for="ms-pa-pct">Alert %</label>
+            <input class="ms-lvl-input narrow" type="number" id="ms-pa-pct"
+                   min="0.1" max="20" step="0.1" value="1">
+          </div>
+          <div class="ms-lvl-field grow">
+            <label class="ms-lvl-lbl" for="ms-pa-note">Note (optional)</label>
+            <input class="ms-lvl-input" style="width:100%" type="text" id="ms-pa-note"
+                   maxlength="280" placeholder="e.g. scale out half here">
+          </div>
+          <div class="ms-lvl-field grow">
+            <label class="ms-pa-chk"><input type="checkbox" id="ms-pa-touch"> Also notify when price touches the target</label>
+            <span class="ms-lvl-hint">One message when price enters the band. No confirmation delay — the alert fires on the first check that qualifies.</span>
+          </div>
+        </div>
+
+        <div class="ms-lvl-actions">
+          <button class="btn btn-sm" onclick="paAdd()">Add alert</button>
+          <button class="btn btn-ghost btn-sm" id="ms-pa-save-btn" onclick="paSaveEdit()" style="display:none">Save changes</button>
+          <button class="btn btn-ghost btn-sm" id="ms-pa-cancel-btn" onclick="paCancelEdit()" style="display:none">Cancel</button>
+          <span id="ms-pa-feedback" class="feedback" style="display:none"></span>
+        </div>
+
+        <div id="ms-pa-list">
+          <div class="ms-lvl-empty">Loading alerts…</div>
+        </div>
+
+        <div class="ms-pa-hist-hdr" onclick="paToggleHistory()" id="ms-pa-hist-hdr">▸ History (0)</div>
+        <div class="ms-pa-hist" id="ms-pa-hist"></div>
       </div>
     </div>
 
@@ -4065,7 +4142,7 @@ function toggleLayer(n) {
 }
 
 function initLayerCollapseState() {
-  [1, 2, 3, 'hist', 'levels'].forEach(n => {
+  [1, 2, 3, 'hist', 'levels', 'pa'].forEach(n => {
     const body  = document.getElementById('ms-layer' + n + '-body');
     const arrow = document.getElementById('ms-l' + n + '-arrow');
     if (!body) return;
@@ -5796,6 +5873,192 @@ async function levelsTestTelegram() {
   }
 }
 
+// ── Price Alerts ──────────────────────────────────────────────────────────────
+// Independent of the level watcher — talks only to /api/price-alerts.
+let _paAlerts   = [];
+let _paEditId   = null;
+let _paHistOpen = false;
+
+function paFeedback(msg, type = 'ok') {
+  const el = document.getElementById('ms-pa-feedback');
+  if (!el) return;
+  el.className = `feedback ${type}`;
+  el.style.display = 'block';
+  el.textContent = msg;
+  clearTimeout(paFeedback._t);
+  paFeedback._t = setTimeout(() => { el.style.display = 'none'; }, 6000);
+}
+
+function paNum(v, d = 8) {
+  return v == null ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: d });
+}
+
+async function paLoad() {
+  try {
+    const data = await lvlRequest('/api/price-alerts');
+    _paAlerts = data.alerts || [];
+  } catch (err) {
+    _paAlerts = [];
+    paFeedback(String(err.message || err), 'err');
+  }
+  paRender();
+}
+
+function paRender() {
+  const list = document.getElementById('ms-pa-list');
+  const hist = document.getElementById('ms-pa-hist');
+  const hdr  = document.getElementById('ms-pa-hist-hdr');
+  const opts = document.getElementById('ms-pa-coin-options');
+  if (!list) return;
+
+  // Coin suggestions: the dashboard five plus anything already alerted on.
+  if (opts) {
+    const coins = Array.from(new Set(
+      Object.keys(MS_SYMBOLS).concat(_paAlerts.map(a => a.coin))
+    )).sort();
+    opts.innerHTML = coins.map(c => `<option value="${esc(c)}">`).join('');
+  }
+
+  const active = _paAlerts.filter(a => a.status === 'active');
+  const done   = _paAlerts.filter(a => a.status !== 'active');
+
+  list.innerHTML = active.length
+    ? active.map(paRowHtml).join('')
+    : `<div class="ms-lvl-empty">No active price alerts — add one above.</div>`;
+
+  if (hdr)  hdr.textContent = `${_paHistOpen ? '▾' : '▸'} History (${done.length})`;
+  if (hist) {
+    hist.className = `ms-pa-hist${_paHistOpen ? ' open' : ''}`;
+    hist.innerHTML = done.length
+      ? done.map(paRowHtml).join('')
+      : `<div class="ms-lvl-empty">Nothing triggered or cancelled yet.</div>`;
+  }
+}
+
+function paRowHtml(a) {
+  const gap    = a.gap_pct == null ? null : Number(a.gap_pct);
+  const near   = gap != null && gap <= Number(a.alert_pct);
+  const gapTxt = gap == null ? '—'
+    : `<span class="ms-pa-gap${near ? ' near' : ''}">${gap.toFixed(2)}%</span> ${esc(a.side || '')}`;
+  const when   = a.triggered_at ? ` · ${esc(a.triggered_at.replace('T', ' ').replace('Z', ' UTC'))}` : '';
+
+  return `<div class="ms-pa-row">
+    <span class="ms-pa-coin">${esc(a.coin)}</span>
+    <span class="ms-pa-target">${esc(paNum(a.target_price))}</span>
+    <span class="ms-pa-meta">
+      ${a.last_price != null ? `now ${esc(paNum(a.last_price))} · ${gapTxt}` : 'awaiting first check'}
+      · band ${esc(String(a.alert_pct))}%${a.notify_on_touch ? ' · +touch' : ''}${when}
+      ${a.note ? `<span class="ms-pa-note">${esc(a.note)}</span>` : ''}
+    </span>
+    <span class="ms-pa-badge ${esc(a.status)}">${esc(a.status)}</span>
+    <button class="ms-signal-cfg-btn" onclick="paEdit(${Number(a.id)})" title="Load into the form above">✎ Edit</button>
+    <button class="ms-lvl-del" onclick="paDelete(${Number(a.id)})" title="Delete this alert">✕ Delete</button>
+  </div>`;
+}
+
+function paToggleHistory() {
+  _paHistOpen = !_paHistOpen;
+  paRender();
+}
+
+function paFormValues() {
+  const coin = (document.getElementById('ms-pa-coin').value || '').trim().toUpperCase();
+  const target = parseFloat(document.getElementById('ms-pa-target').value);
+  const pct = parseFloat(document.getElementById('ms-pa-pct').value);
+  const note = (document.getElementById('ms-pa-note').value || '').trim();
+  const touch = !!document.getElementById('ms-pa-touch').checked;
+  return { coin, target, pct, note, touch };
+}
+
+function paClearForm() {
+  ['ms-pa-coin', 'ms-pa-target', 'ms-pa-note'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('ms-pa-pct').value = '1';
+  document.getElementById('ms-pa-touch').checked = false;
+}
+
+function paShowWarnings(data) {
+  const warnings = data.warnings || [];
+  if (warnings.length) paFeedback(warnings.join(' · '), 'warn');
+}
+
+async function paAdd() {
+  const { coin, target, pct, note, touch } = paFormValues();
+  if (!coin) { paFeedback('Enter a coin symbol first (e.g. BTC).', 'err'); return; }
+  if (!isFinite(target) || target <= 0) { paFeedback('Target price must be a positive number.', 'err'); return; }
+
+  try {
+    const data = await lvlRequest('/api/price-alerts', 'POST', {
+      coin, target_price: target, alert_pct: pct,
+      note: note || null, notify_on_touch: touch,
+    });
+    toast(`${coin} alert at ${paNum(target)} added`);
+    if ((data.warnings || []).length) paShowWarnings(data);
+    else paFeedback(`Watching ${coin} for ${paNum(target)} (±${pct}%).`);
+    paClearForm();
+    await paLoad();
+  } catch (err) {
+    paFeedback(String(err.message || err), 'err');
+  }
+}
+
+function paEdit(id) {
+  const a = _paAlerts.find(x => Number(x.id) === Number(id));
+  if (!a) return;
+  _paEditId = Number(id);
+  document.getElementById('ms-pa-coin').value   = a.coin;
+  document.getElementById('ms-pa-target').value = a.target_price;
+  document.getElementById('ms-pa-pct').value    = a.alert_pct;
+  document.getElementById('ms-pa-note').value   = a.note || '';
+  document.getElementById('ms-pa-touch').checked = !!a.notify_on_touch;
+  document.getElementById('ms-pa-save-btn').style.display   = '';
+  document.getElementById('ms-pa-cancel-btn').style.display = '';
+  paFeedback(`Editing alert #${id} — the coin cannot be changed; delete and re-add instead.`);
+}
+
+function paCancelEdit() {
+  _paEditId = null;
+  document.getElementById('ms-pa-save-btn').style.display   = 'none';
+  document.getElementById('ms-pa-cancel-btn').style.display = 'none';
+  paClearForm();
+}
+
+async function paSaveEdit() {
+  if (_paEditId == null) return;
+  const { target, pct, note, touch } = paFormValues();
+  if (!isFinite(target) || target <= 0) { paFeedback('Target price must be a positive number.', 'err'); return; }
+
+  try {
+    const data = await lvlRequest(`/api/price-alerts/${_paEditId}`, 'PUT', {
+      target_price: target, alert_pct: pct,
+      note: note || null, notify_on_touch: touch,
+    });
+    toast(`Alert #${_paEditId} updated`);
+    paFeedback(data.rearmed
+      ? 'Target or band changed — the alert is armed again and can fire.'
+      : 'Alert updated.');
+    paCancelEdit();
+    await paLoad();
+  } catch (err) {
+    paFeedback(String(err.message || err), 'err');
+  }
+}
+
+async function paDelete(id) {
+  const a = _paAlerts.find(x => Number(x.id) === Number(id));
+  const what = a ? `${a.coin} at ${paNum(a.target_price)}` : `alert #${id}`;
+  if (!confirm(`Delete the alert for ${what}?`)) return;
+  try {
+    await lvlRequest(`/api/price-alerts/${Number(id)}`, 'DELETE');
+    toast('Alert deleted');
+    if (_paEditId === Number(id)) paCancelEdit();
+    await paLoad();
+  } catch (err) {
+    paFeedback(String(err.message || err), 'err');
+  }
+}
+
 // Sync Checklist TP to server so background evaluator can read it
 function syncChecklistTpToServer() {
   const plan = collectPreTradePlan();
@@ -5919,12 +6182,14 @@ loadSignalConfig();
   ptRecalcAll();
   positionRestoreManual();
   loadLevels();
+  paLoad();
 })();
 setInterval(() => loadLayer2(), 300000);
 setInterval(() => loadLayer1(), 900000);
 setInterval(() => loadLayer3(), 120000);
 setInterval(() => loadSignalHistory(), 300000);
 setInterval(() => loadSignalState(false), 300000);
+setInterval(() => paLoad(), 60000);
 setInterval(updateL1Timestamp, 60000);
 </script>
 </body>

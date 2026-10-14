@@ -30,6 +30,7 @@ from core.signal_evaluator import (
 )
 from core import db as _db
 from core import level_watcher
+from core import price_alerts
 from core.telegram_notifier import send_telegram_message, is_configured as telegram_configured
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
@@ -2232,8 +2233,8 @@ LEVEL_CHECK_INTERVAL_SECONDS = 60
 def _ticker_price(symbol: str) -> Optional[float]:
     """Single-symbol spot price. Per-coin fallback when the batch call fails.
 
-    The level watcher reads prices ONLY from this endpoint. It deliberately
-    does not consult the Layer 3 cache: that holds `round(close, 2)` of the
+    Both alert features read prices ONLY from this endpoint. They deliberately
+    do not consult the Layer 3 cache: that holds `round(close, 2)` of the
     current 4h kline, up to _LAYER3_TTL (120s) old, and only for the five
     dashboard coins — so mixing the two made a price/last_price comparison
     meaningless, which is what mislabelled alerts.
@@ -2251,9 +2252,10 @@ def _ticker_price(symbol: str) -> Optional[float]:
 def _ticker_prices(symbols: list) -> dict:
     """Spot price for many symbols in ONE request.
 
-    /api/v3/ticker/price accepts a JSON array in `symbols`, so a 20-coin watch
-    list costs one call per cycle rather than twenty. On any failure each
-    symbol is fetched individually so one bad symbol cannot blind the rest.
+    /api/v3/ticker/price accepts a JSON array in `symbols`, so the union of
+    level-alert and price-alert coins costs one call per cycle rather than one
+    per coin. On any failure each symbol is fetched individually so one bad
+    symbol cannot blind the rest.
     """
     symbols = [s.upper() for s in symbols]
     if not symbols:
@@ -2272,7 +2274,7 @@ def _ticker_prices(symbols: list) -> dict:
             raise ValueError("unexpected batch ticker response")
         return {r["symbol"]: float(r["price"]) for r in rows if r.get("price") is not None}
     except Exception as exc:
-        print(f"⚠️  Level watcher: batch price fetch failed ({exc}) — falling back per coin")
+        print(f"⚠️  Alerts: batch price fetch failed ({exc}) — falling back per coin")
 
     out: dict = {}
     for sym in symbols:
@@ -2281,7 +2283,7 @@ def _ticker_prices(symbols: list) -> dict:
             if price:
                 out[sym] = price
         except Exception as exc:
-            print(f"⚠️  Level watcher: price fetch failed for {sym}: {exc}")
+            print(f"⚠️  Alerts: price fetch failed for {sym}: {exc}")
     return out
 
 
@@ -2365,26 +2367,38 @@ def api_levels_delete(coin):
     return jsonify({"ok": True, "coin": coin.upper()})
 
 
-def _check_levels_job():
-    """Every LEVEL_CHECK_INTERVAL_SECONDS: check each watched coin's levels.
+def _make_window_cache():
+    """Per-tick memo for _recent_window().
 
-    Prices for the whole watch list come from one batched spot-ticker call, so
-    every coin's price and last_price are sampled from the same source at the
-    same instant. One coin's failure must not stop the rest, so each check is
-    isolated — same posture as the Layer 2/3 recording jobs.
+    Both alert features may want the 1m candle window for the same symbol in
+    one tick; this fetches each symbol at most once and swallows per-symbol
+    failures so a missing window degrades to "no wick data" rather than an
+    exception.
     """
-    coins = level_watcher.watched_coins()
-    if not coins:
-        return
+    cache: dict = {}
 
-    prices = _ticker_prices([level_watcher.symbol_for(c) for c in coins])
+    def get(symbol):
+        key = (symbol or "").upper()
+        if key not in cache:
+            try:
+                cache[key] = _recent_window(key)
+            except Exception as exc:
+                print(f"⚠️  Alerts: 1m range fetch failed for {key}: {exc}")
+                cache[key] = None
+        return cache[key]
 
-    for coin in coins:
+    return get
+
+
+def _run_level_alerts(prices: dict, window_get) -> None:
+    """Resistance/support level watcher. Behaviour unchanged — it still gets a
+    lazy window_fn, now backed by the shared per-tick cache."""
+    for coin in level_watcher.watched_coins():
         try:
             result = level_watcher.check_levels(
                 coin,
                 lambda sym: prices.get(sym.upper()),
-                window_fn=_recent_window,
+                window_fn=window_get,
             )
             for alert in result.get("alerts", []):
                 event = alert.get("event", "approach")
@@ -2392,6 +2406,184 @@ def _check_levels_job():
                       f"{alert['level']} ({alert['direction']})")
         except Exception as exc:
             print(f"⚠️  Level watcher: check failed for {coin}: {exc}")
+
+
+def _run_price_alerts(prices: dict, window_get, pa_coins: list) -> None:
+    """Price alerts. Windows are fetched only for coins that actually have an
+    active alert, since wick detection is the only thing that needs them."""
+    windows = {price_alerts.symbol_for(c): window_get(price_alerts.symbol_for(c))
+               for c in pa_coins}
+    price_alerts.check_price_alerts(prices, windows)
+
+
+def _check_levels_job():
+    """Every LEVEL_CHECK_INTERVAL_SECONDS: run both alert features.
+
+    ONE batched spot-ticker call covers the union of coins watched by the level
+    watcher and by price alerts, so every price in the tick is sampled from the
+    same source at the same instant and neither feature adds a second request.
+
+    The two features are run in separate try/except blocks: a failure in price
+    alerts cannot stop level alerts, or vice versa. Each also isolates errors
+    per coin / per alert internally.
+    """
+    level_coins = level_watcher.watched_coins()
+    pa_coins    = _db.price_alerts_active_coins()
+    if not level_coins and not pa_coins:
+        return
+
+    symbols = sorted({level_watcher.symbol_for(c) for c in level_coins} |
+                     {price_alerts.symbol_for(c) for c in pa_coins})
+    prices = _ticker_prices(symbols)
+    window_get = _make_window_cache()
+
+    try:
+        _run_level_alerts(prices, window_get)
+    except Exception as exc:
+        print(f"⚠️  Level watcher: job failed: {exc}")
+
+    try:
+        _run_price_alerts(prices, window_get, pa_coins)
+    except Exception as exc:
+        print(f"⚠️  Price alerts: job failed: {exc}")
+
+
+# ── Price Alerts ──────────────────────────────────────────────────────────────
+# A standing request: "tell me when BTC gets within 1% of 76,000". Separate
+# from the level watcher (no confirmation, no hysteresis, one-shot) and stored
+# in SQLite rather than a JSON file. See core/price_alerts.py.
+
+
+def _verify_spot_symbol(coin: str) -> tuple:
+    """Confirm COINUSDT trades on Binance spot, and return its live price.
+
+    Returns (price, error, warning). `error` means reject the request;
+    `warning` means the symbol could not be checked (the network, not the
+    symbol) and the alert is created anyway rather than blocked by an outage.
+    """
+    import requests
+    symbol = price_alerts.symbol_for(coin)
+    try:
+        resp = requests.get(
+            f"{_BINANCE_SPOT}/api/v3/ticker/price",
+            params={"symbol": symbol}, timeout=8,
+        )
+    except Exception as exc:
+        return None, None, f"could not verify {symbol} on Binance ({exc.__class__.__name__}) — alert created unverified"
+
+    if resp.status_code == 400:
+        # Binance answers an unknown symbol with 400 / code -1121.
+        return None, f"{symbol} is not a Binance spot symbol", None
+    if not resp.ok:
+        return None, None, f"could not verify {symbol} on Binance (HTTP {resp.status_code}) — alert created unverified"
+
+    try:
+        price = float(resp.json().get("price"))
+    except (TypeError, ValueError):
+        return None, None, f"could not read a price for {symbol} — alert created unverified"
+    return price, None, None
+
+
+@app.route("/api/price-alerts", methods=["GET"])
+def api_price_alerts_list():
+    """GET /api/price-alerts[?status=active|triggered|cancelled]"""
+    status = (request.args.get("status") or "").strip().lower()
+    if status and status not in price_alerts.STATUSES:
+        return jsonify({"ok": False,
+                        "error": f"status must be one of {', '.join(price_alerts.STATUSES)}"}), 400
+
+    rows = _db.price_alerts_get_all(status or None)
+    for row in rows:
+        price  = row.get("last_price")
+        target = row.get("target_price")
+        row["gap_pct"] = (round(price_alerts.gap_pct(price, target), 2)
+                          if price and target else None)
+        row["side"] = (price_alerts.side_label(price, target)
+                       if price and target else None)
+    return jsonify({"alerts": rows, "default_alert_pct": price_alerts.DEFAULT_ALERT_PCT})
+
+
+@app.route("/api/price-alerts", methods=["POST"])
+def api_price_alerts_create():
+    """POST /api/price-alerts — {coin, target_price, alert_pct?, note?,
+    notify_on_touch?, expires_at?}"""
+    payload = request.get_json(silent=True) or {}
+    try:
+        clean = price_alerts.validate(
+            payload.get("coin"), payload.get("target_price"),
+            payload.get("alert_pct"), payload.get("note"),
+            payload.get("notify_on_touch"), payload.get("expires_at"))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    price, error, warning = _verify_spot_symbol(clean["coin"])
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    try:
+        row = _db.price_alerts_insert(
+            clean["coin"], clean["target_price"], clean["alert_pct"],
+            clean.get("note"), clean.get("notify_on_touch", False),
+            clean.get("expires_at"))
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"could not save alert: {exc}"}), 500
+
+    warnings = [warning] if warning else []
+    if price:
+        gap = price_alerts.gap_pct(price, clean["target_price"])
+        _db.price_alerts_update(row["id"], last_price=price)
+        row["last_price"] = price
+        row["gap_pct"]    = round(gap, 2)
+        if gap <= clean["alert_pct"]:
+            warnings.append(
+                f"price is already within {clean['alert_pct']:g}% of target "
+                f"({gap:.2f}% away) — you will be notified on the next check")
+
+    return jsonify({"ok": True, "alert": row, "warnings": warnings})
+
+
+@app.route("/api/price-alerts/<int:alert_id>", methods=["PUT"])
+def api_price_alerts_update(alert_id):
+    """PUT /api/price-alerts/<id> — edit target_price, alert_pct, note,
+    notify_on_touch. Editing the target or the band re-arms a triggered alert."""
+    existing = _db.price_alerts_get(alert_id)
+    if not existing:
+        return jsonify({"ok": False, "error": f"alert {alert_id} not found"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    target  = payload.get("target_price", existing["target_price"])
+    pct     = payload.get("alert_pct",    existing["alert_pct"])
+    try:
+        clean = price_alerts.validate(
+            existing["coin"], target, pct,
+            payload.get("note"), payload.get("notify_on_touch"))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    fields = {"target_price": clean["target_price"], "alert_pct": clean["alert_pct"]}
+    if "note" in payload:
+        fields["note"] = clean.get("note")
+    if "notify_on_touch" in payload:
+        fields["notify_on_touch"] = clean.get("notify_on_touch", False)
+
+    # Moving the target or the band makes the previous firing meaningless, so
+    # the alert goes back on watch with its notification stages cleared.
+    retargeted = (clean["target_price"] != existing["target_price"] or
+                  clean["alert_pct"]    != existing["alert_pct"])
+    if retargeted:
+        fields.update(status=price_alerts.STATUS_ACTIVE, approach_notified_at=None,
+                      touched_notified_at=None, triggered_at=None)
+
+    row = _db.price_alerts_update(alert_id, **fields)
+    return jsonify({"ok": True, "alert": row, "rearmed": retargeted})
+
+
+@app.route("/api/price-alerts/<int:alert_id>", methods=["DELETE"])
+def api_price_alerts_delete(alert_id):
+    """DELETE /api/price-alerts/<id> — cancel and remove."""
+    if not _db.price_alerts_delete(alert_id):
+        return jsonify({"ok": False, "error": f"alert {alert_id} not found"}), 404
+    return jsonify({"ok": True, "id": alert_id})
 
 
 # ── Routes — Settings (API keys stored in .env) ───────────────────────────────

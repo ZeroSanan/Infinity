@@ -24,13 +24,14 @@
 10. [HTTP API Surface](#10-http-api-surface)
 11. [Telegram Alerting](#11-telegram-alerting)
 12. [Resistance / Support Level Alerts](#12-resistance--support-level-alerts)
-13. [Deployment & Operations](#13-deployment--operations)
-14. [Security Considerations](#14-security-considerations)
-15. [Limitations, Known Gaps & Honest Context](#15-limitations-known-gaps--honest-context)
-16. [Roadmap](#16-roadmap)
-17. [Appendix A — Formula Reference](#appendix-a--formula-reference)
-18. [Appendix B — Threshold Reference](#appendix-b--threshold-reference)
-19. [Appendix C — Glossary](#appendix-c--glossary)
+13. [Price Alerts](#13-price-alerts)
+14. [Deployment & Operations](#14-deployment--operations)
+15. [Security Considerations](#15-security-considerations)
+16. [Limitations, Known Gaps & Honest Context](#16-limitations-known-gaps--honest-context)
+17. [Roadmap](#17-roadmap)
+18. [Appendix A — Formula Reference](#appendix-a--formula-reference)
+19. [Appendix B — Threshold Reference](#appendix-b--threshold-reference)
+20. [Appendix C — Glossary](#appendix-c--glossary)
 
 ---
 
@@ -89,10 +90,10 @@ Infinity/
 │   ├── app.py                  # Flask app: all routes, all fetchers, all scoring, scheduler
 │   ├── templates/
 │   │   ├── index.html          # The entire dashboard SPA (markup + CSS + JS, self-contained)
-│   │   └── backtest.html       # Orphaned — no route serves it (see §15.6)
+│   │   └── backtest.html       # Orphaned — no route serves it (see §16.6)
 │   └── static/
-│       ├── app.js              # Legacy, unreferenced (see §15.6)
-│       └── style.css           # Legacy, unreferenced (see §15.6)
+│       ├── app.js              # Legacy, unreferenced (see §16.6)
+│       └── style.css           # Legacy, unreferenced (see §16.6)
 ├── data/                       # Auto-created; infinity.db + resistance_levels.json (git-ignored)
 ├── deploy/
 │   └── setup-vps.sh            # One-time VPS provisioning (clone, venv, systemd unit)
@@ -150,7 +151,7 @@ Anthropic API ◄─────┘    /api/ai/analysis
 | Package | Version | Role |
 |---------|---------|------|
 | `flask` | 3.0.3 | HTTP server and templating |
-| `flask-cors` | 4.0.1 | CORS (currently wide open — see §14) |
+| `flask-cors` | 4.0.1 | CORS (currently wide open — see §15) |
 | `requests` | 2.31.0 | All outbound HTTP, 8 s timeout on market data, 10 s on Telegram |
 | `python-dotenv` | 1.0.0 | `.env` loading |
 | `anthropic` | ≥0.25.0 | Claude API client for the AI Analysis panel |
@@ -208,7 +209,7 @@ Four macro inputs have no free live feed and are **always manual**; five live in
 
 Each manual card renders an **age badge** (`l1StalenessHTML`) so a value entered three weeks ago is visibly stale rather than silently authoritative, and links directly to its source (TradingView, FRED, CME, Blockchain Center, etc.).
 
-> **Important asymmetry.** The browser recomputes the Layer 1 verdict across the *combined* live + manual set (up to 11 indicators) using a **≥6 bullish / ≥6 bearish** threshold, while the server computes it from live indicators only (max 7) using **≥4 / ≥4**. The badge you see in the browser and the verdict the background evaluator uses for Telegram alerts can therefore differ. See §15.1.
+> **Important asymmetry.** The browser recomputes the Layer 1 verdict across the *combined* live + manual set (up to 11 indicators) using a **≥6 bullish / ≥6 bearish** threshold, while the server computes it from live indicators only (max 7) using **≥4 / ≥4**. The badge you see in the browser and the verdict the background evaluator uses for Telegram alerts can therefore differ. See §16.1.
 
 ### 4.2 Layer 2 — Market Positioning
 
@@ -414,7 +415,7 @@ Spot depth, top 20 levels each side, weighted by **notional** (`price × quantit
 | 40–60 % | 0 | Balanced Order Book |
 | < 40 % | **−1** | Sell Pressure Dominant |
 
-This is the **weakest and most manipulable** signal in the system — spoofed walls appear and vanish — which is precisely why it is one vote of four rather than a standalone trigger. See §15.4.
+This is the **weakest and most manipulable** signal in the system — spoofed walls appear and vanish — which is precisely why it is one vote of four rather than a standalone trigger. See §16.4.
 
 #### 4.4.5 ATR(14) — Volatility Context
 
@@ -533,7 +534,7 @@ should_notify = (
 ```
 
 - **`DEVELOPING` fires once** on entry and stays quiet while it persists.
-- **`STRONG` fires on every hourly evaluation** for as long as it holds. This is intentional for a 5-of-6 confluence but means a sustained STRONG state produces an hourly message — see §15.3.
+- **`STRONG` fires on every hourly evaluation** for as long as it holds. This is intentional for a 5-of-6 confluence but means a sustained STRONG state produces an hourly message — see §16.3.
 - If `telegram_enabled` is false, the state is still marked notified so the queue does not back up and then flood when alerts are re-enabled.
 
 ### 5.4 Configuration
@@ -683,6 +684,7 @@ Responses are parsed by a hand-rolled Markdown renderer (`aiMd` / `renderAiRespo
 | `signal_history` | auto id | Layer 1/2/3 periodic snapshots, indexed `(symbol, layer, recorded_at)`. |
 | `signal_state` | `symbol` | Tier, direction, both counts, criteria detail JSON, timestamps, last notified tier. |
 | `signal_config` | `config_key` | Signal system configuration, JSON values, merged over defaults on read. |
+| `price_alerts` | auto id | Price Alerts: target price, band, status and per-stage send receipts. One row per target, several per coin allowed (§13.2). |
 
 Every table carries `updated_at` in ISO-8601 UTC (`%Y-%m-%dT%H:%M:%SZ`). Timestamps are the basis of every staleness badge in the UI.
 
@@ -724,7 +726,7 @@ Caches are per-symbol dicts of `{"data": …, "ts": …}` checked against `time.
 | `record_l1` | Every 6 h | Snapshot Layer 1 → `signal_history`; prune records older than 90 days |
 | `record_l2` | Every 1 h | Per symbol: snapshot Layer 2 + Mechanics + Master Summary → then **evaluate tier and notify** |
 | `record_l3` | Cron, 00:00 UTC | Per symbol: snapshot Layer 3 — one daily structural datapoint |
-| `check_levels` | Every 60 s | Per watched coin: compare live price against its levels, alert on a confirmed approach (§12) |
+| `check_levels` | Every 60 s | One batched price call for the union of level-alert and price-alert coins, then both features in turn: confirmed level approaches (§12) and price-target alerts (§13) |
 
 The recording cadence is matched to the **information rate of the underlying data**, not to what the API would tolerate. Layer 3 records once daily because an order-book snapshot from six hours ago is noise in a history table — it is useful live and worthless historically.
 
@@ -792,6 +794,13 @@ Client intervals mirror server TTLs so a poll generally lands on fresh data rath
 | `/api/levels` | GET | All watched coins with their levels and alert band |
 | `/api/levels/<coin>` | GET / POST / DELETE | Read / replace / stop watching one coin's levels |
 | `/api/levels/test-telegram` | POST | Send a test Telegram message |
+
+### Price alerts
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/price-alerts` | GET | All alerts; `?status=` filters (§13.6) |
+| `/api/price-alerts` | POST | Create a target-price alert |
+| `/api/price-alerts/<id>` | PUT / DELETE | Edit (re-arms on a new target) / remove |
 
 ### AI, settings and operations
 | Route | Method | Description |
@@ -893,7 +902,7 @@ An earlier schema stored a flat `notified` map. `_migrate_entry()` upgrades it i
 
 Writes are **atomic** (temp file in the same directory, then `os.replace`) so a crash mid-write cannot truncate the watch list, and the whole read-modify-write cycle is guarded by a module-level lock because the scheduler thread and Flask request threads both mutate the file. A missing or corrupt file is treated as an empty watch list rather than an exception — the scheduler job must not die because a file was hand-edited badly.
 
-This is the one part of the system that is **not** in SQLite. See §15.9.
+This is the one part of the system that is **not** in SQLite. See §16.9.
 
 ### 12.3 Price lookup — one source, batched
 
@@ -1058,9 +1067,150 @@ Typing a coin that is already watched loads its saved settings into the form, so
 
 ---
 
-## 13. Deployment & Operations
+## 13. Price Alerts
 
-### 13.1 Provisioning
+**Purpose: tell the user when a coin reaches a price they named.**
+
+A standing request — *"tell me when BTC gets within 1% of 76,000"* — placed deliberately, answered once, then done. It is a separate feature from the Resistance / Support Level Alerts in §12 and shares nothing but the price reader and the Telegram sender.
+
+**Modules:** `core/price_alerts.py` (validation, decision, message formatting), `core/telegram_notifier.py` (delivery).
+**Storage:** the `price_alerts` table in `data/infinity.db` (§8.1).
+
+### 13.1 How it differs from level alerts
+
+The two features answer different questions, so they are tuned differently. The contrast is the clearest way to describe either.
+
+| | Level alerts (§12) | Price alerts (§13) |
+|---|---|---|
+| Where targets come from | a per-coin watch list of structural levels | one row per price the user named |
+| Confirmation | two consecutive checks | **none** |
+| Label | geometry — RESISTANCE / SUPPORT | plain *below target* / *above target* |
+| After firing | hysteresis re-arm, can fire again | one-shot: `status='triggered'`, stops being watched |
+| Per coin | one message per check, nearest level only | every alert is independent |
+| Storage | `resistance_levels.json` | SQLite (§16.9) |
+
+**There is no two-check confirmation here, and that is the point.** The level watcher confirms because its job is to filter an unsolicited stream of proximity events, where a single tick landing in a band proves nothing. A price alert is the opposite: the user chose this exact number on purpose, so a minute of deliberate delay subtracts value. The alert fires on the first check that qualifies.
+
+The same reasoning rules out support/resistance wording in the message. A price alert makes no claim about what the level *means* — only that price has arrived.
+
+### 13.2 Storage
+
+One row per target, in SQLite rather than a new JSON file. §16.9 records that the level watcher's flat file is the codebase's one storage exception; this feature had no reason to repeat it.
+
+| Column | Meaning |
+|---|---|
+| `coin` | Upper-case, e.g. `BTC`. Several alerts per coin are allowed, at different prices. |
+| `target_price` | The price the user named. Positive, finite. |
+| `alert_pct` | Band around the target. Absent → `PRICE_ALERT_DEFAULT_PCT` (default 1.0). |
+| `status` | `active` → `triggered` (fired) or `cancelled` (expired). |
+| `note` | Optional free text, echoed into the message. Max 280 chars. |
+| `notify_on_touch` | When true, a second message follows when price actually reaches the target. |
+| `approach_notified_at` / `touched_notified_at` | Per-stage send receipts. Drive the one-shot and two-stage behaviour. |
+| `last_price` | Price at the previous check. Powers the live distance in the UI and the no-window crossing fallback. |
+| `created_at` / `triggered_at` / `expires_at` / `updated_at` | ISO-8601 UTC, matching every other table. |
+
+Writes go through `core/db.py` on the house pattern: connection-per-operation via `_conn()`, commit on success and rollback on exception, `updated_at` stamped on every write.
+
+### 13.3 Check logic
+
+`check_price_alerts(price_map, window_map)` is handed prices and candle windows the scheduler already fetched. **It makes no HTTP calls**, which is what keeps it cheap to unit test and keeps the tick to one price request.
+
+For each active alert:
+
+```
+gap_pct = |price − target| / target × 100
+```
+
+1. **Expiry first.** If `expires_at` has passed, the alert becomes `cancelled` with no message.
+2. **Approach** fires when `gap_pct <= alert_pct`, or when the target was touched (below). One message, then:
+   - `notify_on_touch` false → `status='triggered'`, done.
+   - `notify_on_touch` true → stays `active` for stage 2.
+3. **Touch** fires when price actually reaches the target, then `status='triggered'`.
+
+**Touch detection** has three tests, in order of reliability: the target lies inside the `[low, high]` of the 1-minute candle window since the last check (catches a wick that pierced the target and came back, which a single end-of-interval sample cannot see); the sampled price equals the target exactly; or the target sits between `last_price` and the current price, so price crossed it between checks. The last is the fallback when no window is available.
+
+A wick that reached the target also satisfies the **approach** condition, so an alert cannot be skipped merely because price was back outside the band by the time it was sampled.
+
+**Failed delivery is not recorded.** If Telegram is unconfigured or the send fails, the row is left untouched and the next tick retries — the same posture as the level watcher. Each alert is also evaluated in its own `try/except`, so one malformed row cannot stop the rest.
+
+### 13.4 Scheduling
+
+Price alerts run **inside the same 60-second tick as the level watcher** (§12.8), not on a timer of their own:
+
+```
+_check_levels_job()
+├── symbols = {level-alert coins} ∪ {price-alert coins}
+├── prices  = _ticker_prices(symbols)        ONE batched call
+├── window_get = per-tick 1m-kline memo
+├── try: _run_level_alerts(prices, window_get)
+└── try: _run_price_alerts(prices, window_get, pa_coins)
+```
+
+Three properties follow:
+
+- **One price request per tick**, for the union of both features' coins. Adding price alerts adds no price traffic at all.
+- **1m klines are fetched only where needed** — eagerly for coins with an active price alert, lazily for a level about to confirm — through a shared per-tick memo, so a coin watched by both features costs one kline call, not two.
+- **The two features are isolated.** Each runs in its own `try/except`, so a failure in price alerts cannot stop level alerts or vice versa, on top of the per-coin and per-alert isolation inside each.
+
+### 13.5 Message format
+
+Plain text, no Markdown emphasis, so a note containing `*` or `_` cannot break parsing.
+
+```
+🔔 BTC price alert
+Target: 76,000
+Current: 75,400 (0.79% away, below target)
+Note: scale out half here
+```
+
+The `Note:` line appears only when the alert has one. Wording is *below target* or *above target* — never support or resistance.
+
+When `notify_on_touch` is set, a second message follows once price arrives:
+
+```
+✅ BTC reached 76,000
+Current: 76,012
+```
+
+### 13.6 API surface
+
+| Route | Method | Description |
+|---|---|---|
+| `/api/price-alerts` | GET | All alerts, newest first. `?status=active\|triggered\|cancelled` filters. Each row carries a computed `gap_pct` and `side` from its `last_price`. |
+| `/api/price-alerts` | POST | `{coin, target_price, alert_pct?, note?, notify_on_touch?, expires_at?}` |
+| `/api/price-alerts/<id>` | PUT | Edit `target_price`, `alert_pct`, `note`, `notify_on_touch`. |
+| `/api/price-alerts/<id>` | DELETE | Cancel and remove. 404 if unknown. |
+
+There is no test-telegram route of its own — the existing `POST /api/levels/test-telegram` (§12.9) verifies the same bot and chat id.
+
+**Validation** returns HTTP 400 with a message the UI shows verbatim: a non-empty coin, a positive finite `target_price`, `alert_pct` between 0.1 and 20, and an `expires_at` that parses and lies in the future.
+
+**Symbol verification.** POST confirms `COINUSDT` trades on Binance spot before saving. A `400` from Binance means the symbol does not exist and the request is rejected with that reason. Any *other* failure — a network error, a proxy refusal — is deliberately **not** treated as a bad symbol: the alert is created and the response carries a warning that the symbol could not be verified. An outage should not be able to reject a valid coin.
+
+**Re-arming.** Editing the `target_price` or `alert_pct` of a triggered alert clears its notification stages and sets it back to `active`, because the price that already fired is no longer the price being asked about. Editing only the note or the touch flag does not re-arm. The response says which happened via `rearmed`.
+
+**Already-in-band warning.** If price is inside the band at creation, the alert is still created and the response includes *"price is already within X% of target (Y% away) — you will be notified on the next check"*, so an immediate alert is never a surprise.
+
+### 13.7 UI
+
+A collapsible **🎯 PRICE ALERTS** panel on the Market Signals tab, next to the Level Alerts panel, using the same `toggleLayer()` collapse pattern with its state in `localStorage`.
+
+The form takes a coin (with a `<datalist>` of the dashboard five plus any coin already alerted on), target price, alert %, an optional note and an "also notify when price touches" checkbox. Active alerts list coin, target, current price, live distance %, band, status and Edit/Delete; the distance refreshes every 60 seconds alongside the other pollers. Triggered and cancelled alerts sit in a separate collapsed **History** list with their trigger time.
+
+All user-entered text — coin, note — is escaped with `esc()` before insertion. Plain functions in the existing inline script; no framework, no build step.
+
+### 13.8 Environment variables
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `PRICE_ALERT_DEFAULT_PCT` | No | Band used when an alert is created without an explicit `alert_pct`. Default 1.0. |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | For alerts | Shared with every other alert producer (§11, §12.7). Unset → sends no-op with a warning. |
+
+---
+
+## 14. Deployment & Operations
+
+### 14.1 Provisioning
 
 `deploy/setup-vps.sh` is a one-time script: clone to `~/infinity`, create a venv, install requirements, copy `.env.example` → `.env` (and stop to tell the operator to fill in keys), then install and enable a systemd unit:
 
@@ -1078,7 +1228,7 @@ StandardError=journal
 
 `Restart=always` with a 10-second back-off means a crash — including an unhandled exception in a scheduler job — self-heals without intervention, and all output goes to the journal (`journalctl -u infinity-web -f`).
 
-### 13.2 Deployment
+### 14.2 Deployment
 
 Two paths, both landing on `git pull && pip install -r requirements.txt && systemctl restart infinity-web`:
 
@@ -1087,7 +1237,7 @@ Two paths, both landing on `git pull && pip install -r requirements.txt && syste
 
 The dashboard displays the deploy time, read from `git log -1 --format=%ci` at process start, so the running version is visible in the UI.
 
-### 13.3 Environment variables
+### 14.3 Environment variables
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
@@ -1097,6 +1247,7 @@ The dashboard displays the deploy time, read from `git log -1 --format=%ci` at p
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | For alerts | Alert delivery for both the Tiered Signal System (§5) and level alerts (§12). Chat ID accepts a comma-separated list. |
 | `LEVEL_ALERT_DEFAULT_PCT` | No | Fallback alert band for level alerts with no per-coin `alert_pct`. Default 3.0. |
 | `LEVEL_MIN_MOVE_PCT` | No | Minimum per-check move toward a level for it to count as approaching. Default 0.1. |
+| `PRICE_ALERT_DEFAULT_PCT` | No | Default band around a price-alert target. Default 1.0. |
 | `DASHBOARD_PORT` | No | Default 5050 |
 | `DEPLOY_TOKEN` | For webhook | Shared secret for `POST /deploy` |
 | `BINANCE_API_KEY` / `BINANCE_SECRET_KEY` / `USE_TESTNET` | **No** | Present in `.env.example` from the predecessor DCA bot. **Unused by the current system** — every Binance call is public and unauthenticated. |
@@ -1105,7 +1256,7 @@ Missing-key handling is graceful throughout: a fetcher with no key returns `{"st
 
 ---
 
-## 14. Security Considerations
+## 15. Security Considerations
 
 | Area | Current state |
 |------|---------------|
@@ -1122,11 +1273,11 @@ Missing-key handling is graceful throughout: a fetcher with no key returns `{"st
 
 ---
 
-## 15. Limitations, Known Gaps & Honest Context
+## 16. Limitations, Known Gaps & Honest Context
 
 This section is deliberately specific. Every item below is verifiable in the current source.
 
-### 15.1 The Layer 1 verdict is computed two different ways
+### 16.1 The Layer 1 verdict is computed two different ways
 
 The browser (`recalcL1Verdict`) scores the combined live + manual indicator set (up to 11) with a **≥6 bullish / ≥6 bearish** threshold. The server (`_layer1_verdict`) scores live indicators only (max 7) with **≥4 / ≥4**, and never sees manual entries at all. Consequences:
 
@@ -1135,7 +1286,7 @@ The browser (`recalcL1Verdict`) scores the combined live + manual indicator set 
 
 This is a real divergence, not a rounding difference. Unifying the two is the highest-value correctness fix available.
 
-### 15.2 The AI Analysis panel — fixed
+### 16.2 The AI Analysis panel — fixed
 
 **Resolved.** Recorded here because the failure mode is instructive.
 
@@ -1145,11 +1296,11 @@ The fix removed the block rather than declaring the five variables: nothing assi
 
 The general lesson for this codebase: `index.html` is a 5,700-line self-contained script with no build step, no linter and no module boundaries, so a removed panel can leave live references behind and nothing will complain until a user clicks the button. A `node --check` pass catches syntax errors but not undeclared-identifier reads.
 
-### 15.3 `STRONG` alerts repeat hourly
+### 16.3 `STRONG` alerts repeat hourly
 
 `should_notify` returns true for **every** evaluation while the tier is `STRONG`, not only on entry. A confluence that persists for eight hours produces eight identical messages. `DEVELOPING` is correctly edge-triggered. Whether this is a feature or a nuisance depends on the operator; there is currently no cooldown to tune it.
 
-### 15.4 Signal-quality caveats by indicator
+### 16.4 Signal-quality caveats by indicator
 
 - **Order-book imbalance** (Layer 3) reads only the top 20 levels of the **spot** book and is the most easily spoofed input in the system. It is one vote of four precisely for this reason.
 - **BTC Dominance 24 h change** is computed from an **in-memory rolling window**, not a historical API. It is empty at boot, so the change reads 0 and the signal reads Neutral until the process has been running for roughly 24 hours. A restart resets it.
@@ -1157,11 +1308,11 @@ The general lesson for this codebase: `index.html` is a 5,700-line self-containe
 - **Layer 3 uses spot klines and the spot order book** while Layer 2 uses futures data. For XAUT in particular, futures liquidity differs materially from spot.
 - **CPI and Fed Funds are monthly series.** A "live" macro card can legitimately be weeks old — this is a property of the data, not a bug, but it means Layer 1 cannot be timely by construction.
 
-### 15.5 Manual inputs have no validation beyond type
+### 16.5 Manual inputs have no validation beyond type
 
 Liquidation clusters, FedWatch probabilities, M2 growth and the rest are accepted as entered. A cluster typed with a misplaced decimal point silently corrupts criterion 6, the Scenario 1 Target, and the Scenario 2 cluster check simultaneously. Staleness is surfaced; plausibility is not checked.
 
-### 15.6 Orphaned and stale artefacts
+### 16.6 Orphaned and stale artefacts
 
 | Artefact | Status |
 |----------|--------|
@@ -1170,38 +1321,38 @@ Liquidation clusters, FedWatch probabilities, M2 growth and the rest are accepte
 | `CLAUDE.md` | Instructs keeping `signal_lab/signal_fn.py` in sync with `core/regime_live.py` and `core/mixed_engine.py`. **None of those files or the `signal_lab/` package exists** in this repository. |
 | `README.md` | Documents the predecessor **DCA trading bot** (`main.py`, `config/coins.json`, `core/dca_engine.py`) — an entirely different system from what is deployed. |
 | `dynamic_spot_dca_system_spec.md` | Historical spec for that same predecessor. Useful as provenance; not a description of this system. |
-| `.env.example` Binance keys | Unused (§13.3). |
+| `.env.example` Binance keys | Unused (§14.3). |
 
-### 15.7 Infrastructure
+### 16.7 Infrastructure
 
 - **Flask's development server** (`app.run`) is the production server. It is single-process and not hardened for public exposure. A WSGI server (gunicorn/uWSGI) behind nginx is the correct production setup — though note that the in-memory caches, the BTC-dominance rolling window, and the APScheduler jobs all assume **one process**, so moving to multi-worker gunicorn requires moving the scheduler out of the app process first.
 - **No automated tests.** There is no test suite, and CI does not run one. The scoring functions (`_layer2_verdict`, `_layer3_verdict_calc`, `_layer1_verdict`, `_evaluate_direction`, `compute_position_account_divergence`) are pure and would be straightforward to cover.
 - **Single point of failure.** One VPS, one process, one SQLite file. `data/` is git-ignored, so **the database is not backed up by the deploy mechanism.**
 
-### 15.9 Level alerts store state outside the database
+### 16.9 Level alerts store state outside the database
 
 `data/resistance_levels.json` is the only persistent state in the system that does not live in `data/infinity.db`. Everything else — signal history, tier state, checklist state, every manual input — was migrated out of flat JSON files into SQLite (§8.3).
 
 The level watcher works correctly as built: writes are atomic, the read-modify-write cycle is lock-guarded, and a corrupt file degrades to an empty watch list instead of crashing the scheduler. But it re-introduces the pattern the rest of the codebase moved away from, which means two storage mechanisms to back up, reason about and migrate. Consolidating it into a `resistance_levels` table would remove that split; the module's read/write functions are already isolated behind `_read_file()` / `_write_file()`, so the change is contained.
 
-### 15.8 What this system is not
+### 16.8 What this system is not
 
 It does not execute trades, size positions automatically, manage open risk, track realised P&L, or backtest. It has no model of your portfolio. Every number it produces is an input to a human decision made somewhere else, and its own AI output is required to say so on every response.
 
 ---
 
-## 16. Roadmap
+## 17. Roadmap
 
 Ordered by value-to-effort as the code stands:
 
 | Priority | Item | Notes |
 |----------|------|-------|
-| **P0** | Unify the two Layer 1 verdict calculations (§15.1) | Makes alerts and display agree; lets manual macro reach the evaluator |
+| **P0** | Unify the two Layer 1 verdict calculations (§16.1) | Makes alerts and display agree; lets manual macro reach the evaluator |
 | **P0** | Database backup | `data/infinity.db` is currently unprotected |
-| **P1** | Authentication + bind to localhost behind a proxy (§14) | The single largest exposure |
+| **P1** | Authentication + bind to localhost behind a proxy (§15) | The single largest exposure |
 | **P1** | Unit tests for the pure scoring functions | They are already side-effect-free |
-| **P1** | Alert cooldown / re-notify interval for `STRONG` (§15.3) | Make repetition configurable |
-| **P2** | Remove or wire up orphaned artefacts; rewrite `README.md` and `CLAUDE.md` (§15.6) | Documentation currently describes a system that no longer exists |
+| **P1** | Alert cooldown / re-notify interval for `STRONG` (§16.3) | Make repetition configurable |
+| **P2** | Remove or wire up orphaned artefacts; rewrite `README.md` and `CLAUDE.md` (§16.6) | Documentation currently describes a system that no longer exists |
 | **P2** | Signal outcome tracking | Record what price did after each `STRONG` signal — the prerequisite for ever knowing whether the six criteria work |
 | **P2** | Backtesting over `signal_history` | 90 days of snapshots already accumulate; `backtest.html` suggests this was started |
 | **P3** | Liquidation cluster API integration | Removes the largest manual dependency (criterion 6, Scenario 1 Target, Scenario 2 cluster check) |

@@ -14,6 +14,7 @@ Tables:
   signal_history         — Layer 1/2/3 periodic snapshots (replaces signal_history.json)
   signal_state           — Tiered signal evaluation state (replaces signal_state.json)
   signal_config          — Signal system configuration (replaces signal_config.json)
+  price_alerts           — Price Alerts: per-coin target price + band, one-shot
 
 Thread safety: SQLite WAL mode + new connection per operation (no shared state).
 """
@@ -116,6 +117,24 @@ CREATE TABLE IF NOT EXISTS signal_config (
     config_key  TEXT PRIMARY KEY,
     value_json  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS price_alerts (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    coin                 TEXT NOT NULL,
+    target_price         REAL NOT NULL,
+    alert_pct            REAL NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'active',
+    note                 TEXT,
+    notify_on_touch      INTEGER NOT NULL DEFAULT 0,
+    approach_notified_at TEXT,
+    touched_notified_at  TEXT,
+    last_price           REAL,
+    created_at           TEXT NOT NULL,
+    triggered_at         TEXT,
+    expires_at           TEXT,
+    updated_at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_price_alerts_status ON price_alerts (status, coin);
 """
 
 _DEFAULT_CONFIG = {
@@ -558,3 +577,99 @@ def signal_config_set(key: str, value: Any) -> None:
 def signal_config_set_all(cfg: dict) -> None:
     for k, v in cfg.items():
         signal_config_set(k, v)
+
+
+# ── Price alerts ──────────────────────────────────────────────────────────────
+# One row per target. Several alerts per coin are allowed, at different prices.
+# Rows are one-shot: a successful send moves status to 'triggered' and the
+# checker stops looking at them (see core/price_alerts.py).
+
+_PA_COLUMNS = ("id", "coin", "target_price", "alert_pct", "status", "note",
+               "notify_on_touch", "approach_notified_at", "touched_notified_at",
+               "last_price", "created_at", "triggered_at", "expires_at", "updated_at")
+
+# Fields callers may write through price_alerts_update().
+_PA_WRITABLE = ("coin", "target_price", "alert_pct", "status", "note",
+                "notify_on_touch", "approach_notified_at", "touched_notified_at",
+                "last_price", "triggered_at", "expires_at")
+
+
+def _pa_row(row) -> dict:
+    d = dict(row)
+    d["notify_on_touch"] = bool(d.get("notify_on_touch"))
+    return d
+
+
+def price_alerts_insert(coin: str, target_price: float, alert_pct: float,
+                         note: Optional[str] = None, notify_on_touch: bool = False,
+                         expires_at: Optional[str] = None) -> dict:
+    """Create one alert and return the stored row (including its new id)."""
+    now = _now()
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO price_alerts "
+            "(coin, target_price, alert_pct, status, note, notify_on_touch, "
+            "created_at, expires_at, updated_at) "
+            "VALUES (?,?,?,'active',?,?,?,?,?)",
+            (coin, target_price, alert_pct, note, 1 if notify_on_touch else 0,
+             now, expires_at, now),
+        )
+        row = c.execute("SELECT * FROM price_alerts WHERE id=?", (cur.lastrowid,)).fetchone()
+    return _pa_row(row)
+
+
+def price_alerts_get(alert_id: int) -> Optional[dict]:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM price_alerts WHERE id=?", (alert_id,)).fetchone()
+    return _pa_row(row) if row else None
+
+
+def price_alerts_get_all(status: Optional[str] = None) -> list:
+    """All alerts, newest first. `status` filters to one of active/triggered/cancelled."""
+    with _conn() as c:
+        if status:
+            rows = c.execute(
+                "SELECT * FROM price_alerts WHERE status=? ORDER BY created_at DESC, id DESC",
+                (status,),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM price_alerts ORDER BY created_at DESC, id DESC"
+            ).fetchall()
+    return [_pa_row(r) for r in rows]
+
+
+def price_alerts_active_coins() -> list:
+    """Distinct coins with at least one active alert — drives which symbols the
+    scheduler needs a 1m kline window for."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT DISTINCT coin FROM price_alerts WHERE status='active' ORDER BY coin"
+        ).fetchall()
+    return [r["coin"] for r in rows]
+
+
+def price_alerts_update(alert_id: int, **fields) -> Optional[dict]:
+    """Patch the given columns on one alert. Unknown keys are ignored.
+    Returns the updated row, or None if the id does not exist."""
+    sets = {k: v for k, v in fields.items() if k in _PA_WRITABLE}
+    if not sets:
+        return price_alerts_get(alert_id)
+    if "notify_on_touch" in sets:
+        sets["notify_on_touch"] = 1 if sets["notify_on_touch"] else 0
+
+    assignments = ", ".join(f"{k}=?" for k in sets)
+    with _conn() as c:
+        c.execute(
+            f"UPDATE price_alerts SET {assignments}, updated_at=? WHERE id=?",
+            (*sets.values(), _now(), alert_id),
+        )
+        row = c.execute("SELECT * FROM price_alerts WHERE id=?", (alert_id,)).fetchone()
+    return _pa_row(row) if row else None
+
+
+def price_alerts_delete(alert_id: int) -> bool:
+    """Remove one alert. False if it did not exist."""
+    with _conn() as c:
+        cur = c.execute("DELETE FROM price_alerts WHERE id=?", (alert_id,))
+        return cur.rowcount > 0
