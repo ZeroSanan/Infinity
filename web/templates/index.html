@@ -5451,24 +5451,14 @@ function collectAiPayload() {
     style:          _aiStyle,
     pre_trade_plan: collectPreTradePlan(),
   };
-  if (_dcaLevelsData && _dcaSelectedId) {
-    const model = _dcaModels.find(m => m.id === _dcaSelectedId);
-    payload.dca_model = {
-      name:               model ? model.name : 'Unknown',
-      side:               _dcaSide,
-      multiplier:         _dcaMultiplier,
-      current_price:      _dcaLevelsData.current_price,
-      atr_pct:            _dcaLevelsData.atr_pct,
-      steps:              _dcaLevelsData.steps,
-      avg_entry:          _dcaLevelsData.avg_entry,
-      tp_price:           _dcaLevelsData.tp_price,
-      tp_pct_from_avg:    _dcaLevelsData.tp_pct_from_avg,
-      tp_pct_from_current: _dcaLevelsData.tp_pct_from_current,
-      total_capital:      _dcaLevelsData.total_capital,
-      cluster_warnings:   _dcaLevelsData.cluster_warnings,
-      suggested_multiplier: _dcaLevelsData.suggested_multiplier,
-    };
-  }
+  // NOTE: a `dca_model` block used to be attached here from the DCA Visualizer
+  // panel. That panel was removed, but the block was left behind referencing
+  // five variables (_dcaLevelsData, _dcaSelectedId, _dcaModels, _dcaSide,
+  // _dcaMultiplier) that nothing declares — so reading them threw a
+  // ReferenceError on every run, which generateAiAnalysis()'s try/catch turned
+  // into "⚠️ ANALYSIS FAILED". The request was never even sent.
+  // /api/ai/analysis still accepts dca_model and still appends its prompt
+  // addendum, so re-adding a visualizer only means populating it again here.
   return payload;
 }
 

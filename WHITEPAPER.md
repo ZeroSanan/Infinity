@@ -1135,9 +1135,15 @@ The browser (`recalcL1Verdict`) scores the combined live + manual indicator set 
 
 This is a real divergence, not a rounding difference. Unifying the two is the highest-value correctness fix available.
 
-### 15.2 The AI Analysis panel is currently broken
+### 15.2 The AI Analysis panel — fixed
 
-`collectAiPayload()` in `index.html` references `_dcaLevelsData`, `_dcaSelectedId`, `_dcaModels`, `_dcaSide` and `_dcaMultiplier` — leftovers from a removed DCA Visualizer panel. **None of these variables is declared anywhere in the file.** Reading an undeclared identifier throws a `ReferenceError`, which is caught by `generateAiAnalysis`'s `try/catch` and rendered as "⚠️ ANALYSIS FAILED". The server route and both prompt sets are intact and correct; the panel fails before the request is ever sent. A one-line guard (or five `let` declarations) restores it.
+**Resolved.** Recorded here because the failure mode is instructive.
+
+`collectAiPayload()` in `index.html` referenced `_dcaLevelsData`, `_dcaSelectedId`, `_dcaModels`, `_dcaSide` and `_dcaMultiplier` — leftovers from a removed DCA Visualizer panel. None of the five was declared anywhere in the file, so reading them threw a `ReferenceError`, which `generateAiAnalysis()`'s `try/catch` rendered as "⚠️ ANALYSIS FAILED". The request was never sent, and the server route and both prompt sets were correct the whole time — which is why the failure looked like an API problem rather than a client-side one.
+
+The fix removed the block rather than declaring the five variables: nothing assigned them, so the code was unreachable and existed only to throw. `/api/ai/analysis` still accepts a `dca_model` key and still appends its prompt addendum (§7.2), so re-adding a visualizer means populating the payload again, nothing more.
+
+The general lesson for this codebase: `index.html` is a 5,700-line self-contained script with no build step, no linter and no module boundaries, so a removed panel can leave live references behind and nothing will complain until a user clicks the button. A `node --check` pass catches syntax errors but not undeclared-identifier reads.
 
 ### 15.3 `STRONG` alerts repeat hourly
 
@@ -1190,7 +1196,6 @@ Ordered by value-to-effort as the code stands:
 
 | Priority | Item | Notes |
 |----------|------|-------|
-| **P0** | Fix the AI panel `ReferenceError` (§15.2) | Single-line guard; restores a headline feature |
 | **P0** | Unify the two Layer 1 verdict calculations (§15.1) | Makes alerts and display agree; lets manual macro reach the evaluator |
 | **P0** | Database backup | `data/infinity.db` is currently unprotected |
 | **P1** | Authentication + bind to localhost behind a proxy (§14) | The single largest exposure |
