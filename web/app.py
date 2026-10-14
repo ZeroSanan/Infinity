@@ -2223,36 +2223,88 @@ def api_signal_config_save():
 # below. Watched coins come from data/resistance_levels.json, NOT from the
 # five-coin _SIGNAL_HISTORY_SYMBOLS set, so this list can grow on its own.
 
-_LEVEL_CHECK_MINUTES = 15  # deliberately slower than Layer 2: the watcher's
-                           # 2-check confirmation means a shorter interval only
-                           # buys noise, not earlier warning
+# The watcher confirms over two consecutive checks, so the interval is also
+# half its warning latency: 60s here means an approach is reported ~2 min after
+# it starts, against 15-30 min at the previous 15-minute cadence.
+LEVEL_CHECK_INTERVAL_SECONDS = 60
 
 
-def _current_price(symbol: str) -> Optional[float]:
-    """Price reader handed to level_watcher.check_levels().
+def _ticker_price(symbol: str) -> Optional[float]:
+    """Single-symbol spot price. Per-coin fallback when the batch call fails.
 
-    Prefers the Layer 3 cache — for the five dashboard coins the price is
-    already there and no extra request is made. Coins outside that set have
-    no Layer 3 entry (Layer 3 computes klines + order book + five indicators,
-    which is far too heavy to run for ~20 watch-list coins every 15 minutes),
-    so they fall back to Binance's lightweight spot ticker.
+    The level watcher reads prices ONLY from this endpoint. It deliberately
+    does not consult the Layer 3 cache: that holds `round(close, 2)` of the
+    current 4h kline, up to _LAYER3_TTL (120s) old, and only for the five
+    dashboard coins — so mixing the two made a price/last_price comparison
+    meaningless, which is what mislabelled alerts.
     """
-    symbol = symbol.upper()
-
-    cached = _layer3_cache.get(symbol)
-    if cached and time.time() - cached["ts"] < _LAYER3_TTL:
-        price = (cached.get("data") or {}).get("price")
-        if price:
-            return float(price)
-
     import requests
     resp = requests.get(
         f"{_BINANCE_SPOT}/api/v3/ticker/price",
-        params={"symbol": symbol}, timeout=8,
+        params={"symbol": symbol.upper()}, timeout=8,
     )
     resp.raise_for_status()
     price = resp.json().get("price")
     return float(price) if price is not None else None
+
+
+def _ticker_prices(symbols: list) -> dict:
+    """Spot price for many symbols in ONE request.
+
+    /api/v3/ticker/price accepts a JSON array in `symbols`, so a 20-coin watch
+    list costs one call per cycle rather than twenty. On any failure each
+    symbol is fetched individually so one bad symbol cannot blind the rest.
+    """
+    symbols = [s.upper() for s in symbols]
+    if not symbols:
+        return {}
+
+    import requests
+    try:
+        resp = requests.get(
+            f"{_BINANCE_SPOT}/api/v3/ticker/price",
+            params={"symbols": json.dumps(symbols, separators=(",", ":"))},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        rows = resp.json()
+        if not isinstance(rows, list):
+            raise ValueError("unexpected batch ticker response")
+        return {r["symbol"]: float(r["price"]) for r in rows if r.get("price") is not None}
+    except Exception as exc:
+        print(f"⚠️  Level watcher: batch price fetch failed ({exc}) — falling back per coin")
+
+    out: dict = {}
+    for sym in symbols:
+        try:
+            price = _ticker_price(sym)
+            if price:
+                out[sym] = price
+        except Exception as exc:
+            print(f"⚠️  Level watcher: price fetch failed for {sym}: {exc}")
+    return out
+
+
+def _recent_window(symbol: str) -> Optional[tuple]:
+    """(low, high) covering the last couple of 1m candles.
+
+    Used only for cross detection, and only when a pending level is about to be
+    confirmed, so a quiet watch list costs no kline requests. Two candles are
+    fetched so the window spans the whole gap since the previous check even when
+    a tick lands just after a minute boundary.
+    """
+    import requests
+    resp = requests.get(
+        f"{_BINANCE_SPOT}/api/v3/klines",
+        params={"symbol": symbol.upper(), "interval": "1m", "limit": 2}, timeout=8,
+    )
+    resp.raise_for_status()
+    rows = resp.json()
+    if not isinstance(rows, list) or not rows:
+        return None
+    highs = [float(r[2]) for r in rows]
+    lows  = [float(r[3]) for r in rows]
+    return (min(lows), max(highs))
 
 
 @app.route("/api/levels", methods=["GET"])
@@ -2314,16 +2366,29 @@ def api_levels_delete(coin):
 
 
 def _check_levels_job():
-    """Every 15 minutes: check each watched coin's levels against live price.
+    """Every LEVEL_CHECK_INTERVAL_SECONDS: check each watched coin's levels.
 
-    One coin's failed price fetch must not stop the rest, so each check is
+    Prices for the whole watch list come from one batched spot-ticker call, so
+    every coin's price and last_price are sampled from the same source at the
+    same instant. One coin's failure must not stop the rest, so each check is
     isolated — same posture as the Layer 2/3 recording jobs.
     """
-    for coin in level_watcher.watched_coins():
+    coins = level_watcher.watched_coins()
+    if not coins:
+        return
+
+    prices = _ticker_prices([level_watcher.symbol_for(c) for c in coins])
+
+    for coin in coins:
         try:
-            result = level_watcher.check_levels(coin, _current_price)
+            result = level_watcher.check_levels(
+                coin,
+                lambda sym: prices.get(sym.upper()),
+                window_fn=_recent_window,
+            )
             for alert in result.get("alerts", []):
-                print(f"🔔 Level alert: {coin} {alert['gap_pct']}% from "
+                event = alert.get("event", "approach")
+                print(f"🔔 Level alert ({event}): {coin} {alert['gap_pct']}% from "
                       f"{alert['level']} ({alert['direction']})")
         except Exception as exc:
             print(f"⚠️  Level watcher: check failed for {coin}: {exc}")
@@ -2415,7 +2480,7 @@ _signal_scheduler.add_job(_record_layer1_job, "interval", hours=6, id="record_l1
 _signal_scheduler.add_job(_record_layer2_job, "interval", hours=1, id="record_l2")
 _signal_scheduler.add_job(_record_layer3_job, "cron", hour=0, minute=0, id="record_l3")
 _signal_scheduler.add_job(_check_levels_job, "interval",
-                           minutes=_LEVEL_CHECK_MINUTES, id="check_levels")
+                           seconds=LEVEL_CHECK_INTERVAL_SECONDS, id="check_levels")
 _signal_scheduler.start()
 
 

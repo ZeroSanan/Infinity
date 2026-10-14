@@ -11,12 +11,12 @@ Storage: data/resistance_levels.json
       "levels": [123238.74, 119805.78],
       "alert_pct": 3.0,
       "last_price": 76424.01,
-      "last_checked": "2026-10-01T08:00:00Z",
+      "last_checked": "2026-10-14T08:00:00Z",
       "level_state": {
         "76321.68": {
           "state": "cooling",
           "pending_since": null,
-          "notified_at": "2026-09-15T08:20:00Z",
+          "notified_at": "2026-10-13T08:20:00Z",
           "direction": "resistance"
         }
       }
@@ -31,32 +31,49 @@ is deliberately NOT tied to the five-coin MS_SYMBOLS set the Layer 1/2/3
 dashboard uses, so it can scale to ~20 coins independently.
 
 
+Direction is decided once, at pending time
+------------------------------------------
+The label is fixed by GEOMETRY the moment a level goes `pending` — a level
+above the price is RESISTANCE, a level below it is SUPPORT — and stored in
+`level_state`. The confirming check reuses that stored label verbatim and
+never recomputes it.
+
+This is deliberate. An earlier version re-derived the label at send time from
+(price vs last_price), so a price that crossed the level between the pending
+check and the confirming check flipped the label: a level approached as
+resistance, popped through, then ticking down, read as "falling toward a level
+below" and sent SUPPORT. The stored label cannot flip.
+
+A crossing is not an approach, so it is not reported as one. Before sending,
+the confirming check verifies price is still on the side it was on at pending
+time — using the interval's high/low, not just the last price, so a wick
+through the level counts. If it crossed, a distinct "broke through" message is
+sent instead and the level moves to `notified` (then `cooling`). Silence would
+be the worst outcome: the level that just broke is the one that matters most.
+
+
 Noise control
 -------------
-Four independent rules gate every alert. A level must pass all of them.
+Five independent rules gate every approach alert.
 
-1. DIRECTION — the price must be moving *toward* the level. Direction is
-   derived by comparing the current price against `last_price`, the price at
-   the previous check. A level above a rising price is RESISTANCE; a level
-   below a falling price is SUPPORT. A level that sits inside the band while
-   price moves away from it never alerts.
+1. DIRECTION + MINIMUM MOVE — price must have moved *toward* the level by at
+   least MIN_MOVE_PCT since the previous check. A smaller move counts as no
+   direction at all, so tick-to-tick jitter cannot qualify a level.
 
 2. CONFIRMATION — a level must qualify on two consecutive checks before it
-   fires. The first qualifying check moves it `armed -> pending`; the second
-   fires the alert. A single tick that happens to land inside the band is not
-   enough. If a pending level's gap widens beyond `alert_pct`, the pending
-   state is dropped and confirmation starts over.
+   fires (`armed -> pending -> notified`). If a pending level's gap widens
+   beyond `alert_pct`, pending is dropped and confirmation starts over.
 
-3. NEAREST ONLY — at most one alert per coin per check. When several levels
-   qualify at once, only the closest fires; the rest keep their state and can
-   still fire on a later check once the nearest one has cleared.
+3. CROSS VALIDATION — see above. An approach that became a break is reported
+   as a break.
 
-4. HYSTERESIS RE-ARM — after firing, a level cannot fire again until price has
-   moved at least `REARM_DISTANCE_MULTIPLIER x alert_pct` away from it (so 6%
-   for a 3% band) and then re-entered the band. This replaces the fixed-time
-   cooldown the first version used: a timer silences a genuine second approach
-   and permits a meaningless one, whereas distance measures the thing actually
-   worth reacting to.
+4. NEAREST ONLY — at most one message per coin per check. A break outranks an
+   approach; among equals the closest wins. The rest keep their state and can
+   fire on a later check.
+
+5. HYSTERESIS RE-ARM — after firing, a level cannot fire again until price has
+   moved at least `REARM_DISTANCE_MULTIPLIER x alert_pct` away from it and
+   then re-entered the band.
 
 
 Per-level state machine
@@ -68,12 +85,19 @@ Per-level state machine
       └────────(gap >= 2 x alert_pct)── armed <───────────────────── cooling
 
 `armed` is the implicit default: a level with no stored state is armed.
+A pending level that crossed also lands in `notified` — via the break message.
 
 
-This module never imports web.app (app.py imports core.*, so the reverse
-would be circular). The caller injects a price lookup — see the `price_fn`
-argument on check_levels() — the same dependency-injection shape
-SignalEvaluator uses for its recorder.
+Price source
+------------
+The caller injects every live reading, and must source them all from the SAME
+endpoint (web/app.py uses Binance's spot ticker exclusively, batched). Mixing
+sources — the dashboard's Layer 3 cache holds a rounded 4h-kline close up to
+120 s old — makes the price/last_price comparison meaningless on its own.
+
+This module never imports web.app (app.py imports core.*, so the reverse would
+be circular). See the `price_fn` and `window_fn` arguments on check_levels() —
+the same dependency-injection shape SignalEvaluator uses for its recorder.
 
 Side-effect scope: this file, and outbound Telegram messages. It does not
 touch Layer 1/2/3 state, the SQLite database, or any verdict logic.
@@ -97,6 +121,10 @@ DEFAULT_ALERT_PCT = float(os.getenv("LEVEL_ALERT_DEFAULT_PCT", "3.0"))
 # After firing, a level must get this many times `alert_pct` away before it can
 # arm again. 2.0 with a 3% band means price must travel 6% from the level.
 REARM_DISTANCE_MULTIPLIER = 2.0
+
+# Minimum move toward a level, as a % of the previous check's price, for the
+# move to count as a direction at all. Anything smaller is jitter.
+MIN_MOVE_PCT = float(os.getenv("LEVEL_MIN_MOVE_PCT", "0.1"))
 
 # Accepted range for alert_pct on write (mirrors the UI input bounds).
 MIN_ALERT_PCT = 0.1
@@ -139,16 +167,35 @@ def _blank_state() -> dict:
             "notified_at": None, "direction": None}
 
 
+def _num(value) -> Optional[float]:
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n == n and n not in (float("inf"), float("-inf")) else None
+
+
+def _log_transition(coin: str, key: str, old: str, new: str, price: float,
+                     prev_price: Optional[float], direction: Optional[str],
+                     gap_pct: float, note: str = "") -> None:
+    """One line per state transition, so any wrong alert can be traced back to
+    the exact prices and gap that produced it."""
+    prev = f"{prev_price:,.8g}" if prev_price else "—"
+    print(f"🔎 Level watcher: {coin} level={key} {old}->{new} "
+          f"price={price:,.8g} last_price={prev} "
+          f"direction={direction or '—'} gap={gap_pct:.2f}%"
+          + (f" ({note})" if note else ""))
+
+
 # ── Persistence ───────────────────────────────────────────────────────────────
 
 
 def _migrate_entry(cfg: dict) -> dict:
-    """Upgrade a v1 coin entry (flat `notified` map) to the v2 state machine.
+    """Upgrade a v1 coin entry (flat `notified` map) to the state machine.
 
     A level that v1 had already alerted on becomes `cooling` rather than
     `armed`, so upgrading cannot produce a burst of repeat alerts for levels
-    price happens to be sitting near at deploy time. It must clear the
-    hysteresis distance first, exactly as a freshly fired level would.
+    price happens to be sitting near at deploy time.
     """
     if "notified" not in cfg:
         return cfg
@@ -244,20 +291,18 @@ def validate(levels, alert_pct) -> tuple[list[float], float]:
     for raw in levels:
         if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
             raise ValueError(f"invalid level: {raw!r}")
-        try:
-            val = float(raw)
-        except (TypeError, ValueError):
+        val = _num(raw)
+        if val is None:
             raise ValueError(f"invalid level: {raw!r}")
-        if val <= 0 or val != val or val in (float("inf"), float("-inf")):
+        if val <= 0:
             raise ValueError(f"levels must be positive numbers, got {raw!r}")
         clean.append(val)
 
     if alert_pct is None:
         pct = DEFAULT_ALERT_PCT
     else:
-        try:
-            pct = float(alert_pct)
-        except (TypeError, ValueError):
+        pct = _num(alert_pct)
+        if pct is None:
             raise ValueError("alert_pct must be a number")
         if not (MIN_ALERT_PCT <= pct <= MAX_ALERT_PCT):
             raise ValueError(f"alert_pct must be between {MIN_ALERT_PCT} and {MAX_ALERT_PCT}")
@@ -309,12 +354,75 @@ def delete_coin(coin: str) -> bool:
     return True
 
 
-# ── Alerting ──────────────────────────────────────────────────────────────────
+# ── Pure decision helpers ─────────────────────────────────────────────────────
+
+
+def direction_at_pending(price: float, level: float,
+                          prev_price: Optional[float] = None) -> str:
+    """The label, fixed by geometry at the moment a level goes pending.
+
+    Level above the price is resistance; level below it is support. Price
+    sitting exactly on the level is the only ambiguous case, and there the
+    move that brought it there decides.
+    """
+    if level > price:
+        return DIR_RESISTANCE
+    if level < price:
+        return DIR_SUPPORT
+    if prev_price is not None and prev_price > price:
+        return DIR_SUPPORT
+    return DIR_RESISTANCE
+
+
+def moved_toward(price: float, prev_price: Optional[float], level: float,
+                  min_move_pct: float = MIN_MOVE_PCT) -> bool:
+    """True when price has moved toward `level` by at least `min_move_pct`
+    since the previous check.
+
+    Replaces the old sign-only test: any non-zero difference used to count as
+    a direction, so tick-to-tick jitter qualified levels.
+    """
+    if prev_price is None or prev_price <= 0:
+        return False
+    move_pct = (price - prev_price) / prev_price * 100
+    if abs(move_pct) < min_move_pct:
+        return False
+    if level > price:
+        return move_pct > 0
+    if level < price:
+        return move_pct < 0
+    return True  # already at the level
+
+
+def crossed(level: float, direction: Optional[str], price: float,
+             window: Optional[tuple] = None) -> bool:
+    """True when price has reached or passed `level` since it went pending.
+
+    `direction` is the stored label: `resistance` means price was below the
+    level at pending time, `support` means it was above. `window` is the
+    (low, high) of the interval since the last check — a wick that touched the
+    level counts even if the last price is back on the original side, which is
+    the case the last-price-only test used to miss entirely.
+    """
+    if direction == DIR_RESISTANCE and price >= level:
+        return True
+    if direction == DIR_SUPPORT and price <= level:
+        return True
+
+    if window:
+        low, high = window
+        low, high = _num(low), _num(high)
+        if low is not None and high is not None and low <= level <= high:
+            return True
+    return False
+
+
+# ── Message formatting ────────────────────────────────────────────────────────
 
 
 def format_alert(coin: str, level: float, price: float,
                   gap_pct: float, direction: str) -> str:
-    """Alert body. Plain text — no Markdown emphasis, so a level like
+    """Approach alert. Plain text — no Markdown emphasis, so a level like
     1_000.5 or a coin with an underscore cannot break Telegram parsing."""
     if direction == DIR_RESISTANCE:
         emoji, label, motion = "🔴", "RESISTANCE", "rising"
@@ -327,38 +435,39 @@ def format_alert(coin: str, level: float, price: float,
     )
 
 
-def _approach(price: float, prev_price: Optional[float], level: float) -> Optional[str]:
-    """Directional label when price is moving toward `level`, else None.
+def format_break_alert(coin: str, level: float, price: float,
+                        direction: str) -> str:
+    """Sent instead of an approach alert when price reached or passed the
+    level between the pending check and the confirming one."""
+    return (
+        f"🟠 {coin} broke through {level:,.8g} (was {direction})\n"
+        f"Current: {price:,.8g}"
+    )
 
-    Returns DIR_RESISTANCE for a rising price under the level, DIR_SUPPORT for
-    a falling price over it. None means "do not alert": no previous price to
-    compare against (the first check for a coin), a flat price, or a price
-    moving away from this level.
-    """
-    if prev_price is None or prev_price <= 0 or price == prev_price:
-        return None
-    rising = price > prev_price
-    if level > price:
-        return DIR_RESISTANCE if rising else None
-    if level < price:
-        return DIR_SUPPORT if not rising else None
-    # price sits exactly on the level — momentum decides the label
-    return DIR_RESISTANCE if rising else DIR_SUPPORT
+
+# ── Main check ────────────────────────────────────────────────────────────────
 
 
 def check_levels(coin: str, price_fn: Callable[[str], Optional[float]],
-                  notify_fn: Optional[Callable[[str], bool]] = None) -> dict:
+                  notify_fn: Optional[Callable[[str], bool]] = None,
+                  window_fn: Optional[Callable[[str], Optional[tuple]]] = None) -> dict:
     """Check one coin's levels against its live price and alert as needed.
 
-    `price_fn` is injected by the caller (web/app.py passes the Layer 3
-    price reader) so this module stays free of Flask and of circular imports.
-    `notify_fn` defaults to Telegram and exists as a seam for testing.
+    `price_fn` and `window_fn` are injected by the caller (web/app.py passes
+    readers backed solely by Binance's spot ticker and 1m klines) so this
+    module stays free of Flask and of circular imports. `notify_fn` defaults
+    to Telegram and exists as a seam for testing.
+
+    `window_fn(symbol)` returns the (low, high) covering the interval since the
+    last check, and is called lazily — only when a pending level is about to be
+    confirmed — so a quiet watch list costs no kline requests.
 
     Returns a summary dict; raises only if price_fn raises, which the
     scheduler job catches per coin.
     """
     notify = notify_fn or send_telegram_message
     coin   = (coin or "").strip().upper()
+    symbol = symbol_for(coin)
 
     with _LOCK:
         cfg = _read_file().get(coin) or {}
@@ -368,31 +477,37 @@ def check_levels(coin: str, price_fn: Callable[[str], Optional[float]],
 
     alert_pct  = cfg.get("alert_pct") or DEFAULT_ALERT_PCT
     rearm_pct  = alert_pct * REARM_DISTANCE_MULTIPLIER
-    prev_price = cfg.get("last_price")
-    try:
-        prev_price = float(prev_price) if prev_price is not None else None
-    except (TypeError, ValueError):
-        prev_price = None
+    prev_price = _num(cfg.get("last_price"))
 
-    price = price_fn(symbol_for(coin))
+    price = price_fn(symbol)
     if price is None or price <= 0:
         return {"coin": coin, "status": "no_price", "alerts": []}
 
     state_map: dict[str, dict] = dict(cfg.get("level_state") or {})
     fired: list[dict] = []
 
+    # window_fn is consulted at most once per check, and only if needed.
+    _window: list = []  # [] = not fetched yet, [value] = fetched
+
+    def window():
+        if not _window:
+            try:
+                _window.append(window_fn(symbol) if window_fn else None)
+            except Exception as exc:
+                print(f"⚠️  Level watcher: {coin} range fetch failed — {exc}")
+                _window.append(None)
+        return _window[0]
+
     # ── Pass 1: housekeeping for every level ─────────────────────────────────
     # Runs for all levels, not just the nearest, because a cooling level is by
     # definition far from price and would otherwise never get the chance to
-    # re-arm. `candidates` collects what pass 2 may act on.
-    candidates: list[tuple[float, float, str, str]] = []  # (gap, level, key, direction)
+    # re-arm.
+    breaks:     list[tuple] = []  # (gap, level, key, stored_direction)
+    approaches: list[tuple] = []  # (gap, level, key)
 
     for raw in levels:
-        try:
-            level = float(raw)
-        except (TypeError, ValueError):
-            continue
-        if level <= 0:
+        level = _num(raw)
+        if level is None or level <= 0:
             continue
 
         key     = level_key(level)
@@ -402,48 +517,89 @@ def check_levels(coin: str, price_fn: Callable[[str], Optional[float]],
 
         if state in (STATE_NOTIFIED, STATE_COOLING):
             if gap_pct >= rearm_pct:
-                # Cleared the hysteresis distance — eligible again.
                 entry.update(state=STATE_ARMED, pending_since=None, direction=None)
+                _log_transition(coin, key, state, STATE_ARMED, price, prev_price,
+                                None, gap_pct, "cleared re-arm distance")
             elif state == STATE_NOTIFIED:
-                # The alert went out on the previous check; it is now simply
-                # waiting out the distance.
                 entry["state"] = STATE_COOLING
+                _log_transition(coin, key, STATE_NOTIFIED, STATE_COOLING, price,
+                                prev_price, entry.get("direction"), gap_pct)
             state_map[key] = entry
             continue
 
-        if state == STATE_PENDING and gap_pct > alert_pct:
-            # Did not confirm — the approach stalled or reversed out of band.
-            entry.update(state=STATE_ARMED, pending_since=None, direction=None)
-            state_map[key] = entry
-            continue
+        if state == STATE_PENDING:
+            stored = entry.get("direction")
+            # A pending level that crossed is resolved as a break, whatever the
+            # gap now reads — checked before the gap test, because crossing
+            # leaves the gap small and would otherwise look like a live approach.
+            if stored and crossed(level, stored, price, window()):
+                breaks.append((gap_pct, level, key, stored))
+                state_map[key] = entry
+                continue
+            if gap_pct > alert_pct:
+                entry.update(state=STATE_ARMED, pending_since=None, direction=None)
+                _log_transition(coin, key, STATE_PENDING, STATE_ARMED, price,
+                                prev_price, stored, gap_pct, "did not confirm")
+                state_map[key] = entry
+                continue
 
         state_map[key] = entry
 
-        if gap_pct <= alert_pct:
-            direction = _approach(price, prev_price, level)
-            if direction:
-                candidates.append((gap_pct, level, key, direction))
+        if gap_pct <= alert_pct and moved_toward(price, prev_price, level):
+            approaches.append((gap_pct, level, key))
 
-    # ── Pass 2: advance only the nearest qualifying level ────────────────────
-    if candidates:
-        gap_pct, level, key, direction = min(candidates, key=lambda c: c[0])
+    # ── Pass 2: at most one message per coin per check ───────────────────────
+    # A break outranks an approach — it is the more urgent news, and the level
+    # it concerns was already committed to by a pending state.
+    if breaks:
+        gap_pct, level, key, stored = min(breaks, key=lambda c: c[0])
         entry = dict(state_map[key])
+        if notify(format_break_alert(coin, level, price, stored)):
+            entry.update(state=STATE_NOTIFIED, pending_since=None,
+                         notified_at=_now_iso(), direction=stored)
+            state_map[key] = entry
+            fired.append({"level": level, "gap_pct": round(gap_pct, 2),
+                          "direction": stored, "event": "break"})
+            _log_transition(coin, key, STATE_PENDING, STATE_NOTIFIED, price,
+                            prev_price, stored, gap_pct, "broke through")
+        else:
+            print(f"⚠️  Level watcher: {coin} break alert for level {key} not delivered")
 
-        if (entry.get("state") or STATE_ARMED) == STATE_ARMED:
-            # First confirming check — needs one more before it fires.
+    elif approaches:
+        gap_pct, level, key = min(approaches, key=lambda c: c[0])
+        entry = dict(state_map[key])
+        state = entry.get("state") or STATE_ARMED
+
+        if state == STATE_ARMED:
+            # First confirming check. The label is fixed here and never recomputed.
+            direction = direction_at_pending(price, level, prev_price)
             entry.update(state=STATE_PENDING, pending_since=_now_iso(),
                          direction=direction)
             state_map[key] = entry
-        elif notify(format_alert(coin, level, price, gap_pct, direction)):
-            entry.update(state=STATE_NOTIFIED, pending_since=None,
-                         notified_at=_now_iso(), direction=direction)
+            _log_transition(coin, key, STATE_ARMED, STATE_PENDING, price,
+                            prev_price, direction, gap_pct)
+        elif not entry.get("direction"):
+            # Pre-upgrade entry with no stored label: set it now and take one
+            # more check to confirm, rather than guessing at send time.
+            direction = direction_at_pending(price, level, prev_price)
+            entry["direction"] = direction
             state_map[key] = entry
-            fired.append({"level": level, "gap_pct": round(gap_pct, 2),
-                          "direction": direction})
+            _log_transition(coin, key, STATE_PENDING, STATE_PENDING, price,
+                            prev_price, direction, gap_pct, "label backfilled")
         else:
-            # Delivery failed (or Telegram is unconfigured) — stay pending so
-            # the next check retries instead of silently dropping the alert.
-            print(f"⚠️  Level watcher: {coin} alert for level {key} not delivered")
+            direction = entry["direction"]  # stored at pending time, never recomputed
+            if notify(format_alert(coin, level, price, gap_pct, direction)):
+                entry.update(state=STATE_NOTIFIED, pending_since=None,
+                             notified_at=_now_iso(), direction=direction)
+                state_map[key] = entry
+                fired.append({"level": level, "gap_pct": round(gap_pct, 2),
+                              "direction": direction, "event": "approach"})
+                _log_transition(coin, key, STATE_PENDING, STATE_NOTIFIED, price,
+                                prev_price, direction, gap_pct, "approach alert")
+            else:
+                # Delivery failed (or Telegram is unconfigured) — stay pending so
+                # the next check retries instead of silently dropping the alert.
+                print(f"⚠️  Level watcher: {coin} alert for level {key} not delivered")
 
     # ── Persist ──────────────────────────────────────────────────────────────
     # Re-read under the lock so a concurrent POST /api/levels/<coin> is not
